@@ -38,9 +38,11 @@ class PurchaseWorkflow
                 }
             }
             $number = (int) $sequence->lastValue;
+            // Keep the existing sequence across years; never renumber historical records.
+            $prefix = 'PO-'.now()->format('Y').'-';
             do {
                 abort_if($number >= PHP_INT_MAX - 1, 409, 'Purchase order numbering limit reached.');
-                $id = (string) ++$number;
+                $id = $prefix.str_pad((string) ++$number, 6, '0', STR_PAD_LEFT);
             } while (DB::table('item_requests')->where('id', $id)->exists() || DB::table('purchase_orders')->where('id', $id)->exists());
             DB::table('inventory_sequences')->where('name', 'purchase_orders')->update(['lastValue' => $number]);
             $lines = [];

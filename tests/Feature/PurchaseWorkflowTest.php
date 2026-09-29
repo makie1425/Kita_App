@@ -54,7 +54,7 @@ class PurchaseWorkflowTest extends TestCase
     public function test_complete_workflow_preserves_id_and_posts_only_actual_stock_with_printable_history(): void
     {
         $id = $this->requestOrder();
-        $this->assertMatchesRegularExpression('/^[1-9][0-9]*$/', $id);
+        $this->assertMatchesRegularExpression('/^PO-'.now()->format('Y').'-[0-9]{6,}$/', $id);
         $this->assertDatabaseHas('products', ['id' => $this->product, 'stock' => 0]);
         $this->actingAs($this->admin)->getJson('/api/purchasing')->assertOk()->assertJsonPath('requests.0.id', $id);
         $this->approve($id);
@@ -189,10 +189,32 @@ class PurchaseWorkflowTest extends TestCase
         $changed = $body;$changed['lines'][0]['qty'] = 3;
         $this->postJson('/api/purchase-requests', $changed)->assertConflict();
         $second = $this->requestOrder();
-        $this->assertSame((string) ((int) $first + 1), $second);
-        $this->assertDatabaseHas('inventory_sequences', ['name' => 'purchase_orders', 'lastValue' => (int) $second]);
+        $this->assertSame('PO-'.now()->format('Y').'-000001', $first);
+        $this->assertSame('PO-'.now()->format('Y').'-000002', $second);
+        $this->assertDatabaseHas('inventory_sequences', ['name' => 'purchase_orders', 'lastValue' => 2]);
         $this->getJson('/api/purchasing')->assertOk()->assertJsonCount(2, 'requests');
         $this->postJson('/api/purchase-requests', $body + ['id' => 'PO-MANUAL'])->assertUnprocessable()->assertJsonValidationErrors('id');
+    }
+
+    public function test_po_format_preserves_legacy_ids_and_continues_sequence_across_years(): void
+    {
+        $this->travelTo(now()->setDate(2026, 12, 31)->startOfDay());
+        DB::table('item_requests')->insert(['id' => '42', 'status' => 'Pending Approval']);
+        DB::table('inventory_sequences')->where('name', 'purchase_orders')->update(['lastValue' => 42]);
+        $this->assertSame('PO-2026-000043', $this->requestOrder());
+        $this->travelTo(now()->setDate(2027, 1, 1));
+        $this->assertSame('PO-2027-000044', $this->requestOrder());
+        $this->assertDatabaseHas('item_requests', ['id' => '42']);
+        $this->travelBack();
+    }
+
+    public function test_po_number_skips_an_existing_formatted_id(): void
+    {
+        $first = $this->requestOrder();
+        DB::table('inventory_sequences')->where('name', 'purchase_orders')->update(['lastValue' => 0]);
+        $second = $this->requestOrder();
+        $this->assertNotSame($first, $second);
+        $this->assertSame('PO-'.now()->format('Y').'-000002', $second);
     }
 
     public function test_five_missing_are_reported_while_received_items_post_and_history_is_preserved(): void
