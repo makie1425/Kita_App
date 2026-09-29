@@ -264,7 +264,12 @@ class KitaDataController extends Controller
     {
         $lines = DB::table('transaction_lines')->orderBy('id')->get()->groupBy('transaction_uuid');
 
-        return DB::table('transactions')->orderByDesc('date')->orderBy('uuid')->get()->map(function ($record) use ($lines) {
+        // UUIDs are random. The first sale-line ID records checkout insertion order,
+        // including payments created within the same second, without renumbering sales.
+        return DB::table('transactions')->orderByDesc('date')
+            ->orderByDesc(DB::table('transaction_lines')->selectRaw('MIN(id)')
+                ->whereColumn('transaction_uuid', 'transactions.uuid'))
+            ->orderBy('uuid')->get()->map(function ($record) use ($lines) {
             $row = (array) $record;
             $row = $this->numericRow($row, ['total', 'subtotal', 'discountAmount', 'refundedAmount', 'tendered', 'paid', 'changeAmount']);
             $row['change'] = $row['changeAmount'];
