@@ -45,17 +45,14 @@ class PurchasingController extends Controller
         $data = $request->validate([
             'idempotencyKey' => ['required', 'uuid'],
             'version' => ['required', 'integer', 'min:0'],
-            'deliveryReference' => ['required', 'string', 'max:100'],
             'receivedDate' => ['required', 'date_format:Y-m-d', 'before_or_equal:today'],
             'notes' => ['nullable', 'string', 'max:2000'],
             'lines' => ['required', 'array', 'min:1', 'max:500'],
             'lines.*.productId' => ['required', 'integer', 'distinct'],
             'lines.*.qty' => ['required', 'integer', 'between:1,1000000'],
         ]);
-        $data['deliveryReference'] = Str::upper(trim($data['deliveryReference']));
-        if ($data['deliveryReference'] === '') {
-            throw ValidationException::withMessages(['deliveryReference' => 'Enter the supplier delivery reference.']);
-        }
+        // Generated from the PO and receiving version; ignore client-supplied references.
+        $data['deliveryReference'] = $id.'-R'.str_pad((string) ($data['version'] + 1), 3, '0', STR_PAD_LEFT);
         $data['lines'] = collect($data['lines'])->sortBy('productId')->values()->all();
         $hash = hash('sha256', json_encode([$id, $data['deliveryReference'], $data['receivedDate'], $data['notes'] ?? '', $data['lines']]));
 
@@ -75,7 +72,11 @@ class PurchasingController extends Controller
             $approvedLegacyDraft = $order->status === 'Draft' && $purchaseRequest->status === 'Approved';
             abort_unless($approvedLegacyDraft || in_array($order->status, [PurchaseWorkflow::WAITING, 'Partially Received', 'Approved', 'Ordered']), 409, 'Only an approved PO awaiting delivery can receive stock.');
             abort_unless((int) $order->receivingVersion === $data['version'], 409, 'Another delivery was recorded. Refresh this PO before receiving again.');
-            abort_if(DB::table('receiving_records')->where('poId', $id)->where('deliveryReference', $data['deliveryReference'])->exists(), 409, 'This supplier delivery reference has already been received for this PO.');
+            // Imported receipts may already use this format. Allocate the next free suffix.
+            $number = $data['version'] + 1;
+            while (DB::table('receiving_records')->where('poId', $id)->where('deliveryReference', $data['deliveryReference'])->exists()) {
+                $data['deliveryReference'] = $id.'-R'.str_pad((string) ++$number, 3, '0', STR_PAD_LEFT);
+            }
             if ($data['receivedDate'] < substr($purchaseRequest->approved_at ?? $order->created, 0, 10)) {
                 throw ValidationException::withMessages(['receivedDate' => 'Receiving date cannot precede approval.']);
             }

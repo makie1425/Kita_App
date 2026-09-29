@@ -1,4 +1,4 @@
-﻿const COLORS = {
+const COLORS = {
 
   brand:"#1747e8", brandDark:"#1236b8", brandBg:"#eaf0ff",
   bg:"#f7f9fc", surface:"#ffffff", border:"#e4e7ec",
@@ -1290,11 +1290,10 @@ class Component extends DCLogic {
     const order=this.state.purchaseData.orders.find(o=>o.id===this.state.purchaseReceivingId);
     const entered=Object.entries(this.state.receiveQty||{}).filter(([,qty])=>String(qty).trim()!=='');
     if(!entered.length||entered.some(([,qty])=>!Number.isInteger(Number(qty))||Number(qty)<=0)){this.setState({receiveError:'Enter positive whole quantities for delivered items. Leave undelivered items blank.'});return;}
-    if(!this.state.receiveReference?.trim()){this.setState({receiveError:'Enter the supplier delivery reference.'});return;}
     if(!window.confirm('Confirm actual delivered quantities for '+order.id+'? Inventory will be updated immediately.'))return;
     this.receivingBusy=true;this.setState({receivingSaving:true,receiveError:''});
     try{
-      const result=await this.authPost(`/api/purchase-orders/${encodeURIComponent(order.id)}/receive`,{idempotencyKey:this.state.receiveKey,version:this.state.receiveVersion,deliveryReference:this.state.receiveReference,receivedDate:this.state.receiveDate,notes:this.state.receiveNotes,lines:entered.map(([productId,qty])=>({productId:Number(productId),qty:Number(qty)}))});
+      const result=await this.authPost(`/api/purchase-orders/${encodeURIComponent(order.id)}/receive`,{idempotencyKey:this.state.receiveKey,version:this.state.receiveVersion,receivedDate:this.state.receiveDate,notes:this.state.receiveNotes,lines:entered.map(([productId,qty])=>({productId:Number(productId),qty:Number(qty)}))});
       this.setState({purchaseReceivingId:null,lastReceivedPo:order.id});this.toast(result.message);await Promise.all([this.reloadPurchasing(),this.reloadCatalog()]);
     }catch(error){this.setState({receiveError:error.message});}finally{this.receivingBusy=false;this.setState({receivingSaving:false});}
   };
@@ -1304,7 +1303,7 @@ class Component extends DCLogic {
     if(order)return h('div',null,[sectionTitle('Receive '+order.id,`${order.supplierName||this.purchaseSupplier(order.supplierId)} | ${order.status}`),
       h('p',null,'Inspect and enter actual delivered quantities. Received items will be added to inventory immediately. Missing items are saved in a shortage report. Leave undelivered items blank.'),
       table(['Item','Category','Ordered','Previously received','This delivery','Missing','Excess','Unit'],order.lines.map(l=>tr([td(l.name),td(l.category),td(l.orderedQty),td(l.deliveredQty||0),td(h('input',{'aria-label':'Receive '+l.name,type:'number',min:1,step:1,value:this.state.receiveQty[l.productId]??'',onChange:e=>this.setState(s=>({receiveQty:{...s.receiveQty,[l.productId]:e.target.value}}))})),td(Math.max(0,Number(l.orderedQty)-Number(l.deliveredQty||0)-Number(this.state.receiveQty[l.productId]||0))),td(Math.max(0,Number(l.deliveredQty||0)+Number(this.state.receiveQty[l.productId]||0)-Number(l.orderedQty))),td(this.purchaseUnit(l))],l.id))),
-      h('div',{className:'purchase-filters'},[h('label',null,['Supplier delivery reference',h('input',{maxLength:100,value:this.state.receiveReference,onChange:e=>this.setState({receiveReference:e.target.value})})]),h('label',null,['Date received',h('input',{type:'date',max:this.state.data?.BUSINESS_DATE,value:this.state.receiveDate,onChange:e=>this.setState({receiveDate:e.target.value})})])]),
+      h('div',{className:'purchase-filters'},[h('label',null,['Delivery reference',h('input',{readOnly:true,value:'Assigned automatically from '+order.id,'aria-label':'Automatic delivery reference'})]),h('label',null,['Date received',h('input',{type:'date',max:this.state.data?.BUSINESS_DATE,value:this.state.receiveDate,onChange:e=>this.setState({receiveDate:e.target.value})})])]),
       h('label',{className:'purchase-notes'},['Receiving notes (required for excess delivery)',h('textarea',{maxLength:2000,value:this.state.receiveNotes,onChange:e=>this.setState({receiveNotes:e.target.value})})]),
       this.state.receiveError?h('p',{role:'alert',className:'alert'},this.state.receiveError):null,
       h('button',{className:'primary-button',disabled:!!this.state.receivingSaving,onClick:this.confirmPurchaseReceiving},this.state.receivingSaving?'Posting delivery...':'Confirm Receipt'),btn('Back',()=>this.setState({purchaseReceivingId:null})),this.purchaseReportLink(order.id)

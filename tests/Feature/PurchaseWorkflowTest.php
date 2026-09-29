@@ -47,7 +47,7 @@ class PurchaseWorkflowTest extends TestCase
 
     private function delivery(int $qty = 4, int $version = 0): array
     {
-        return ['idempotencyKey' => (string) Str::uuid(), 'version' => $version, 'deliveryReference' => 'DELIVERY-'.$version,
+        return ['idempotencyKey' => (string) Str::uuid(), 'version' => $version,
             'receivedDate' => now()->toDateString(), 'lines' => [['productId' => $this->product, 'qty' => $qty]]];
     }
 
@@ -65,6 +65,8 @@ class PurchaseWorkflowTest extends TestCase
             ->assertCreated()->assertJsonPath('poId', $id)->assertJsonPath('status', 'Partially Received');
         $this->assertDatabaseHas('products', ['id' => $this->product, 'stock' => 4]);
         $this->postJson('/api/purchase-orders/'.$id.'/receive', $this->delivery(6, 1))->assertCreated()->assertJsonPath('status', 'Fully Received');
+        $this->assertDatabaseHas('receiving_records', ['poId' => $id, 'deliveryReference' => $id.'-R001']);
+        $this->assertDatabaseHas('receiving_records', ['poId' => $id, 'deliveryReference' => $id.'-R002']);
         $this->assertDatabaseHas('products', ['id' => $this->product, 'stock' => 10]);
         $this->assertDatabaseHas('purchase_order_lines', ['poId' => $id, 'orderedQty' => 10, 'deliveredQty' => 10, 'unit' => 'Piece']);
         $this->assertSame(2, DB::table('stock_movements')->where('referenceType', 'purchase_receiving')->count());
@@ -74,10 +76,11 @@ class PurchaseWorkflowTest extends TestCase
             ->assertSee('Purchase Supplier')->assertSee('Approving Admin')->assertSee('Receiving Manager')->assertSee('Print Report');
     }
 
-    public function test_receiving_retry_duplicate_reference_and_stale_version_cannot_double_stock(): void
+    public function test_receiving_retry_and_stale_version_cannot_double_stock_and_reference_is_generated(): void
     {
         $id = $this->requestOrder();$this->approve($id);
         $body = $this->delivery();
+        $body['deliveryReference'] = 'MANUAL-REFERENCE';
         $this->actingAs($this->manager)->postJson('/api/purchase-orders/'.$id.'/receive', $body)->assertCreated();
         $this->postJson('/api/purchase-orders/'.$id.'/receive', $body)->assertOk();
         $this->assertSame(2, DB::table('notifications')->where('recordId', $id)->where('type', 'Stock received')->count());
@@ -85,10 +88,11 @@ class PurchaseWorkflowTest extends TestCase
         $this->postJson('/api/purchase-orders/'.$id.'/receive', $changed)->assertConflict();
         $stale = $this->delivery();$stale['deliveryReference'] = 'NEXT-DELIVERY';
         $this->postJson('/api/purchase-orders/'.$id.'/receive', $stale)->assertConflict();
-        $duplicate = $this->delivery(4, 1);$duplicate['deliveryReference'] = ' delivery-0 ';
+        $duplicate = $this->delivery(4, 0);$duplicate['deliveryReference'] = ' delivery-0 ';
         $this->postJson('/api/purchase-orders/'.$id.'/receive', $duplicate)->assertConflict();
         $this->assertDatabaseHas('products', ['id' => $this->product, 'stock' => 4]);
         $this->assertDatabaseCount('receiving_records', 1);
+        $this->assertDatabaseHas('receiving_records', ['poId' => $id, 'deliveryReference' => $id.'-R001']);
     }
 
     public function test_declined_pending_and_unapproved_orders_cannot_receive(): void
