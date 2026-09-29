@@ -32,6 +32,10 @@ COPY --from=dependencies /var/www/html/vendor/laravel/framework/src/Illuminate/P
 RUN npm run build
 
 FROM php-base AS production
+# Render mounts runtime secret files with group 1000. PHP-FPM and artisan run
+# as www-data and need this group to read the MySQL CA certificate.
+RUN groupadd --gid 1000 render-secrets \
+    && usermod --append --groups render-secrets www-data
 RUN apt-get update && apt-get install -y --no-install-recommends nginx gettext-base gosu curl \
     && rm -rf /var/lib/apt/lists/* /etc/nginx/sites-enabled/default \
     && cp "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini"
