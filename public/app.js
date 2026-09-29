@@ -1076,6 +1076,27 @@ class Component extends DCLogic {
   }
 
   // ---- Manager screens ----
+  managerLowStock=()=> (this.state.data?.PRODUCTS||[]).filter(p=>p.status==='Active'&&!p.archivedAt&&Number(p.stock)<=Number(p.minStock))
+    .sort((a,b)=>Number(a.stock)-Number(b.stock)||a.name.localeCompare(b.name));
+  purchaseLowStock=productId=>()=>{
+    const product=this.managerLowStock().find(p=>String(p.id)===String(productId));
+    if(!product){this.toast('This product is no longer available in the low-stock list.','warn');return;}
+    const supplier=(this.state.data.SUPPLIERS||[]).find(s=>String(s.id)===String(product.supplierId)&&s.status==='Active'&&!s.archivedAt);
+    const cart=this.state.newReqCart||[];
+    const selected=this.state.newReqSupplier||cart[0]?.supplierId||'';
+    if(cart.length&&supplier&&selected&&String(selected)!==String(supplier.id)){
+      this.toast('Your draft contains items for another supplier. Submit or clear that request first.','warn');
+      this.goScreen('mgrRequest')();return;
+    }
+    const supplierId=cart.length?selected:(supplier?.id||'');
+    const exists=cart.some(line=>String(line.productId)===String(product.id));
+    const qty=Math.min(1000000,Math.max(1,Math.ceil(Number(product.minStock)-Number(product.stock)+1)));
+    this.setState({newReqSupplier:String(supplierId),newReqCart:exists?cart:[...cart,{
+      productId:product.id,name:product.name,category:product.category,unit:product.stockUnit||product.unit,qty,supplierId
+    }],purchaseProductOpen:false,itemPickerOpen:false});
+    this.goScreen('mgrRequest')();
+    this.toast(exists?'This product is already in your purchase request.':supplierId?'Product added. Review the quantity before submitting.':'Product added. Select a supplier before submitting.');
+  };
   buildMgrDashboard(){
     const {data,itemRequestsLocal}=this.state; if(!data) return null;
     const pending=itemRequestsLocal.filter(r=>["Pending","Pending Approval"].includes(r.status)).length;
@@ -1084,14 +1105,23 @@ class Component extends DCLogic {
     const disapproved=itemRequestsLocal.filter(r=>["Disapproved","Declined"].includes(r.status));
     const byProduct={}; data.SALES_LOG.forEach(t=>{ byProduct[t.productId]=(byProduct[t.productId]||0)+t.qty*t.amount; });
     const ranked=Object.entries(byProduct).map(([id,rev])=>({p:data.PRODUCTS.find(p=>p.id===Number(id)),rev})).filter(x=>x.p).sort((a,b)=>b.rev-a.rev);
+    const lowStock=this.managerLowStock();
     return React.createElement("div",null,[
       sectionTitle("Manager Dashboard","Item requests, sales & inventory overview"),
       this.buildManagerPin(),
       React.createElement("div",{style:{display:"flex",gap:14,marginBottom:16,flexWrap:"wrap"}},[
         kpi("Item Requests (Pending)",pending,null,COLORS.amber), kpi("Forwarded Purchase Requests",forwarded,null,COLORS.purple),
         kpi("For Purchased Request",proceedPurchase,null,COLORS.amber), kpi("Disapproved Requests",disapproved.length,null,COLORS.red),
-        kpi("Low Stock Items",data.PRODUCTS.filter(p=>p.stock<=p.minStock).length,null,COLORS.amber),
+        kpi("Low Stock Items",lowStock.length,null,COLORS.amber),
       ]),
+      card([
+        React.createElement('h2',{key:'title',className:'panel-title'},'Low Stock Products'),
+        React.createElement('p',{key:'description'},'Products at or below minimum stock. Purchase opens a request for review and approval.'),
+        lowStock.length?this.recordTable('manager-low-stock',['Product','Category','Stock on hand','Minimum stock','Unit','Action'],lowStock.map(p=>tr([
+          td(p.name),td(p.category),td(p.stock),td(p.minStock),td(p.stockUnit||p.unit||'Not recorded'),
+          td(btn('Purchase',this.purchaseLowStock(p.id),'primary'))
+        ],p.id))):React.createElement('p',{key:'empty',role:'status'},'No low-stock products.')
+      ],{marginBottom:16}),
       disapproved.length?card([React.createElement("div",{key:"t",style:{fontWeight:800,marginBottom:8,color:COLORS.red}},"Disapproved â€” reason visible"),
         ...disapproved.map(r=>React.createElement("div",{key:r.id,style:{fontSize:13,padding:"6px 0",borderBottom:"1px solid #eef1f6"}},[React.createElement("b",{key:"i"},r.id+": "),r.lines.map(l=>l.name).join(", ")+" â€” "+r.disapprovalReason]))],{marginBottom:16}):null,
       React.createElement("div",{style:{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:14}},[
