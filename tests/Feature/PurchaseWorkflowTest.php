@@ -110,7 +110,7 @@ class PurchaseWorkflowTest extends TestCase
     public function test_review_edits_same_request_rejects_stale_review_and_cannot_change_approved_quantities(): void
     {
         $id = $this->requestOrder();
-        $this->actingAs($this->admin)->patchJson('/api/purchase-requests/'.$id, ['action' => 'modify', 'revision' => 0, 'lines' => [['productId' => $this->product, 'qty' => 3]]])->assertOk();
+        $this->actingAs($this->admin)->patchJson('/api/purchase-requests/'.$id, ['action' => 'modify', 'note' => 'Reduce to current demand.', 'revision' => 0, 'lines' => [['productId' => $this->product, 'qty' => 3]]])->assertOk();
         $this->patchJson('/api/purchase-requests/'.$id, ['action' => 'approved', 'revision' => 0])->assertConflict();
         $this->patchJson('/api/purchase-requests/'.$id, ['action' => 'approved', 'revision' => 1])->assertOk()->assertJsonPath('poId', $id);
         $this->assertDatabaseHas('purchase_order_lines', ['poId' => $id, 'orderedQty' => 3]);
@@ -175,13 +175,34 @@ class PurchaseWorkflowTest extends TestCase
     {
         DB::table('products')->insert(['id' => 100, 'name' => 'Second Item', 'category' => 'Supplies', 'stock' => 0, 'status' => 'Active', 'unit' => 'Piece', 'stockUnit' => 'Piece', 'unitPrice' => 1, 'supplierId' => $this->supplier]);
         $id = $this->postJson('/api/purchase-requests', ['category' => 'Supplies', 'lines' => [['productId' => $this->product, 'qty' => 2], ['productId' => 100, 'qty' => 1]]])->assertCreated()->json('id');
-        $this->actingAs($this->admin)->patchJson('/api/purchase-requests/'.$id, ['action' => 'modify', 'revision' => 0, 'lines' => [['productId' => $this->product, 'qty' => 2]]])->assertOk();
+        $this->actingAs($this->admin)->patchJson('/api/purchase-requests/'.$id, ['action' => 'modify', 'note' => 'Second item is not needed.', 'revision' => 0, 'lines' => [['productId' => $this->product, 'qty' => 2]]])->assertOk();
         $this->assertDatabaseMissing('item_request_lines', ['requestId' => $id, 'productId' => 100]);
         $this->patchJson('/api/purchase-requests/'.$id, ['action' => 'approved', 'revision' => 1])->assertOk();
         $this->actingAs($this->manager)->postJson('/api/purchase-orders/'.$id.'/receive', $this->delivery(2))->assertCreated();
         DB::table('products')->where('id', $this->product)->update(['name' => 'Renamed Item']);
         DB::table('suppliers')->where('id', $this->supplier)->update(['name' => 'Renamed Supplier']);
         $this->get('/purchase-orders/'.$id.'/report')->assertOk()->assertSee('New Item')->assertSee('Purchase Supplier')->assertDontSee('Renamed Item')->assertDontSee('Second Item');
+    }
+
+    public function test_quantity_changes_require_a_reason_even_when_approving_directly(): void
+    {
+        $id = $this->requestOrder();
+        $this->actingAs($this->admin);
+        foreach (['modify', 'approved'] as $action) {
+            foreach ([null, '   '] as $note) {
+                $this->patchJson('/api/purchase-requests/'.$id, ['action' => $action, 'note' => $note,
+                    'revision' => 0, 'lines' => [['productId' => $this->product, 'qty' => 3]]])
+                    ->assertUnprocessable()->assertJsonValidationErrors('note');
+            }
+        }
+        $this->assertDatabaseHas('item_requests', ['id' => $id, 'revision' => 0]);
+        $this->assertDatabaseHas('item_request_lines', ['requestId' => $id, 'qty' => 10, 'confirmedQty' => null]);
+        $this->assertDatabaseCount('purchase_orders', 0);
+        $this->patchJson('/api/purchase-requests/'.$id, ['action' => 'modify', 'note' => 'Budget limit',
+            'revision' => 0, 'lines' => [['productId' => $this->product, 'qty' => 3]]])->assertOk();
+        $this->patchJson('/api/purchase-requests/'.$id, ['action' => 'approved', 'revision' => 1])->assertOk();
+        $this->assertDatabaseHas('item_requests', ['id' => $id, 'adminNote' => 'Budget limit']);
+        $this->assertDatabaseHas('purchase_order_lines', ['poId' => $id, 'orderedQty' => 3]);
     }
 
     public function test_po_numbers_are_allocated_in_database_and_retries_return_original_request(): void

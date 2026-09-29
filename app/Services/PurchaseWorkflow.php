@@ -104,6 +104,15 @@ class PurchaseWorkflow
             }
             $before = ['request' => $record, 'lines' => DB::table('item_request_lines')->where('requestId', $id)->get()];
             if (isset($data['lines'])) {
+                $original = $before['lines']->keyBy('productId');
+                $changed = count($data['lines']) !== $original->count();
+                foreach ($data['lines'] as $line) {
+                    $old = $original->get($line['productId']);
+                    $changed = $changed || ! $old || (int) ($old->confirmedQty ?? $old->qty) !== (int) $line['qty'];
+                }
+                if ($changed && trim($data['note'] ?? '') === '') {
+                    throw ValidationException::withMessages(['note' => 'Enter a reason for changing purchase quantities or removing items.']);
+                }
                 foreach ($data['lines'] as $line) {
                     $query = DB::table('item_request_lines')->where('requestId', $id)->where('productId', $line['productId']);
                     if (! $query->exists()) {
@@ -150,7 +159,7 @@ class PurchaseWorkflow
                 ]);
                 DB::table('purchase_order_lines')->insert($orderLines);
             }
-            $values = ['status' => $status, 'adminNote' => $data['note'] ?? '', 'revision' => $record->revision + 1,
+            $values = ['status' => $status, 'adminNote' => filled($data['note'] ?? null) ? trim($data['note']) : ($record->adminNote ?? ''), 'revision' => $record->revision + 1,
                 'disapprovalReason' => $status === 'Declined' ? $data['note'] : null, 'poId' => $poId];
             if (in_array($data['action'], ['approved', 'disapproved'])) {
                 $values += ['reviewed_at' => now(), 'approved_at' => $poId ? now() : null, 'approvedById' => $request->user()->id,

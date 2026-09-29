@@ -1267,6 +1267,8 @@ class Component extends DCLogic {
     const note=this.state.approvalNoteDraft[record.id]||'';
     if(action==='disapproved'&&!note.trim()){this.toast('Enter a decline reason.','error');return;}
     const lines=(this.state.purchaseReviewId===record.id?this.state.purchaseReviewLines:record.lines).map(l=>({productId:l.productId,qty:Number(l.confirmedQty??l.qty)}));
+    const edited=lines.length!==record.lines.length||lines.some(l=>{const original=record.lines.find(p=>p.productId===l.productId);return !original||Number(original.confirmedQty??original.qty)!==l.qty;});
+    if(action!=='disapproved'&&edited&&!note.trim()){this.toast('Enter a reason for changing purchase quantities or removing items.','error');return;}
     if(action!=='disapproved'&&(!lines.length||lines.some(l=>!Number.isInteger(l.qty)||l.qty<=0))){this.toast('Keep at least one item with positive whole quantities.','error');return;}
     this.reviewBusy=true;
     try{const result=await this.authPost(`/api/purchase-requests/${encodeURIComponent(record.id)}`,{action,note,revision:record.revision,...(action==='disapproved'?{}:{lines})},'PATCH');this.setState({purchaseReviewId:null});this.toast(result.message);await Promise.all([this.reloadPurchasing(),this.reloadCatalog()]);}
@@ -1279,7 +1281,7 @@ class Component extends DCLogic {
       ...requests.map(r=>h('section',{key:r.id,className:'sa-panel purchase-review'},[
         h('h2',null,r.id),h('p',null,`${r.supplierName||this.purchaseSupplier(r.lines[0]?.supplierId)} | ${r.requestedBy} | ${r.requested_at||r.dateRequested}`),h('p',null,r.notes||''),
         table(['Item','Category','Requested','Review quantity','Unit','Actions'],(this.state.purchaseReviewId===r.id?this.state.purchaseReviewLines:r.lines).map((l,i)=>tr([td(l.name),td(l.category),td(l.qty),td(this.state.purchaseReviewId===r.id?h('input',{'aria-label':'Review quantity for '+l.name,type:'number',min:1,step:1,value:l.confirmedQty??l.qty,onChange:e=>this.setState(s=>({purchaseReviewLines:s.purchaseReviewLines.map((line,n)=>n===i?{...line,confirmedQty:e.target.value}:line)}))}):l.confirmedQty??l.qty),td(this.purchaseUnit(l)),td(this.state.purchaseReviewId===r.id?btn('Remove',()=>this.setState(s=>({purchaseReviewLines:s.purchaseReviewLines.filter((_,n)=>n!==i)}))):'')],l.id))),
-        h('label',{className:'purchase-notes'},['Review notes / decline reason',h('textarea',{maxLength:2000,value:this.state.approvalNoteDraft[r.id]||'',onChange:this.setApprovalNote(r.id)})]),
+        h('label',{className:'purchase-notes'},['Review reason (required when changing quantities, removing items, or declining)',h('textarea',{maxLength:2000,placeholder:'Explain why this request needs to change',value:this.state.approvalNoteDraft[r.id]||'',onChange:this.setApprovalNote(r.id)})]),
         h('div',{className:'purchase-actions'},[btn('Edit items',()=>this.setState({purchaseReviewId:r.id,purchaseReviewLines:r.lines.map(l=>({...l}))})),this.state.purchaseReviewId===r.id?btn('Save edits',()=>this.reviewPurchase(r,'modify')):null,btn('Approve',()=>this.reviewPurchase(r,'approved'),'primary'),btn('Decline',()=>this.reviewPurchase(r,'disapproved'),'danger')])
       ])),!requests.length?h('p',{className:'record-empty'},'No pending requests match these filters.'):null,this.purchaseRequestDetails()
     ]);
