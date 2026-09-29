@@ -13,6 +13,14 @@ mkdir -p storage/app/public storage/app/private storage/logs \
     storage/framework/cache/data storage/framework/sessions storage/framework/views bootstrap/cache
 chown -R www-data:www-data storage bootstrap/cache
 chmod -R u+rwX,g+rX,o-rwx storage bootstrap/cache
+# Copy the runtime mount before dropping privileges; keep the CA outside public storage.
+if [[ -n "${MYSQL_ATTR_SSL_CA:-}" ]]; then
+    php docker/prepare-mysql-ca.php
+    chown www-data:www-data storage/app/private/mysql-ca.pem
+    chmod 600 storage/app/private/mysql-ca.pem
+    export MYSQL_ATTR_SSL_CA=/var/www/html/storage/app/private/mysql-ca.pem
+    gosu www-data test -r "$MYSQL_ATTR_SSL_CA"
+fi
 # Nginx runs as www-data; the source code remains owned by root.
 artisan() { gosu www-data php artisan "$@"; }
 artisan config:clear
