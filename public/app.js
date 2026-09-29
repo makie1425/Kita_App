@@ -1179,6 +1179,7 @@ class Component extends DCLogic {
     if(this.purchaseProductSaving)return;
     if(!this.state.newReqSupplier){this.toast('Select a supplier first.','error');return;}
     const f=this.state.purchaseProductDraft||{};
+    if(!f.unit){this.toast('Select an inventory unit.','error');return;}
     const quantity=Number(f.quantity??1);
     if(!Number.isInteger(quantity)||quantity<1||quantity>1000000){this.toast('Enter a purchase quantity from 1 to 1,000,000.','error');return;}
     this.purchaseProductSaving=true;
@@ -1196,7 +1197,12 @@ class Component extends DCLogic {
       h('h3',null,supplier?'Add Supplier':'Purchase New Product'),
       field('name','Name'),...(supplier?[field('contact','Contact person'),field('phone','Phone'),field('email','Email','email'),field('address','Address')]:[
         h('label',null,['Category',h('select',{value:f.category||'',onChange:e=>this.setState({[key]:{...f,category:e.target.value}})},[h('option',{value:''},'Select category'),...(this.state.data?.CATEGORIES||[]).filter(c=>c.status==='Active').map(c=>h('option',{key:c.name,value:c.name},c.name))])]),
-        field('quantity','Purchase quantity','number'),field('unit','Inventory unit (e.g. Piece)'),field('barcode','Unique barcode'),field('unitPrice','Unit cost (\u20B1)','number'),field('price','Retail price (\u20B1)','number'),h('p',null,'Initial stock is zero. Stock is added only when a delivery is received.')
+        field('quantity','Purchase quantity','number'),
+        h('label',{key:'unit'},['Inventory unit',h('select',{required:true,value:f.unit||'',onChange:e=>this.setState({[key]:{...f,unit:e.target.value}})},[
+          h('option',{key:'placeholder',value:'',disabled:true},'Select unit'),
+          ...['Piece','Pack','Box','Case','Sack','Tray','Bottle','Can','Tub','Kg'].map(unit=>h('option',{key:unit,value:unit},unit))
+        ])]),
+        field('barcode','Unique barcode'),field('unitPrice','Unit cost (\u20B1)','number'),field('price','Retail price (\u20B1)','number'),h('p',null,'Initial stock is zero. Stock is added only when a delivery is received.')
       ]),
       btn('Cancel',()=>this.setState({['purchase'+kind+'Open']:false})),btn(supplier?'Save Supplier':'Add New Product to Request',supplier?this.savePurchaseSupplier:this.savePurchaseProduct,'primary')
     ]);
