@@ -28,7 +28,7 @@ class PayMongoController extends Controller
         }, 3);
         try {
             $response = $this->client()->post('https://api.paymongo.com/v1/checkout_sessions', ['data' => ['attributes' => [
-                'billing' => ['name' => $request->user()->name],
+                'reference_number' => $data['uuid'],
                 'line_items' => [['currency' => 'PHP', 'amount' => SaleCheckout::cents($transaction['total']), 'name' => 'KITA purchase', 'quantity' => 1]],
                 'payment_method_types' => [match ($data['provider']) {
                     'GCash' => 'gcash', 'Maya' => 'paymaya', default => 'grab_pay'
@@ -120,7 +120,8 @@ class PayMongoController extends Controller
         $attributes = $response->json('data.attributes', []);
         abort_unless(data_get($attributes, 'metadata.transaction_uuid') === $uuid && ($attributes['livemode'] ?? null) === $live, 422, 'Payment identity does not match.');
         $payment = collect($attributes['payments'] ?? [])->first(fn ($payment) => data_get($payment, 'attributes.status') === 'paid');
-        abort_unless($payment && data_get($payment, 'attributes.currency') === 'PHP', 422, 'Payment has not been confirmed.');
+        abort_unless($payment && is_string($payment['id'] ?? null) && preg_match('/^pay_[A-Za-z0-9]+$/', $payment['id'])
+            && data_get($payment, 'attributes.currency') === 'PHP', 422, 'Payment has not been confirmed.');
 
         return DB::transaction(function () use ($uuid, $session, $payment) {
             $transaction = DB::table('transactions')->where('uuid', $uuid)->lockForUpdate()->first();

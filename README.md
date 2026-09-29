@@ -7,6 +7,10 @@
 <a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
 </p>
 
+## KITA payment setup
+
+See [PayMongo setup](docs/PAYMONGO.md) for test credentials, webhook registration, checkout verification, and live activation. Run `php artisan paymongo:check` to check configuration without exposing keys or making a payment.
+
 ## About Laravel
 
 Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:

@@ -35,7 +35,7 @@
     @foreach($lines as $line)
         <tr><td>{{ $line->name }}</td><td>{{ $line->category ?? 'Not recorded' }}</td><td class="num">{{ $line->orderedQty }}</td><td class="num">{{ $line->deliveredQty ?? 0 }}</td><td class="num">{{ ($line->deliveredQty ?? 0) - $line->orderedQty }}</td><td>{{ $line->unit ?? 'Not recorded' }}</td><td class="num">{{ number_format($line->unitCost, 2) }}</td><td class="num">{{ number_format($line->lineTotal, 2) }}</td></tr>
     @endforeach
-    </tbody><tfoot><tr><th colspan="7">Total ordered value (PHP)</th><td class="num">{{ number_format($order->orderedValue, 2) }}</td></tr></tfoot></table></div>
+    </tbody><tfoot><tr><th colspan="7">Total ordered value (₱)</th><td class="num">{{ number_format($order->orderedValue, 2) }}</td></tr></tfoot></table></div>
     <p class="muted">* Difference = received − ordered. Negative quantities are outstanding; positive quantities are excess. Quantities use the inventory unit shown for each item.</p>
     @if($lines->contains(fn ($line) => (int) $line->deliveredQty !== (int) $line->orderedQty))<p class="notice">Quantity discrepancies remain. This order is not marked fully received.</p>@endif
     <h2>Delivery transactions</h2>

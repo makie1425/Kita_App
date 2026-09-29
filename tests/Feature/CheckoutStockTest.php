@@ -84,7 +84,7 @@ class CheckoutStockTest extends TestCase
     {
         $body = $this->sale() + ['discountType' => 'employee'];
         $this->postJson('/api/transactions', $body)->assertUnprocessable();
-        $body += ['discount_manager_id' => $this->manager->id, 'discount_manager_pin' => '9999', 'discount_reason' => 'Employee'];
+        $body += ['discount_manager_id' => $this->manager->id, 'discount_manager_pin' => '9999', 'discount_reason' => 'PWD'];
         $this->postJson('/api/transactions', $body)->assertUnprocessable();
         $body['discount_manager_pin'] = '1234';
         $this->postJson('/api/transactions', $body)->assertCreated()->assertJsonPath('transaction.total', 9);
@@ -101,6 +101,27 @@ class CheckoutStockTest extends TestCase
         $this->assertDatabaseCount('transactions', 0);
         $this->assertDatabaseCount('stock_movements', 0);
         $this->assertDatabaseHas('products', ['id' => 1, 'stock' => 5]);
+    }
+
+    public function test_discount_reason_accepts_only_pwd_or_senior_citizen(): void
+    {
+        $body = $this->sale() + [
+            'discountType' => 'senior', 'discount_manager_id' => $this->manager->id,
+            'discount_manager_pin' => '1234',
+        ];
+        foreach (['', 'Other', 'Employee', 'custom reason'] as $reason) {
+            $this->postJson('/api/transactions', $body + ['discount_reason' => $reason])
+                ->assertUnprocessable()->assertJsonValidationErrors('discount_reason');
+        }
+        $this->assertDatabaseCount('transactions', 0);
+        $this->assertDatabaseHas('products', ['id' => 1, 'stock' => 5]);
+        foreach (['PWD', 'Senior Citizen'] as $index => $reason) {
+            $uuid = 'TXN-reason-'.$index;
+            $this->postJson('/api/transactions', array_replace($body, [
+                'uuid' => $uuid, 'discount_reason' => $reason,
+            ]))->assertCreated();
+            $this->assertDatabaseHas('discount_approvals', ['transaction_uuid' => $uuid, 'reason' => $reason]);
+        }
     }
 
     public function test_exchange_rejects_unavailable_replacement_and_preserves_original_sale(): void
@@ -203,6 +224,40 @@ class CheckoutStockTest extends TestCase
     {
         $this->postJson('/manager/approval-pin', ['pin' => '4321', 'pin_confirmation' => '4321'])->assertForbidden();
         $this->actingAs($this->manager)->postJson('/manager/approval-pin', ['pin' => '4321', 'pin_confirmation' => '4321', 'current_pin' => '1234'])->assertOk();
+        $this->assertTrue(Hash::check('4321', $this->manager->fresh()->approval_pin));
+    }
+
+    public function test_imported_plain_pin_is_repaired_and_allows_pwd_checkout(): void
+    {
+        DB::table('users')->where('email', $this->manager->email)->update(['approval_pin' => '1234']);
+        $migration = require database_path('migrations/2026_09_29_000001_repair_plain_manager_pins.php');
+        $migration->up();
+        $hash = $this->manager->fresh()->approval_pin;
+        $this->assertTrue(Hash::check('1234', $hash));
+        $migration->up();
+        $this->assertSame($hash, $this->manager->fresh()->approval_pin);
+        $this->postJson('/api/transactions', $this->sale() + [
+            'discountType' => 'senior', 'discount_manager_id' => $this->manager->id,
+            'discount_manager_pin' => '1234', 'discount_reason' => 'PWD',
+        ])->assertCreated();
+        $this->assertDatabaseHas('discount_approvals', ['transaction_uuid' => 'TXN-test', 'manager_id' => $this->manager->id]);
+    }
+
+    public function test_malformed_pin_is_rejected_without_server_error(): void
+    {
+        DB::table('users')->where('email', $this->manager->email)->update(['approval_pin' => 'invalid']);
+        $this->postJson('/api/transactions', $this->sale() + [
+            'discountType' => 'employee', 'discount_manager_id' => $this->manager->id,
+            'discount_manager_pin' => '1234', 'discount_reason' => 'PWD',
+        ])->assertUnprocessable()->assertJsonValidationErrors('discount_manager_pin');
+        $this->actingAs($this->manager->fresh())->postJson('/manager/approval-pin', [
+            'current_pin' => '1234', 'pin' => '4321', 'pin_confirmation' => '4321',
+        ])->assertUnprocessable()->assertJsonValidationErrors('current_pin');
+    }
+
+    public function test_model_hashes_new_approval_pins(): void
+    {
+        $this->manager->forceFill(['approval_pin' => '4321'])->save();
         $this->assertTrue(Hash::check('4321', $this->manager->fresh()->approval_pin));
     }
 

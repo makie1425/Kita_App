@@ -4,7 +4,6 @@ namespace App\Services;
 
 use App\Models\User;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Validation\ValidationException;
 
@@ -20,7 +19,7 @@ class ManagerApproval
 
         // Legacy accounts have role-scoped numeric IDs. Never use User::find here.
         $manager = User::where('id', $managerId)->whereRaw('LOWER(role) = ?', ['manager'])->first();
-        if (! $manager || strtolower($manager->status ?? 'Active') !== 'active' || ! $manager->approval_pin || ! Hash::check($pin, $manager->approval_pin)) {
+        if (! $manager || strtolower($manager->status ?? 'Active') !== 'active' || ! $manager->verifyApprovalPin($pin)) {
             RateLimiter::hit($key, 300);
             RateLimiter::hit($requesterKey, 300);
             throw ValidationException::withMessages([$field => 'The selected active manager or approval PIN is incorrect.']);

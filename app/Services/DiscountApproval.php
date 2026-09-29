@@ -16,7 +16,7 @@ class DiscountApproval
         $data = $request->validate([
             'discount_manager_id' => ['required', 'integer'],
             'discount_manager_pin' => ['required', 'digits:4'],
-            'discount_reason' => ['required', 'string', 'max:255'],
+            'discount_reason' => ['required', 'string', 'in:PWD,Senior Citizen'],
         ]);
         $manager = ManagerApproval::verify($request, $data['discount_manager_id'], $data['discount_manager_pin'], 'discount_manager_pin');
 

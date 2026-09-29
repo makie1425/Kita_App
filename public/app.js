@@ -11,7 +11,7 @@
 };
 
 const mojibakeReplacements = [
-  ["â‚±", "PHP "], ["â€”", " - "], ["â€¦", "..."], ["âˆ’", "-"], ["âš ", "[!]"],
+  ["â‚±", "\u20B1"], ["â€”", " - "], ["â€¦", "..."], ["âˆ’", "-"], ["âš ", "[!]"],
   ["ðŸ”", "[Search]"], ["âœ•", "x"], ["ðŸ”’", "[Lock]"], ["âŸ³", "..."],
   ["â–²", "^"], ["â–¼", "v"], ["Ã—", "x"], ["Â·", " - "], ["ðŸ“·", "[Photo]"],
   ["â†’", "->"], ["â†", "<-"], ["â–¾", "v"], ["ðŸ–¨", "[Print]"], ["âœ“", "[OK]"],
@@ -423,7 +423,7 @@ class Component extends DCLogic {
       }
     }
     const total=Number(this.computeTotals().grandTotal.toFixed(2));
-    if(this.discountNeedsApproval() && (!this.state.discountManagerId || !/^\d{4}$/.test(this.state.discountManagerPin||"") || !(this.state.discountReason||"").trim())){
+    if(this.discountNeedsApproval() && (!this.state.discountManagerId || !/^\d{4}$/.test(this.state.discountManagerPin||"") || !["PWD","Senior Citizen"].includes(this.state.discountReason))){
       this.toast("Discounts require a manager, their 4-digit PIN, and a reason before payment.","error"); return;
     }
     if(this.state.paymentMethod==="cash"){
@@ -503,7 +503,11 @@ class Component extends DCLogic {
         ...(this.state.data.USERS?.manager||[]).filter(m=>m.status==="Active").map(m=>h("option",{key:m.id,value:m.id},m.name)),
       ]),
       h("input",{key:"pin",type:"password",inputMode:"numeric",maxLength:4,autoComplete:"off","aria-label":"Discount manager PIN",placeholder:"Manager 4-digit PIN",value:this.state.discountManagerPin||"",onChange:e=>this.setState({discountManagerPin:e.target.value}),style:{width:"100%",padding:10,marginBottom:8}}),
-      h("input",{key:"reason",maxLength:255,"aria-label":"Discount reason",placeholder:"Reason for discount",value:this.state.discountReason||"",onChange:e=>this.setState({discountReason:e.target.value}),style:{width:"100%",padding:10}}),
+      h("select",{key:"reason",required:true,"aria-label":"Discount reason",value:this.state.discountReason||"",onChange:e=>this.setState({discountReason:e.target.value}),style:{width:"100%",padding:10}},[
+        h("option",{key:"placeholder",value:"",disabled:true},"Select discount reason"),
+        h("option",{key:"pwd",value:"PWD"},"PWD"),
+        h("option",{key:"senior",value:"Senior Citizen"},"Senior Citizen"),
+      ]),
     ]);
   }
 
@@ -991,12 +995,12 @@ class Component extends DCLogic {
         ]),
         h("div",{key:"totals",className:"receipt-section"},[
           row("Subtotal",amount(t.totals.subtotal)),row("Discount","-"+amount(t.totals.discount)),
-          row("TOTAL (PHP)",amount(t.totals.grandTotal),"receipt-total"),
+          row("TOTAL (\u20B1)",amount(t.totals.grandTotal),"receipt-total"),
           row("Items purchased",String(t.cart.reduce((sum,line)=>sum+Number(line.qty),0))),
         ]),
         h("div",{key:"payment",className:"receipt-section"},[
           row("Payment method",t.paymentMode),row("Amount tendered",amount(t.tendered)),
-          row("Amount paid",amount(t.paid)),row("CHANGE (PHP)",amount(t.change),"receipt-emphasis"),
+          row("Amount paid",amount(t.paid)),row("CHANGE (\u20B1)",amount(t.change),"receipt-emphasis"),
           t.referenceNo?row("Reference",t.referenceNo):null,
         ]),
         h("div",{key:"tax",className:"receipt-section receipt-tax"},[
@@ -1192,7 +1196,7 @@ class Component extends DCLogic {
       h('h3',null,supplier?'Add Supplier':'Purchase New Product'),
       field('name','Name'),...(supplier?[field('contact','Contact person'),field('phone','Phone'),field('email','Email','email'),field('address','Address')]:[
         h('label',null,['Category',h('select',{value:f.category||'',onChange:e=>this.setState({[key]:{...f,category:e.target.value}})},[h('option',{value:''},'Select category'),...(this.state.data?.CATEGORIES||[]).filter(c=>c.status==='Active').map(c=>h('option',{key:c.name,value:c.name},c.name))])]),
-        field('quantity','Purchase quantity','number'),field('unit','Inventory unit (e.g. Piece)'),field('barcode','Unique barcode'),field('unitPrice','Unit cost (PHP)','number'),field('price','Retail price (PHP)','number'),h('p',null,'Initial stock is zero. Stock is added only when a delivery is received.')
+        field('quantity','Purchase quantity','number'),field('unit','Inventory unit (e.g. Piece)'),field('barcode','Unique barcode'),field('unitPrice','Unit cost (\u20B1)','number'),field('price','Retail price (\u20B1)','number'),h('p',null,'Initial stock is zero. Stock is added only when a delivery is received.')
       ]),
       btn('Cancel',()=>this.setState({['purchase'+kind+'Open']:false})),btn(supplier?'Save Supplier':'Add New Product to Request',supplier?this.savePurchaseSupplier:this.savePurchaseProduct,'primary')
     ]);
@@ -1549,9 +1553,9 @@ class Component extends DCLogic {
         field("regConversionFactor","Conversion factor",{type:"number",required:true,help:"Number of stock units in one purchase unit."}),
       ]),
       group("03","Pricing","Purchase cost and selling price are recorded separately.",[
-        field("regUnitPrice","Unit price (PHP)",{type:"number",required:true}),
-        field("regCostPrice","Cost price (PHP)",{type:"number",readOnly:true,help:"Calculated from unit price multiplied by initial quantity."}),
-        field("regRetailPrice","Retail price (PHP)",{type:"number",help:"If blank, the unit price is used."}),
+        field("regUnitPrice","Unit price (\u20B1)",{type:"number",required:true}),
+        field("regCostPrice","Cost price (\u20B1)",{type:"number",readOnly:true,help:"Calculated from unit price multiplied by initial quantity."}),
+        field("regRetailPrice","Retail price (\u20B1)",{type:"number",help:"If blank, the unit price is used."}),
       ]),
       group("04","Traceability","Add batch and expiry details when applicable.",[
         field("regBatch","Batch number"),field("regLot","Lot number"),field("regExpiry","Expiration date",{type:"date"}),

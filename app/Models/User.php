@@ -84,6 +84,11 @@ class User extends Authenticatable
         return strtolower((string) ($this->status ?? 'Active')) === 'active';
     }
 
+    public function verifyApprovalPin(string $pin): bool
+    {
+        return is_string($this->approval_pin) && password_verify($pin, $this->approval_pin);
+    }
+
     public function setEmailAttribute(?string $value): void
     {
         $this->attributes['email'] = $value === null ? null : Str::lower(trim($value));
@@ -99,6 +104,7 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'approval_pin' => 'hashed',
         ];
     }
 }
