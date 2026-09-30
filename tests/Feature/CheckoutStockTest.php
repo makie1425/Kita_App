@@ -301,7 +301,7 @@ class CheckoutStockTest extends TestCase
 
     public function test_wallet_cancellation_releases_stock_only_after_remote_confirmation(): void
     {
-        config(['services.paymongo.secret' => 'sk_test_test']);
+        config(['services.paymongo.secret' => 'sk_test_test', 'services.paymongo.webhook_secret' => 'test-signing-secret']);
         Http::fake(['*/checkout_sessions' => Http::response(['data' => ['id' => 'cs_cancel', 'attributes' => ['checkout_url' => 'https://checkout.paymongo.com/cancel']]])]);
         $this->postJson('/api/payments/paymongo/checkout', ['uuid' => 'TXN-cancel', 'provider' => 'GCash', 'stockItems' => [['productId' => 1, 'qty' => 1]]])->assertOk();
         Http::fake(['*/expire' => Http::response([]), '*/checkout_sessions/cs_cancel' => Http::response(['data' => ['id' => 'cs_cancel', 'attributes' => ['status' => 'expired', 'payments' => []]]])]);

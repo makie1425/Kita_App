@@ -21,6 +21,13 @@ Never commit credentials or put secret keys in browser JavaScript. Update the we
 
 ## Verify the complete flow
 
+For scan-to-pay, choose **E-Wallet > QR Ph** in cashier or manager checkout.
+PayMongo's hosted page displays the payment QR; KITA does not generate a personal-wallet transfer QR.
+The requested PHP amount is calculated from stored product prices, quantities, and approved discounts on the server, even if the browser submits a different total.
+QR Ph must be enabled for the PayMongo account. Test keys simulate payment; real scanning requires live credentials and the matching live webhook signing secret.
+Keep the current mode until a test checkout, signed payment confirmation, and duplicate-event handling have been verified.
+Customer GCash authentication stays on the provider's checkout. No manually entered phone or reference number marks a sale paid.
+
 1. Sign in as a cashier or manager, add an available product to the POS cart, choose E-Wallet and a supported provider, and start payment.
 2. Complete the provider's test checkout. The return page refreshes pending status for about two minutes; use Refresh status if delivery takes longer. The transaction must become Paid only after verified webhook delivery. Visiting the success URL alone cannot mark it paid.
 3. Check that stock was deducted once and the sale appears once. Re-delivering the same webhook must not duplicate the sale.

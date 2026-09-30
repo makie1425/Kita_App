@@ -65,6 +65,39 @@ class PayMongoTest extends TestCase
         ], $raw);
     }
 
+    public function test_qr_checkout_uses_exact_server_total_and_confirms_only_once(): void
+    {
+        DB::table('products')->where('id', 1)->update(['price' => 123.45]);
+        Http::fake(['*/checkout_sessions' => Http::response(['data' => ['id' => 'cs_qr', 'attributes' => ['checkout_url' => 'https://checkout.paymongo.com/qr']]])]);
+        $this->postJson('/api/payments/paymongo/checkout', [
+            'uuid' => 'TXN-qr', 'provider' => 'QR Ph', 'total' => 1,
+            'stockItems' => [['productId' => 1, 'qty' => 2]],
+        ])->assertOk()->assertJsonPath('checkoutUrl', 'https://checkout.paymongo.com/qr');
+        Http::assertSent(fn ($r) => $r['data']['attributes']['payment_method_types'] === ['qrph']
+            && $r['data']['attributes']['line_items'][0]['amount'] === 24690
+            && $r['data']['attributes']['line_items'][0]['quantity'] === 1);
+        $this->assertDatabaseHas('transactions', ['uuid' => 'TXN-qr', 'paymentMode' => 'QR Ph', 'total' => 246.90, 'paid' => 0, 'status' => 'Pending Payment']);
+        $this->assertDatabaseHas('products', ['id' => 1, 'stock' => 3]);
+        $this->assertDatabaseCount('sales_log', 0);
+        $session = ['id' => 'cs_qr', 'attributes' => ['metadata' => ['transaction_uuid' => 'TXN-qr'], 'livemode' => false,
+            'payments' => [['id' => 'pay_qr', 'attributes' => ['status' => 'paid', 'currency' => 'PHP', 'amount' => 24690]]]]];
+        Http::fake(['*/checkout_sessions/cs_qr' => Http::response(['data' => $session])]);
+        $this->deliver($session, time())->assertOk();
+        $this->deliver($session, time())->assertOk();
+        $this->assertDatabaseHas('transactions', ['uuid' => 'TXN-qr', 'status' => 'Paid', 'paid' => 246.90]);
+        $this->assertDatabaseHas('products', ['id' => 1, 'stock' => 3]);
+        $this->assertDatabaseCount('sales_log', 1);
+    }
+
+    public function test_missing_webhook_secret_does_not_reserve_stock(): void
+    {
+        config(['services.paymongo.webhook_secret' => null]);
+        $this->checkout()->assertStatus(503);
+        $this->assertDatabaseCount('transactions', 0);
+        $this->assertDatabaseHas('products', ['id' => 1, 'stock' => 5]);
+        Http::assertNothingSent();
+    }
+
     public function test_webhook_rejects_replay_wrong_mode_wrong_amount_and_missing_payment_id(): void
     {
         Http::fake(['*/checkout_sessions' => Http::response(['data' => ['id' => 'cs_example', 'attributes' => ['checkout_url' => 'https://checkout.paymongo.com/example']]])]);

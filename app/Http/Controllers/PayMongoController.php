@@ -16,13 +16,14 @@ class PayMongoController extends Controller
 {
     public function createCheckout(Request $request): JsonResponse
     {
-        $data = $request->validate(SaleCheckout::rules('stockItems') + ['provider' => ['required', 'in:GCash,Maya,GrabPay']]);
+        $data = $request->validate(SaleCheckout::rules('stockItems') + ['provider' => ['required', 'in:GCash,Maya,GrabPay,QR Ph']]);
         $transaction = DB::transaction(function () use ($request, $data) {
             $sale = SaleCheckout::prepare($request, $data, 'stockItems');
             if ($sale['total'] <= 0) {
                 throw ValidationException::withMessages(['total' => 'Wallet payment amount must be greater than zero.']);
             }
             abort_unless(config('services.paymongo.secret'), 503, 'PayMongo is not configured.');
+            abort_unless(config('services.paymongo.webhook_secret'), 503, 'Payment verification is not configured.');
 
             return SaleCheckout::save($request, $data, $sale, 'Pending Payment', $data['provider']);
         }, 3);
@@ -31,7 +32,7 @@ class PayMongoController extends Controller
                 'reference_number' => $data['uuid'],
                 'line_items' => [['currency' => 'PHP', 'amount' => SaleCheckout::cents($transaction['total']), 'name' => 'KITA purchase', 'quantity' => 1]],
                 'payment_method_types' => [match ($data['provider']) {
-                    'GCash' => 'gcash', 'Maya' => 'paymaya', default => 'grab_pay'
+                    'GCash' => 'gcash', 'Maya' => 'paymaya', 'QR Ph' => 'qrph', default => 'grab_pay'
                 }],
                 'description' => 'KITA checkout '.$data['uuid'], 'send_email_receipt' => false, 'show_description' => true, 'show_line_items' => true,
                 'success_url' => url('/payment/success?uuid='.urlencode($data['uuid'])),
