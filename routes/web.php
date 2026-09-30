@@ -44,6 +44,9 @@ Route::view('/payment/success', 'payment-success')->name('payment.success');
 Route::view('/payment/cancelled', 'payment-cancelled')->name('payment.cancelled');
 
 Route::post('/login', [OtpLoginController::class, 'login'])->middleware('guest')->name('login');
+Route::get('/auth/csrf-token', function () {
+    return response()->json(['csrf_token' => csrf_token()])->header('Cache-Control', 'private, no-store');
+})->middleware('throttle:30,1');
 Route::post('/otp/request', [OtpLoginController::class, 'request'])->middleware('guest')->name('otp.request');
 Route::post('/otp/verify', [OtpLoginController::class, 'verify'])->middleware('guest')->name('otp.verify');
 Route::post('/logout', [OtpLoginController::class, 'logout'])->middleware('auth')->name('logout');
