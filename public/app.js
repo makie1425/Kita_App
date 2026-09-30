@@ -423,8 +423,8 @@ class Component extends DCLogic {
       }
     }
     const total=Number(this.computeTotals().grandTotal.toFixed(2));
-    if(this.discountNeedsApproval() && (!this.state.discountManagerId || !/^\d{4}$/.test(this.state.discountManagerPin||"") || !["PWD","Senior Citizen"].includes(this.state.discountReason))){
-      this.toast("Discounts require a manager, their 4-digit PIN, and a reason before payment.","error"); return;
+    if(this.discountNeedsApproval() && (!this.state.discountManagerId || !/^\d{4}$/.test(this.state.discountManagerPin||""))){
+      this.toast("Discounts require a manager and their 4-digit PIN before payment.","error"); return;
     }
     if(this.state.paymentMethod==="cash"){
       if(this.cashTendered(total)===null)return;
@@ -491,9 +491,9 @@ class Component extends DCLogic {
       this.reloadCatalog().catch(()=>{});
     }).finally(()=>{ this.checkoutInFlight=false; this.setState({discountManagerPin:""}); });
   };
-  newSale=()=>{this.checkoutUuid=null;this.setState({cart:[],seniorApplied:false,seniorInfo:null,employeeDiscount:false,paymentState:"idle",tendered:"",transactionResult:null,lateWebhook:false,discountManagerId:"",discountManagerPin:"",discountReason:""});};
+  newSale=()=>{this.checkoutUuid=null;this.setState({cart:[],seniorApplied:false,seniorInfo:null,employeeDiscount:false,paymentState:"idle",tendered:"",transactionResult:null,lateWebhook:false,discountManagerId:"",discountManagerPin:""});};
   discountNeedsApproval=()=>this.computeTotals().discount>0 || this.state.cart.some(l=>l.overridden);
-  discountApprovalPayload=()=>({discountType:this.state.employeeDiscount?"employee":this.state.seniorApplied?"senior":"none",discount_manager_id:this.state.discountManagerId||null,discount_manager_pin:this.state.discountManagerPin||null,discount_reason:this.state.discountReason||null});
+  discountApprovalPayload=()=>({discountType:this.state.employeeDiscount?"employee":this.state.seniorApplied?"senior":"none",discount_manager_id:this.state.discountManagerId||null,discount_manager_pin:this.state.discountManagerPin||null});
   buildDiscountApproval(){
     const h=React.createElement;
     return h("div",{key:"discount-approval",style:{marginTop:12}},[
@@ -503,11 +503,7 @@ class Component extends DCLogic {
         ...(this.state.data.USERS?.manager||[]).filter(m=>m.status==="Active").map(m=>h("option",{key:m.id,value:m.id},m.name)),
       ]),
       h("input",{key:"pin",type:"password",inputMode:"numeric",maxLength:4,autoComplete:"off","aria-label":"Discount manager PIN",placeholder:"Manager 4-digit PIN",value:this.state.discountManagerPin||"",onChange:e=>this.setState({discountManagerPin:e.target.value}),style:{width:"100%",padding:10,marginBottom:8}}),
-      h("select",{key:"reason",required:true,"aria-label":"Discount reason",value:this.state.discountReason||"",onChange:e=>this.setState({discountReason:e.target.value}),style:{width:"100%",padding:10}},[
-        h("option",{key:"placeholder",value:"",disabled:true},"Select discount reason"),
-        h("option",{key:"pwd",value:"PWD"},"PWD"),
-        h("option",{key:"senior",value:"Senior Citizen"},"Senior Citizen"),
-      ]),
+
     ]);
   }
 

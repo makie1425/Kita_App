@@ -103,27 +103,17 @@ class CheckoutStockTest extends TestCase
         $this->assertDatabaseHas('products', ['id' => 1, 'stock' => 5]);
     }
 
-    public function test_discount_reason_accepts_only_pwd_or_senior_citizen(): void
+    public function test_discount_reason_is_derived_without_manual_input(): void
     {
-        $body = $this->sale() + [
-            'discountType' => 'senior', 'discount_manager_id' => $this->manager->id,
-            'discount_manager_pin' => '1234',
-        ];
-        foreach (['', 'Other', 'Employee', 'custom reason'] as $reason) {
-            $this->postJson('/api/transactions', $body + ['discount_reason' => $reason])
-                ->assertUnprocessable()->assertJsonValidationErrors('discount_reason');
-        }
-        $this->assertDatabaseCount('transactions', 0);
-        $this->assertDatabaseHas('products', ['id' => 1, 'stock' => 5]);
-        foreach (['PWD', 'Senior Citizen'] as $index => $reason) {
-            $uuid = 'TXN-reason-'.$index;
-            $this->postJson('/api/transactions', array_replace($body, [
-                'uuid' => $uuid, 'discount_reason' => $reason,
+        foreach (['senior' => 'Senior/PWD discount', 'employee' => 'Employee discount'] as $type => $reason) {
+            $uuid = 'TXN-auto-'.$type;
+            $this->postJson('/api/transactions', array_replace($this->sale(), [
+                'uuid' => $uuid, 'discountType' => $type,
+                'discount_manager_id' => $this->manager->id, 'discount_manager_pin' => '1234',
             ]))->assertCreated();
             $this->assertDatabaseHas('discount_approvals', ['transaction_uuid' => $uuid, 'reason' => $reason]);
         }
     }
-
     public function test_exchange_rejects_unavailable_replacement_and_preserves_original_sale(): void
     {
         $this->postJson('/api/transactions', $this->sale())->assertCreated();

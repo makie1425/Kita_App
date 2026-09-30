@@ -16,12 +16,15 @@ class DiscountApproval
         $data = $request->validate([
             'discount_manager_id' => ['required', 'integer'],
             'discount_manager_pin' => ['required', 'digits:4'],
-            'discount_reason' => ['required', 'string', 'in:PWD,Senior Citizen'],
         ]);
         $manager = ManagerApproval::verify($request, $data['discount_manager_id'], $data['discount_manager_pin'], 'discount_manager_pin');
 
         return ['manager_id' => $manager->id, 'requested_by' => $request->user()->id,
-            'requested_by_role' => $request->user()->role, 'amount' => $discountCents / 100, 'reason' => $data['discount_reason']];
+            'requested_by_role' => $request->user()->role, 'amount' => $discountCents / 100, 'reason' => match ($request->input('discountType', 'none')) {
+                'employee' => 'Employee discount',
+                'senior' => 'Senior/PWD discount',
+                default => 'Promotion / price override',
+            }];
     }
 
     public static function record(string $uuid, ?array $approval): void
