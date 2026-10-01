@@ -135,6 +135,12 @@ function rankedSales(rows){
 }
 function btn(label,onClick,variant){ const styles={primary:{background:COLORS.brand,color:"#fff",border:"none"},ghost:{background:"#fff",color:COLORS.text,border:"1px solid "+COLORS.border},danger:{background:COLORS.redBg,color:COLORS.red,border:"1px solid #f5c6c6"},green:{background:COLORS.greenBg,color:COLORS.green,border:"1px solid #bfe8d3"},amber:{background:COLORS.amberBg,color:COLORS.amber,border:"1px solid #f3e0ac"}};
   return React.createElement("button",{type:"button",className:"kita-button kita-button--"+(variant||"ghost"),onClick,style:Object.assign({padding:"8px 14px",borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer"},styles[variant||"ghost"])},label); }
+function loadingStatus(label){
+  return React.createElement("span",{className:"loading-status",role:"status"},[
+    React.createElement("span",{key:"spinner",className:"loading-spinner","aria-hidden":true}),
+    React.createElement("span",{key:"label"},label)
+  ]);
+}
 class Component extends DCLogic {
   state = {
     data: null,
@@ -327,7 +333,7 @@ class Component extends DCLogic {
       else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}
     }
   };
-  goScreen=key=>()=>{ this.setState({screen:key,sidebarOpen:false}); if(["mgrRequest","mgrRequestView","mgrPurchaseHistory","mgrPO","admPurchasedOrders","admForwarded","admDisapproved","admReceivingApprovals"].includes(key))this.reloadPurchasing().catch(()=>{}); if(key==="saDashboard")this.reloadSaDashboard(); if(["mgrCashiers","admManagers","saAdmins"].includes(key))this.reloadAccounts().catch(error=>this.toast(error.message,"error")); if(key==="shift") this.reloadCatalog().catch(()=>this.toast("Could not refresh shift transactions.","error")); };
+  goScreen=key=>()=>{ this.setState({screen:key,sidebarOpen:false}); if(["mgrRequest","mgrRequestView","mgrPurchaseHistory","mgrPO","admPurchasedOrders","admForwarded","admDisapproved","admReceivingApprovals"].includes(key))this.reloadPurchasing().catch(()=>{}); if(key==="saDashboard")this.reloadSaDashboard(); if(key==="saBackup")this.reloadBackups(); if(["mgrCashiers","admManagers","saAdmins"].includes(key))this.reloadAccounts().catch(error=>this.toast(error.message,"error")); if(key==="shift") this.reloadCatalog().catch(()=>this.toast("Could not refresh shift transactions.","error")); };
 
   simScannerDisconnect=()=>{ this.setState({scannerConnected:false}); this.toast("Scanner disconnected â€” use manual entry.","warn"); };
   simPaymentTimeout=()=>{ if(this.state.paymentState==="processing"||this.state.paymentState==="pending"){ this.setState({paymentState:"timeout"}); this.toast("Payment timed out.","error"); } else this.toast("Start an e-wallet payment first.","warn"); };
@@ -845,14 +851,30 @@ class Component extends DCLogic {
   };
   setReqCartQty=i=>e=>{ const val=e.target.value; this.setState(s=>({newReqCart:s.newReqCart.map((l,idx)=>idx===i?{...l,qty:val}:l)})); };
   toggleRolePerm=(mi,ri)=>()=>this.setState(s=>{ const grid=s.rolesMatrix.grid.map((row,i)=>i===mi?{...row,cells:row.cells.map((c,j)=>j===ri?(c?0:1):c)}:row); return {rolesMatrix:{...s.rolesMatrix,grid}}; });
-  runBackupNow=()=>this.toast("Backup started â€” will complete in ~4 minutes.");
-  restoreBackup=()=>this.toast("Restore requires a second confirmation â€” cancelled (demo).","warn");
+  reloadBackups=async()=>{
+    this.setState({backupLoading:true,backupError:""});
+    try {
+      const response=await fetch('/api/backups',{headers:{Accept:'application/json'},credentials:'same-origin',cache:'no-store'});
+      const body=await response.json(); this.handleSessionResponse(response,body);
+      if(!response.ok)throw new Error(body.message||'Unable to load backups.');
+      this.setState({backupData:body});
+    }catch(error){this.setState({backupError:error.message});}
+    finally{this.setState({backupLoading:false});}
+  };
+  runBackupNow=async()=>{
+    if(this.backupBusy)return;
+    this.backupBusy=true;this.setState({backupBusy:true});
+    try{await this.authPost('/api/backups',{});this.toast('Backup completed.');await this.reloadBackups();}
+    catch(error){this.toast(error.message,'error');}
+    finally{this.backupBusy=false;this.setState({backupBusy:false});}
+  };
+  restoreBackup=id=>()=>this.setState({backupRestoreId:id});
 
   // ===================== SCREEN BUILDERS =====================
   buildPos(){
     const {data,cart,barcodeInput,scannerConnected,manualLookupOpen,manualSearch,seniorPwdOpen,seniorApplied,seniorInfo,seniorForm,employeeDiscount,
       overrideLine,overrideReason,overridePin,paymentMethod,ewalletProvider,tendered,paymentState,reservationSeconds,commitOpen,transactionResult}=this.state;
-    if(!data) return card("Loading catalogâ€¦");
+    if(!data) return card(loadingStatus("Loading catalog..."));
     if(transactionResult) return this.buildTransactionView(transactionResult);
     const totals=this.computeTotals();
     const priorityNote = employeeDiscount ? "Applied: Employee Discount (10%) â€” Senior/PWD & Promotions not stacked" : seniorApplied ? "Applied: Senior/PWD Discount (20% + VAT exemption) â€” Promotions not stacked" : null;
@@ -914,7 +936,7 @@ class Component extends DCLogic {
           ]):React.createElement("select",{key:"ew",value:ewalletProvider,onChange:this.setEwalletProvider,style:{width:"100%",padding:"9px 10px",border:"1px solid "+COLORS.border,borderRadius:8,marginBottom:6}},["GCash","Maya","GrabPay","QR Ph"].map(p=>React.createElement("option",{key:p,value:p},p))),
           paymentMethod==="ewallet" && ewalletProvider==="QR Ph"?React.createElement("div",{key:"qr-help",style:{fontSize:12,color:COLORS.textSoft,marginBottom:8}},"Open checkout to display a QR for "+peso(totals.grandTotal)+". Scan with GCash or a QR Ph-compatible banking app. Payment is confirmed automatically."):null,
           paymentState==="pending"?React.createElement("div",{key:"pend",style:{background:COLORS.amberBg,color:COLORS.amber,padding:"10px",borderRadius:8,fontSize:12,fontWeight:700,marginBottom:8,display:"flex",justifyContent:"space-between"}},[React.createElement("span",{key:"l"},"ðŸ”’ Stock reserved â€” Pending"),React.createElement("span",{key:"t",style:{fontFamily:"'JetBrains Mono',monospace"}},reservationSeconds+"s")]):null,
-          paymentState==="processing"?React.createElement("div",{key:"proc",style:{background:COLORS.blueBg,color:COLORS.blue,padding:"10px",borderRadius:8,fontSize:12,fontWeight:700,marginBottom:8}},"âŸ³ Processingâ€¦"):null,
+          paymentState==="processing"?React.createElement("div",{key:"proc",style:{background:COLORS.blueBg,color:COLORS.blue,padding:"10px",borderRadius:8,fontSize:12,fontWeight:700,marginBottom:8}},loadingStatus("Processing payment...")):null,
           paymentState==="authorized"?React.createElement("div",{key:"auth",style:{background:COLORS.blueBg,color:COLORS.blue,padding:"10px",borderRadius:8,fontSize:12,fontWeight:700,marginBottom:8}},"Authorized â€” finalizingâ€¦"):null,
           (paymentState==="failed"||paymentState==="timeout")?React.createElement("div",{key:"fail",style:{background:COLORS.redBg,color:COLORS.red,padding:"10px",borderRadius:8,fontSize:12,fontWeight:700,marginBottom:8}},[React.createElement("div",{key:"m"},paymentState==="timeout"?"Timed out â€” reservation released.":"Payment failed."),React.createElement("div",{key:"a",style:{display:"flex",gap:8,marginTop:6}},[btn("Retry",this.retryPayment),btn("Switch to Cash",this.switchToCash)])]):null,
           paymentState==="cancelled"?React.createElement("div",{key:"c",style:{background:"#eef0f4",color:COLORS.textSoft,padding:"10px",borderRadius:8,fontSize:12,fontWeight:700,marginBottom:8}},"Payment cancelled."):null,
@@ -1063,7 +1085,7 @@ class Component extends DCLogic {
   }
   buildShift(){
     const {data}=this.state;
-    if(!data) return card("Loading shift transactions...");
+    if(!data) return card(loadingStatus("Loading shift transactions..."));
     const me=this.currentUser();
     const today=data.BUSINESS_DATE;
     const transactions=(data.TRANSACTIONS||[]).filter(t=>t.date===today && (t.cashierId!=null?String(t.cashierId)===String(this.state.authenticatedUser?.id)&&String(t.cashierRole).toLowerCase().replace(/[ _-]/g,"")===this.state.role:t.cashierEmail?t.cashierEmail===me.email:t.cashier===me.name));
@@ -1166,7 +1188,7 @@ class Component extends DCLogic {
   purchasingState(){
     const h=React.createElement;
     if(this.state.purchaseError)return h('div',{role:'alert',className:'alert'},[this.state.purchaseError,btn('Retry',()=>this.reloadPurchasing().catch(()=>{}))]);
-    if(!this.state.purchaseData)return h('p',{role:'status'},['Loading purchase records...',btn('Load records',()=>this.reloadPurchasing().catch(()=>{}))]);
+    if(!this.state.purchaseData)return h('p',{role:'status'},[loadingStatus('Loading purchase records...'),btn('Load records',()=>this.reloadPurchasing().catch(()=>{}))]);
     return null;
   }
   purchaseReportLink=id=>React.createElement('a',{className:'kita-button',href:`/purchase-orders/${encodeURIComponent(id)}/report`,target:'_blank',rel:'noopener'},'View / Print Report');
@@ -1252,7 +1274,7 @@ class Component extends DCLogic {
         this.purchaseRequestDetails()
       ]);
     }
-    if(!s.data)return h('p',null,'Loading inventory and suppliers...');
+    if(!s.data)return h('p',null,loadingStatus('Loading inventory and suppliers...'));
     return h('div',null,[sectionTitle('Create Purchase Request','Choose one supplier per PO. Quantities are in inventory units; stock changes only after receiving.'),
       h('div',{className:'purchase-filters'},[h('label',null,['Supplier',h('select',{value:s.newReqSupplier||'',onChange:e=>this.setState({newReqSupplier:e.target.value})},[h('option',{value:''},'Select supplier'),...s.data.SUPPLIERS.filter(sp=>sp.status==='Active'&&!sp.archivedAt).map(sp=>h('option',{key:sp.id,value:sp.id},sp.name))])]),!s.purchaseProductOpen?btn('+ Add Items',this.openItemPicker,'primary'):null]),
       s.purchaseProductOpen?this.purchaseQuickForm('Product'):null,
@@ -1313,7 +1335,7 @@ class Component extends DCLogic {
       h('div',{className:'purchase-filters'},[h('label',null,['Delivery reference',h('input',{readOnly:true,value:'Assigned automatically from '+order.id,'aria-label':'Automatic delivery reference'})]),h('label',null,['Date received',h('input',{type:'date',max:this.state.data?.BUSINESS_DATE,value:this.state.receiveDate,onChange:e=>this.setState({receiveDate:e.target.value})})])]),
       h('label',{className:'purchase-notes'},['Receiving notes (required for excess delivery)',h('textarea',{maxLength:2000,value:this.state.receiveNotes,onChange:e=>this.setState({receiveNotes:e.target.value})})]),
       this.state.receiveError?h('p',{role:'alert',className:'alert'},this.state.receiveError):null,
-      h('button',{className:'primary-button',disabled:!!this.state.receivingSaving,onClick:this.confirmPurchaseReceiving},this.state.receivingSaving?'Posting delivery...':'Confirm Receipt'),btn('Back',()=>this.setState({purchaseReceivingId:null})),this.purchaseReportLink(order.id)
+      h('button',{className:'primary-button',disabled:!!this.state.receivingSaving,"aria-busy":!!this.state.receivingSaving,onClick:this.confirmPurchaseReceiving},this.state.receivingSaving?'Posting delivery...':'Confirm Receipt'),btn('Back',()=>this.setState({purchaseReceivingId:null})),this.purchaseReportLink(order.id)
     ]);
     return h('div',null,[sectionTitle('Stock Receiving','Open an approved PO after delivery. Inventory posts once for each confirmed delivery.'),this.state.lastReceivedPo?h('div',{className:'sa-panel',role:'status'},['Delivery saved. View the receiving inspection and any missing-item report: ',this.purchaseReportLink(this.state.lastReceivedPo)]):null,this.purchaseFilters(),
       this.recordTable('purchase-receiving',['PO ID','Supplier','Items','Status','Actions'],this.filterPurchases(this.state.purchaseData.orders).map(o=>tr([td(o.id),td(o.supplierName||this.purchaseSupplier(o.supplierId)),td(o.lines.map(l=>`${l.name}: ${l.deliveredQty||0} / ${l.orderedQty} ${this.purchaseUnit(l)}`).join(', ')),td(badge(o.status)),td([(['Approved / Waiting for Delivery','Partially Received','Approved','Ordered'].includes(o.status)||(o.status==='Draft'&&o.request?.status==='Approved'))?btn('Receive Stock',()=>this.openPurchaseReceiving(o),'primary'):null,this.purchaseReportLink(o.id)])],o.id)))
@@ -1604,7 +1626,7 @@ class Component extends DCLogic {
       ]),
       h("div",{key:"save",className:"form-actions"},[
         h("span",{className:"form-action-note"},"Choose an active supplier before requesting a purchase."),
-        h("button",{type:"button",className:"primary-button",disabled:!!s.registrationSaving,onClick:this.saveRegistration},s.registrationSaving?"Saving product...":s.regSaved?"Product registered":"Save product registration"),
+        h("button",{type:"button",className:"primary-button",disabled:!!s.registrationSaving,"aria-busy":!!s.registrationSaving,onClick:this.saveRegistration},s.registrationSaving?"Saving product...":s.regSaved?"Product registered":"Save product registration"),
       ]),
       s.regSaved?h("div",{key:"print",className:"kita-card registration-receipt"},[
         h("h2",{className:"panel-title"},"Registration complete"),h("p",null,`Stock ID: ${s.regSku} | Barcode: ${s.regBarcode} | Initial quantity: ${s.regRegisteredQty}`),
@@ -2047,7 +2069,7 @@ class Component extends DCLogic {
   };
   buildSaDashboard(){
     const h=React.createElement,d=this.state.saDashboard;
-    if(this.state.saLoading)return h("div",{className:"sa-skeleton",role:"status","aria-busy":true},"Loading system performance and user activity...");
+    if(this.state.saLoading)return h("div",{className:"sa-skeleton",role:"status","aria-busy":true},loadingStatus("Loading system performance and user activity..."));
     if(this.state.saError)return h("div",{className:"sa-error",role:"alert"},[h("p",null,this.state.saError),btn("Retry",this.reloadSaDashboard,"primary")]);
     if(!d)return h("p",{role:"status"},"System information has not been loaded yet.");
     const ms=value=>value<0.01?"< 0.01 ms":value.toFixed(2)+" ms";
@@ -2073,10 +2095,29 @@ class Component extends DCLogic {
         React.createElement("tbody",{key:"b"},rolesMatrix.grid.map((row,mi)=>tr([td(row.module,{fontWeight:600}),...row.cells.map((c,ri)=>td(React.createElement("div",{onClick:this.toggleRolePerm(mi,ri),style:{width:36,height:20,borderRadius:10,background:c?COLORS.green:"#e3e6ec",position:"relative",cursor:"pointer",margin:"0 auto"}},React.createElement("div",{style:{width:16,height:16,borderRadius:"50%",background:"#fff",position:"absolute",top:2,left:c?18:2}})),{textAlign:"center"}))],mi)))
       ]))]);
   }
-  buildSaBackup(){ return React.createElement("div",null,[sectionTitle("Backup Configuration"),
-    React.createElement("div",{style:{display:"flex",gap:14,marginBottom:16,flexWrap:"wrap"}},[kpi("RPO Target","24h",null,COLORS.green),kpi("RTO Target","4h",null,COLORS.green),kpi("Last Backup","2026-07-24 03:00")]),
-    card([React.createElement("div",{key:"t",style:{fontWeight:800,marginBottom:10}},"Schedule: Daily at 03:00"),
-      React.createElement("div",{key:"a",style:{display:"flex",gap:10}},[btn("Run Backup Now",this.runBackupNow,"primary"),btn("Restore from Backup",this.restoreBackup)])])]); }
+  buildSaBackup(){
+    const h=React.createElement,d=this.state.backupData,items=d?.backups||[],id=this.state.backupRestoreId;
+    return h("div",null,[sectionTitle("Backup Configuration","Encrypted database snapshots"),
+      this.state.backupError&&h("p",{role:"alert",style:{color:COLORS.red}},this.state.backupError),
+      card([
+        h("p",null,d?`Daily schedule: ${d.schedule} (${d.timezone}). Retention: ${d.retention_days} days.`:"Loading backup configuration..."),
+        h("p",null,"Automatic backups require the server scheduler to be running. Download copies to separate storage to protect against server loss. Includes database records; uploaded files require a separate backup."),
+        h("p",null,`Last completed backup: ${items[0]?new Date(items[0].created_at).toLocaleString():"No backups recorded"}`),
+        h("div",{style:{display:"flex",gap:10}},[
+          h("button",{style:{padding:"9px 16px",borderRadius:8,border:"none",background:COLORS.brand,color:"#fff",fontWeight:700,cursor:this.state.backupBusy?"wait":"pointer",opacity:this.state.backupBusy?0.6:1},disabled:!!this.state.backupBusy,"aria-busy":!!this.state.backupBusy,onClick:this.runBackupNow},this.state.backupBusy?"Creating backup...":"Run Backup Now"),
+          btn(this.state.backupLoading?"Loading...":"Refresh",this.reloadBackups)
+        ])
+      ]),
+      this.recordTable("backups",["Created","Size","Actions"],items.map(item=>tr([
+        td(new Date(item.created_at).toLocaleString()),td(`${(item.bytes/1024).toFixed(1)} KB`),
+        td(h("div",{style:{display:"flex",gap:12}},[h("a",{href:`/api/backups/${encodeURIComponent(item.id)}/download`},"Download"),btn("Restore instructions",this.restoreBackup(item.id))]) )
+      ],item.id))),
+      id&&card([h("strong",null,"Restore replaces current database records"),
+        h("p",null,"Ask your server administrator to stop queue workers and other writers, enable maintenance mode, and run these commands. A safety backup is created first. Keep the original application encryption key to decrypt backups."),
+        h("pre",{style:{whiteSpace:"pre-wrap",overflowWrap:"anywhere"}},`php artisan down\nphp artisan backup:restore ${id} --confirm=${id}`),
+        h("p",null,"Verify restored data, reconcile payments made since the snapshot, then run php artisan up and restart workers. See docs/BACKUPS.md for recovery instructions."),btn("Close",()=>this.setState({backupRestoreId:null}))])
+    ]);
+  }
   buildSaAudit(){ const {data}=this.state; if(!data) return null;
     return React.createElement("div",null,[sectionTitle("Audit Logs & Activity","Append-only â€” export or flag for review, no edit/delete"),
       this.recordTable("audit",["Timestamp","User","Action","Record","Changes"],data.AUDIT_LOGS.map((a,i)=>tr([td(a.ts,{fontFamily:"'JetBrains Mono',monospace",fontSize:12}),td(a.user),td(badge(a.action)),td(a.record),td(auditChanges(a.before,a.after,data.PRODUCTS))],i))),
@@ -2129,7 +2170,8 @@ class Component extends DCLogic {
 
     return {
       sidebarClass:s.sidebarOpen?"sidebar sidebar--open":"sidebar",sidebarOpen:s.sidebarOpen,toggleSidebar:this.toggleSidebar,closeSidebar:this.closeSidebar,onShellKeyDown:this.onShellKeyDown,
-      dataLoading:(s.pendingLoads||0)>0,dataError:s.dataError,activePortalColor:activePortal.fg,activePortalBg:activePortal.bg,activePortalIcon:activePortal.icon,activePortalLabel:activePortal.label,activePortalDesc:activePortal.desc,backToPortalSelect:this.backToPortalSelect,
+      dataLoading:(s.pendingLoads||0)>0||!!s.purchaseLoading||!!s.backupLoading||!!s.backupBusy,
+      dataLoadingLabel:s.backupBusy?"Creating your backup...":s.backupLoading?"Loading backups...":s.purchaseLoading?"Loading purchase records...":"Loading your workspace data...",dataError:s.dataError,activePortalColor:activePortal.fg,activePortalBg:activePortal.bg,activePortalIcon:activePortal.icon,activePortalLabel:activePortal.label,activePortalDesc:activePortal.desc,backToPortalSelect:this.backToPortalSelect,
       showLogin,showOtp,showApp,loginUsername:s.loginUsername,onUsernameChange:this.onUsernameChange,loginPassword:s.loginPassword,onPasswordChange:this.onPasswordChange,
       otpEmail:s.otpEmail,otpCode:s.otpCode,onOtpChange:this.onOtpChange,verifyOtp:this.verifyOtp,backToPassword:this.backToPassword,
       loginIdentifierLabel:"Email",loginIdentifierPlaceholder:"name@example.com",showPasswordInput:true,

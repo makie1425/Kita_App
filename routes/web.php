@@ -1,18 +1,28 @@
 <?php
 
 use App\Http\Controllers\AccountController;
+use App\Http\Controllers\BackupController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\KitaDataController;
 use App\Http\Controllers\ManagerPinController;
+use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\OperationsController;
 use App\Http\Controllers\OtpLoginController;
 use App\Http\Controllers\PayMongoController;
 use App\Http\Controllers\ProductController;
+use App\Http\Controllers\PurchasingController;
+use App\Http\Controllers\SuperAdminDashboardController;
 use App\Http\Controllers\TransactionController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
     return view('kita');
+});
+
+Route::middleware('role:super_admin')->prefix('api/backups')->group(function () {
+    Route::get('/', [BackupController::class, 'index']);
+    Route::post('/', [BackupController::class, 'store'])->middleware('throttle:3,1');
+    Route::get('/{id}/download', [BackupController::class, 'download']);
 });
 
 Route::get('/api/kita-data', KitaDataController::class)->middleware('role:cashier,manager,admin,super_admin')->name('kita.data');
@@ -53,17 +63,17 @@ Route::post('/logout', [OtpLoginController::class, 'logout'])->middleware('auth'
 
 Route::post('/manager/approval-pin', [ManagerPinController::class, 'store'])->middleware(['role:manager', 'throttle:5,1']);
 
-Route::get('/api/super-admin/dashboard', \App\Http\Controllers\SuperAdminDashboardController::class)->middleware('role:super_admin');
+Route::get('/api/super-admin/dashboard', SuperAdminDashboardController::class)->middleware('role:super_admin');
 
 Route::middleware('role:manager,admin')->group(function () {
-    Route::get('/api/purchasing', [\App\Http\Controllers\PurchasingController::class, 'index']);
-    Route::post('/api/suppliers', [\App\Http\Controllers\PurchasingController::class, 'supplier']);
-    Route::get('/purchase-orders/{id}/report', [\App\Http\Controllers\PurchasingController::class, 'report']);
+    Route::get('/api/purchasing', [PurchasingController::class, 'index']);
+    Route::post('/api/suppliers', [PurchasingController::class, 'supplier']);
+    Route::get('/purchase-orders/{id}/report', [PurchasingController::class, 'report']);
 });
-Route::post('/api/purchase-orders/{id}/receive', [\App\Http\Controllers\PurchasingController::class, 'receive'])->middleware('role:manager');
+Route::post('/api/purchase-orders/{id}/receive', [PurchasingController::class, 'receive'])->middleware('role:manager');
 
 Route::middleware('role:cashier,manager,admin,super_admin')->group(function () {
-    Route::get('/api/notifications', [\App\Http\Controllers\NotificationController::class, 'index']);
-    Route::patch('/api/notifications/read-all', [\App\Http\Controllers\NotificationController::class, 'readAll']);
-    Route::patch('/api/notifications/{id}/read', [\App\Http\Controllers\NotificationController::class, 'read']);
+    Route::get('/api/notifications', [NotificationController::class, 'index']);
+    Route::patch('/api/notifications/read-all', [NotificationController::class, 'readAll']);
+    Route::patch('/api/notifications/{id}/read', [NotificationController::class, 'read']);
 });

@@ -832,7 +832,13 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .registration-receipt .record-page-size { margin-right: 12px; }
 .registration-receipt input { width: 80px; padding: 8px; }
 .loading-banner { display: flex; align-items: center; gap: 10px; padding: 12px 16px; margin-bottom: 20px; border: 1px solid #dce5ff; border-radius: 8px; background: var(--brand-bg); color: var(--brand-dark); font-size: 12px; }
-.loading-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--brand); animation: pulse 1.2s ease infinite; }
+.loading-spinner { display: inline-block; width: 22px; height: 22px; flex: 0 0 auto; box-sizing: border-box; border: 3px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; vertical-align: middle; }
+.loading-status { display: inline-flex; align-items: center; gap: 10px; }
+button .loading-spinner { width: 16px; height: 16px; border-width: 2px; }
+button[aria-busy="true"]::before { content: ""; display: inline-block; width: 16px; height: 16px; box-sizing: border-box; margin-right: 8px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; vertical-align: middle; animation: spin .8s linear infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .loading-spinner, button[aria-busy="true"]::before { animation: none !important; }
+}
 .auth-page { background: var(--bg); }
 .auth-card { border-radius: 16px; box-shadow: 0 12px 40px rgba(15,31,74,.06); }
 @media screen and (max-width: 767px) {

@@ -107,7 +107,7 @@
               <div class="notif-menu" id="notification-panel" role="region" aria-label="Your notifications">
                 <div class="notif-toolbar"><strong>Notifications</strong><button type="button" onClick="{{ closeNotifications }}" aria-label="Close notifications">&#215;</button></div>
                 <div class="notif-toolbar"><button type="button" onClick="{{ markAllNotifications }}">Mark all as read</button><button type="button" onClick="{{ retryNotifications }}">Refresh</button></div>
-                <sc-if value="{{ notificationLoading }}"><div class="empty-state" role="status">Loading notifications...</div></sc-if>
+                <sc-if value="{{ notificationLoading }}"><div class="empty-state loading-status" role="status"><span class="loading-spinner" aria-hidden="true"></span>Loading notifications...</div></sc-if>
                 <sc-if value="{{ notificationError }}"><div class="alert" role="alert">{{ notificationError }}</div></sc-if>
                 <sc-for list="{{ mgrNotifItems }}" as="n" hint-placeholder-count="2">
                   <button type="button" class="{{ n.className }}" onClick="{{ n.onClick }}">
@@ -126,7 +126,7 @@
     </header>
 
     <section class="content-area" aria-label="Page content" aria-busy="{{ dataLoading }}">
-      <sc-if value="{{ dataLoading }}"><div class="loading-banner" role="status"><span class="loading-dot"></span> Loading your workspace data...</div></sc-if>
+      <sc-if value="{{ dataLoading }}"><div class="loading-banner" role="status"><span class="loading-spinner" aria-hidden="true"></span> {{ dataLoadingLabel }}</div></sc-if>
       <sc-if value="{{ dataError }}"><div class="alert" role="alert">{{ dataError }}</div></sc-if>
       {{ activeScreen }}
     </section>

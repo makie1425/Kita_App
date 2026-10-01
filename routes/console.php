@@ -1,11 +1,31 @@
 <?php
 
 use App\Models\User;
+use App\Services\DatabaseBackup;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Schedule;
 use Illuminate\Support\Facades\Validator;
+
+Artisan::command('backup:run', function (DatabaseBackup $backups) {
+    $this->info('Backup created: '.$backups->create());
+    $backups->prune();
+})->purpose('Create an encrypted database snapshot and prune expired backups');
+
+Artisan::command('backup:restore {id} {--confirm=}', function (DatabaseBackup $backups) {
+    if ($this->option('confirm') !== $this->argument('id')) {
+        $this->error('Restore replaces current data. Pass --confirm with the exact backup filename.');
+
+        return 1;
+    }
+    $safety = $backups->restore($this->argument('id'));
+    $this->info('Database restored. Safety backup: '.$safety.'. Verify data before running artisan up.');
+})->purpose('Restore a matching database snapshot in maintenance mode');
+
+Schedule::command('backup:run')
+    ->dailyAt(config('backup.time'))->timezone(config('backup.timezone'))->withoutOverlapping();
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
