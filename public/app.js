@@ -91,20 +91,24 @@ function auditChanges(before, after, products) {
   return React.createElement("dl",{className:"audit-changes"},changes.map(change=>React.createElement("div",{key:change.key,className:"audit-change"},[
     React.createElement("dt",{key:"field"},change.label),
     React.createElement("dd",{key:"values"},[
-      React.createElement("div",{key:"before"},[React.createElement("span",{className:"audit-value-label"},"Before"),change.before]),
-      React.createElement("div",{key:"after"},[React.createElement("span",{className:"audit-value-label"},"After"),change.after]),
+      React.createElement("div",{key:"before"},[React.createElement("span",{className:"audit-value-label"},"Before"),statusValue(change.before)]),
+      React.createElement("div",{key:"after"},[React.createElement("span",{className:"audit-value-label"},"After"),statusValue(change.after)]),
     ]),
   ])));
 }
 function statusStyle(status) {
-  const s = (status||"").toLowerCase();
-  if (/(inactive|rejected|disapproved|failed|cancelled|blocked|quarantine|discrepancy|damaged|declined)/.test(s)) return {bg:COLORS.redBg,fg:COLORS.red};
-  if (/(active|approved|paid|delivered|resolved|closed|full|fully received|inventory updated|completed)/.test(s) && !/pending|not/.test(s)) return {bg:COLORS.greenBg,fg:COLORS.green};
-  if (/(pending|draft|scheduled|partial|processing|awaiting|proceed to purchase|subject to reorder)/.test(s)) return {bg:COLORS.amberBg,fg:COLORS.amber};
-  if (/(unused|informational)/.test(s)) return {bg:COLORS.blueBg,fg:COLORS.blue};
-  if (/(system|auto|forwarded)/.test(s)) return {bg:COLORS.purpleBg,fg:COLORS.purple};
+  const s = String(status||"").toLowerCase().replace(/[_-]+/g," ");
+  if (/\b(inactive|rejected|disapproved|failed|cancelled|canceled|blocked|quarantine|discrepancy|damaged|declined|void|voided|expired|timeout)\b|timed out/.test(s)) return {bg:COLORS.redBg,fg:"#b91c1c"};
+  if (/\b(released|release|refunded|refund|reversed)\b/.test(s)) return {bg:COLORS.blueBg,fg:"#1d4ed8"};
+  if (/\b(pending|unpaid|draft|scheduled|partial|partially|processing|awaiting|waiting|reserved|reservation|outstanding)\b|proceed to purchase|subject to reorder|not paid/.test(s)) return {bg:COLORS.amberBg,fg:COLORS.amber};
+  if (/\b(active|approved|paid|delivered|resolved|closed|full|completed|confirmed|checkout)\b|fully received|inventory updated/.test(s)) return {bg:COLORS.greenBg,fg:"#15803d"};
+  if (/\b(unused|informational|system|auto|forwarded)\b/.test(s)) return {bg:COLORS.blueBg,fg:"#1d4ed8"};
   return {bg:"#eef0f4",fg:COLORS.textSoft};
 }
+function statusValue(value) {
+  return /^(pending payment|paid|unpaid|cancelled|canceled|active|inactive|partially refunded|refunded|voided|failed|expired|payment reserved|payment reservation|payment reservation released|payment confirmed)$/i.test(String(value))?badge(value):value;
+}
+
 function peso(n){ n=Number(n)||0; return "â‚±"+n.toLocaleString("en-PH",{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function badge(status){ const c=statusStyle(status); return React.createElement("span",{className:"status-badge",style:{background:c.bg,color:c.fg,fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:20,display:"inline-block",whiteSpace:"nowrap"}},status); }
 function card(children, style){ return React.createElement("div",{className:"kita-card",style:Object.assign({background:COLORS.surface,border:"1px solid "+COLORS.border,borderRadius:12,padding:18},style||{})},children); }
@@ -953,7 +957,7 @@ class Component extends DCLogic {
           paymentState==="processing"?React.createElement("div",{key:"proc",style:{background:COLORS.blueBg,color:COLORS.blue,padding:"10px",borderRadius:8,fontSize:12,fontWeight:700,marginBottom:8}},loadingStatus("Processing payment...")):null,
           paymentState==="authorized"?React.createElement("div",{key:"auth",style:{background:COLORS.blueBg,color:COLORS.blue,padding:"10px",borderRadius:8,fontSize:12,fontWeight:700,marginBottom:8}},"Authorized â€” finalizingâ€¦"):null,
           (paymentState==="failed"||paymentState==="timeout")?React.createElement("div",{key:"fail",style:{background:COLORS.redBg,color:COLORS.red,padding:"10px",borderRadius:8,fontSize:12,fontWeight:700,marginBottom:8}},[React.createElement("div",{key:"m"},paymentState==="timeout"?"Timed out â€” reservation released.":"Payment failed."),React.createElement("div",{key:"a",style:{display:"flex",gap:8,marginTop:6}},[btn("Retry",this.retryPayment),btn("Switch to Cash",this.switchToCash)])]):null,
-          paymentState==="cancelled"?React.createElement("div",{key:"c",style:{background:"#eef0f4",color:COLORS.textSoft,padding:"10px",borderRadius:8,fontSize:12,fontWeight:700,marginBottom:8}},"Payment cancelled."):null,
+          paymentState==="cancelled"?React.createElement("div",{key:"c",style:{background:COLORS.redBg,color:COLORS.red,padding:"10px",borderRadius:8,fontSize:12,fontWeight:700,marginBottom:8}},"Payment cancelled."):null,
           React.createElement("div",{key:"actions",style:{display:"flex",gap:8}},[
             (paymentState==="idle"||paymentState==="failed"||paymentState==="timeout"||paymentState==="cancelled")?React.createElement("button",{key:"pay",onClick:this.startPayment,style:{flex:1,padding:"11px",background:COLORS.brand,color:"#fff",border:"none",borderRadius:8,fontWeight:800,cursor:"pointer"}},"Charge "+peso(totals.grandTotal)):null,
             (paymentState==="pending"||paymentState==="processing")?React.createElement("button",{key:"cancel",onClick:this.cancelPayment,style:{flex:1,padding:"11px",background:"#fff",border:"1px solid "+COLORS.border,borderRadius:8,fontWeight:700,cursor:"pointer"}},"Cancel"):null,
@@ -2035,7 +2039,7 @@ class Component extends DCLogic {
         h("label",null,["Role ",h("select",{value:this.state.acctRoleFilter,onChange:e=>{this.setState({acctRoleFilter:e.target.value});this.setTableView("accounts",{page:1});}},[h("option",{value:""},"All roles"),...roles.map(r=>h("option",{value:r,key:r},r))])]),
         h("label",null,["Status ",h("select",{value:this.state.acctStatusFilter,onChange:e=>{this.setState({acctStatusFilter:e.target.value});this.setTableView("accounts",{page:1});}},[h("option",{value:""},"All statuses"),...['Active','Inactive'].map(v=>h("option",{value:v,key:v},v))])])
       ]),
-      this.recordTable("accounts",["Name","Email / Username","Role","Status","Created","Last OTP login","Actions"],(accountsLocal||[]).filter(a=>(!this.state.acctRoleFilter||a.role===this.state.acctRoleFilter)&&(!this.state.acctStatusFilter||a.status===this.state.acctStatusFilter)).map(a=>tr([td(a.name),td([h("div",null,a.email),h("small",null,a.username||"")]),td(a.role),td(h("span",{className:"sa-status "+(a.status==="Active"?"sa-status--healthy":"sa-status--inactive")},a.status.toUpperCase())),td(a.dateCreated||"Not recorded"),td(a.lastOtpLogin||"Not recorded"),td([btn("Edit",this.openAcctModal("edit",a)),btn(a.status==="Active"?"Deactivate Account":"Activate Account",()=>this.changeAccountStatus(a))])],a.role+"-"+a.id))),
+      this.recordTable("accounts",["Name","Email / Username","Role","Status","Created","Last OTP login","Actions"],(accountsLocal||[]).filter(a=>(!this.state.acctRoleFilter||a.role===this.state.acctRoleFilter)&&(!this.state.acctStatusFilter||a.status===this.state.acctStatusFilter)).map(a=>tr([td(a.name),td([h("div",null,a.email),h("small",null,a.username||"")]),td(a.role),td(h("span",{className:"sa-status "+(a.status==="Active"?"sa-status--healthy":"sa-status--inactive")},a.status.toUpperCase())),td(a.dateCreated||"Not recorded"),td(a.lastOtpLogin||"Not recorded"),td([btn("Edit",this.openAcctModal("edit",a)),btn(a.status==="Active"?"Deactivate":"Activate",()=>this.changeAccountStatus(a))])],a.role+"-"+a.id))),
       acctModalOpen?h("div",{key:"modal",style:{position:"fixed",inset:0,background:"rgba(15,31,74,0.38)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:50,padding:16}},
         h("div",{role:"dialog","aria-modal":true,"aria-label":acctModalMode==="create"?"Create Account":"Edit Account",style:{width:400,maxHeight:"85vh",overflowY:"auto",background:"#fff",borderRadius:14,padding:20}},[
           h("h3",{key:"title"},acctModalMode==="create"?"Create Account":"Edit Account"),input("name","Full Name"),input("email","Email","email"),input("username","Employee ID (optional)"),
@@ -2097,7 +2101,7 @@ class Component extends DCLogic {
         h("section",{className:"sa-panel"},[h("h2",null,"Recorded User Activity"),h("p",{className:"sa-note"},"Audit events per day across the last 7 completed calendar days (application timezone). Average = total recorded events / 7, including days with no events. This is not a login count."),
           d.activity_days.some(day=>day.events)?h("div",{className:"sa-chart"},d.activity_days.map(day=>h("div",{className:"sa-chart-row",key:day.date},[h("span",null,day.date),h("div",{className:"sa-chart-track"},h("div",{className:"sa-chart-bar",style:{width:(day.events/max*100)+"%"}})),h("strong",null,day.events)]))):h("p",{className:"record-empty"},"No user activity data is available yet.")])
       ]),
-      h("section",{className:"sa-panel"},[h("h2",null,"Recent System Activity"),d.recent_activity.length?this.recordTable("sa-recent",["Time","User","Action","Record"],d.recent_activity.map((event,i)=>tr([td(event.ts),td(event.user),td(event.action),td(event.record)],i))):h("p",null,"No user activity data is available yet.")]),
+      h("section",{className:"sa-panel"},[h("h2",null,"Recent System Activity"),d.recent_activity.length?this.recordTable("sa-recent",["Time","User","Action","Record"],d.recent_activity.map((event,i)=>tr([td(event.ts),td(event.user),td(badge(event.action)),td(event.record)],i))):h("p",null,"No user activity data is available yet.")]),
       h("p",{className:"sa-note"},"Measured at "+new Date(d.measured_at).toLocaleString()+". Login history and reliable current-session counts are not recorded by this dashboard.")
     ]);
   }

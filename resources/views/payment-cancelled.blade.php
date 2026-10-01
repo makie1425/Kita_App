@@ -1,11 +1,11 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Payment status | KITA</title><link rel="stylesheet" href="{{ asset('styles.css') }}"></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Payment status | KITA</title><link rel="stylesheet" href="{{ asset('styles.css') }}?v={{ filemtime(public_path('styles.css')) }}"></head>
 <body class="auth-page payment-page"><main class="auth-card"><div class="auth-card__bar"></div><div class="auth-card__body">
-<img class="kita-logo" src="{{ asset('images/kita-logo.jpg') }}" alt="KITA - Money. Managed. Smarter." width="150" height="150"><h1 class="auth-title">Payment status</h1><p id="payment-status" role="status">Checking transaction status...</p>
+<img class="kita-logo" src="{{ asset('images/kita-logo.jpg') }}" alt="KITA - Money. Managed. Smarter." width="150" height="150"><h1 class="auth-title">Payment status</h1><p id="payment-status" class="payment-status-note" data-status-tone="pending" role="status">Checking transaction status...</p>
 <button id="refresh-payment" class="primary-button" type="button">Refresh status</button>
 <a id="resume-payment" class="primary-button" hidden>Resume payment</a>
-<button id="cancel-payment" class="primary-button" hidden>Cancel payment and release stock</button>
+<button id="cancel-payment" class="primary-button" data-action-tone="red" hidden>Cancel payment and release stock</button>
 <a class="primary-button" href="{{ url('/') }}">Return to KITA</a>
 </div></main>
 <script>
@@ -19,6 +19,7 @@ async function check(){
   try {
     const r=await fetch('/api/transactions/'+encodeURIComponent(uuid),{headers:{Accept:'application/json'}});
     const data=await r.json();if(!r.ok)throw new Error(data.message||'Sign in to view this transaction.');
+    message.dataset.statusTone=data.status==='Pending Payment'?'pending':['Paid','Unused'].includes(data.status)?'success':['Cancelled','Failed','Expired','Voided'].includes(data.status)?'danger':'info';
     message.textContent='Transaction '+data.uuid+': '+data.status+'.';
     cancel.hidden=data.status!=='Pending Payment';
     resume.hidden=true;
@@ -30,7 +31,7 @@ async function check(){
       message.textContent+=' Stock remains reserved until payment or cancellation is confirmed.';
       if(++attempts<40)refreshTimer=setTimeout(check,3000);
     }
-  }catch(e){message.textContent=e.message;}
+  }catch(e){message.dataset.statusTone='danger';message.textContent=e.message;}
 }
 cancel.onclick=async()=>{
   clearTimeout(refreshTimer);
@@ -38,8 +39,8 @@ cancel.onclick=async()=>{
   try{
     const r=await fetch('/api/payments/paymongo/'+encodeURIComponent(uuid)+'/cancel',{method:'POST',headers:{Accept:'application/json','X-CSRF-TOKEN':csrf}});
     const data=await r.json();if(!r.ok)throw new Error(data.message||'Cancellation failed.');
-    message.textContent=data.message;cancel.hidden=true;resume.hidden=true;
-  }catch(e){message.textContent=e.message;}finally{cancel.disabled=false;}
+    message.dataset.statusTone='info';message.textContent=data.message;cancel.hidden=true;resume.hidden=true;
+  }catch(e){message.dataset.statusTone='danger';message.textContent=e.message;}finally{cancel.disabled=false;}
 };
 document.getElementById('refresh-payment').onclick=()=>{attempts=0;check();};
 check();
