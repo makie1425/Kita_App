@@ -23,10 +23,24 @@ function cleanMojibake(value) {
   return mojibakeReplacements.reduce((text, [broken, clean]) => text.split(broken).join(clean), value);
 }
 const originalCreateElement = React.createElement;
+function actionTone(label) {
+  const text=String(label||"").trim().replace(/^[+\s]+/,"");
+  if (/^(cancel|close|deactivate|inactive|delete|remove|reject|decline|void|log out|flag|move to archive)\b/i.test(text)) return "red";
+  if (/^(activate|active|approve|confirm|save|saving|create|add|submit|receive|restore|apply|mark all|posting)\b/i.test(text)) return "green";
+  if (/^(edit|view|print|download|export|refresh|refreshing|retry|load|loading|look up|search|back|next|previous|clear|reset|run backup|creating|start|charge|purchase|register|request|copy|switch|sign in|signing|verify|verifying)\b/i.test(text)) return "blue";
+  return null;
+}
 React.createElement = (type, props, ...children) => {
   let cleanProps = props && typeof props === "object" ? Object.fromEntries(
     Object.entries(props).map(([key, value]) => [key, cleanMojibake(value)])
   ) : props;
+  if (type === "button") {
+    const label=children.flat(Infinity).filter(value=>typeof value==="string"||typeof value==="number").map(cleanMojibake).join(" ");
+    const classes=cleanProps?.className||"";
+    const explicitDanger=classes.includes("kita-button--danger")||cleanProps?.style?.color===COLORS.red||cleanProps?.style?.background===COLORS.red;
+    const tone=cleanProps?.['data-action-tone']||(explicitDanger?"red":actionTone(label))||(classes.includes("kita-button--green")?"green":classes.includes("kita-button")?"blue":null);
+    if(tone)cleanProps={...cleanProps,'data-action-tone':tone};
+  }
   // Shared presentation hooks for the existing screen builders; event props stay intact.
   if (typeof type === "string" && cleanProps?.style) {
     const style=cleanProps.style, classes=[cleanProps.className||""];
@@ -2110,7 +2124,7 @@ class Component extends DCLogic {
       ]),
       this.recordTable("backups",["Created","Size","Actions"],items.map(item=>tr([
         td(new Date(item.created_at).toLocaleString()),td(`${(item.bytes/1024).toFixed(1)} KB`),
-        td(h("div",{style:{display:"flex",gap:12}},[h("a",{href:`/api/backups/${encodeURIComponent(item.id)}/download`},"Download"),btn("Restore instructions",this.restoreBackup(item.id))]) )
+        td(h("div",{style:{display:"flex",gap:12}},[h("a",{className:"kita-button",href:`/api/backups/${encodeURIComponent(item.id)}/download`},"Download"),btn("Restore instructions",this.restoreBackup(item.id))]) )
       ],item.id))),
       id&&card([h("strong",null,"Restore replaces current database records"),
         h("p",null,"Ask your server administrator to stop queue workers and other writers, enable maintenance mode, and run these commands. A safety backup is created first. Keep the original application encryption key to decrypt backups."),

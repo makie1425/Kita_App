@@ -864,7 +864,7 @@ button[aria-busy="true"]::before { content: ""; display: inline-block; width: 16
 .sa-performance-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 0;border-bottom:1px solid #e4e7ec}
 .sa-status{display:inline-block;padding:5px 9px;border-radius:20px;font-size:11px;font-weight:700}
 .sa-status--healthy{background:#e8f8ee;color:#15803d}
-.sa-status--inactive{background:#f2f4f7;color:#667085}
+.sa-status--inactive{background:#fdeaea;color:#b91c1c}
 .sa-note{font-size:12px;color:#667085;line-height:1.7}
 .sa-chart-row{display:grid;grid-template-columns:90px 1fr 35px;gap:10px;align-items:center;margin:12px 0;font-size:12px}
 .sa-chart-track{height:12px;background:#eaf0ff;border-radius:6px;overflow:hidden}
@@ -1001,3 +1001,28 @@ textarea { resize: vertical; }
   .kita-card, .sa-panel, .grocery-receipt { box-shadow: none; }
   .kita-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
 }
+
+/* Shared action colors, including legacy buttons with inline styles. */
+button[data-action-tone="red"], .logout-button, .drawer-close,
+.notif-toolbar button[aria-label="Close notifications"] {
+  --action-color: #b91c1c; --action-hover: #991b1b;
+}
+button[data-action-tone="green"] { --action-color: #15803d; --action-hover: #166534; }
+button[data-action-tone="blue"], a.kita-button, .notif-more,
+.notif-toolbar button:not([aria-label]), .link-button {
+  --action-color: #1747e8; --action-hover: #1236b8;
+}
+button[data-action-tone], .logout-button, .drawer-close, a.kita-button,
+.notif-toolbar button, .notif-more, .link-button {
+  background: var(--action-color) !important;
+  color: #fff !important;
+  border: 1px solid var(--action-color) !important;
+  border-radius: 8px;
+}
+a.kita-button { padding: 8px 14px; text-decoration: none; }
+button[data-action-tone]:hover:not(:disabled), .logout-button:hover,
+.drawer-close:hover, a.kita-button:hover, .notif-toolbar button:hover:not(:disabled),
+.notif-more:hover:not(:disabled), .link-button:hover:not(:disabled) {
+  background: var(--action-hover) !important; border-color: var(--action-hover) !important;
+}
+button[data-action-tone]:disabled { opacity: .55; cursor: not-allowed; }
