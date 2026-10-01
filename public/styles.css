@@ -837,7 +837,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 button .loading-spinner { width: 16px; height: 16px; border-width: 2px; }
 button[aria-busy="true"]::before { content: ""; display: inline-block; width: 16px; height: 16px; box-sizing: border-box; margin-right: 8px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; vertical-align: middle; animation: spin .8s linear infinite; }
 @media (prefers-reduced-motion: reduce) {
-  .loading-spinner, button[aria-busy="true"]::before { animation: none !important; }
+  /* Keep progress visible even when the OS disables decorative animations. */
+  .loading-spinner, button[aria-busy="true"]::before { animation: spin 2s linear infinite !important; }
 }
 .auth-page { background: var(--bg); }
 .auth-card { border-radius: 16px; box-shadow: 0 12px 40px rgba(15,31,74,.06); }
