@@ -983,12 +983,9 @@ class Component extends DCLogic {
     const q=manualSearch.trim().toLowerCase();
     const results=catalog.filter(p=>(!manualCategory||categoryOf(p)===manualCategory)&&(p.name.toLowerCase().includes(q)||categoryOf(p).toLowerCase().includes(q)));
     return h("div",{key:"mlm",style:{position:"fixed",inset:0,background:"rgba(15,31,74,0.38)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:50,padding:16}},
-      h("div",{role:"dialog","aria-modal":true,"aria-label":"Manual Product Lookup",style:{width:520,maxWidth:"100%",maxHeight:"80vh",background:"#fff",borderRadius:14,padding:20,overflowY:"auto"}},[
-        h("div",{key:"title",style:{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,position:"sticky",top:-20,zIndex:2,background:"#fff",padding:"8px 0",marginBottom:14}},[
-          h("span",{key:"text",style:{fontWeight:800}},"Manual Product Lookup"),
-          h("button",{key:"dismiss",type:"button","aria-label":"Close manual product lookup",title:"Close","data-action-tone":"red",onClick:this.closeManualLookup,style:{width:40,height:40,flexShrink:0,display:"inline-flex",alignItems:"center",justifyContent:"center",borderRadius:8,cursor:"pointer"}},
-            h("svg",{width:20,height:20,viewBox:"0 0 24 24",fill:"none",stroke:"currentColor",strokeWidth:2,"aria-hidden":true},h("path",{d:"M6 6l12 12M18 6L6 18"}))),
-        ]),
+      h("div",{role:"dialog","aria-modal":true,"aria-label":"Manual Product Lookup",style:{width:520,maxWidth:"100%",maxHeight:"80vh",background:"#fff",borderRadius:14,display:"flex",flexDirection:"column",overflow:"hidden"}},[
+        h("div",{key:"body",style:{minHeight:0,overflowY:"auto",padding:20}},[
+        h("div",{key:"title",style:{fontWeight:800,marginBottom:14}},"Manual Product Lookup"),
         h("label",{key:"label",htmlFor:"manual-category",style:{display:"block",fontSize:12,fontWeight:700,marginBottom:6}},"Category"),
         h("select",{key:"category",id:"manual-category",value:manualCategory,onChange:e=>this.setState({manualCategory:e.target.value}),style:{width:"100%",padding:10,border:"1px solid "+COLORS.border,borderRadius:8,marginBottom:10}},[
           h("option",{key:"all",value:""},"All categories"),
@@ -1007,7 +1004,9 @@ class Component extends DCLogic {
           }),
         ])),
         !results.length?h("p",{key:"empty",style:{textAlign:"center",padding:16,color:COLORS.textSoft}},"No products match. Try another category or search."):null,
-        h("button",{key:"close",onClick:this.closeManualLookup,style:{marginTop:12,width:"100%",padding:10,background:"#f7f9fc",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer"}},"Close"),
+        ]),
+        h("div",{key:"footer",style:{flexShrink:0,padding:"12px 20px",background:"#fff",borderTop:"1px solid "+COLORS.border}},
+          h("button",{key:"close",type:"button",onClick:this.closeManualLookup,style:{width:"100%",minHeight:44,padding:10,background:COLORS.red,color:"#fff",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer"}},"Close")),
       ]));
   }
   buildSeniorModal(){ const {seniorForm}=this.state; return React.createElement("div",{key:"sm",style:{position:"fixed",inset:0,background:"rgba(15,31,74,0.38)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:50}},
