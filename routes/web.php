@@ -10,6 +10,7 @@ use App\Http\Controllers\OperationsController;
 use App\Http\Controllers\OtpLoginController;
 use App\Http\Controllers\PayMongoController;
 use App\Http\Controllers\ProductController;
+use App\Http\Controllers\ProductMasterController;
 use App\Http\Controllers\PurchasingController;
 use App\Http\Controllers\SuperAdminDashboardController;
 use App\Http\Controllers\TransactionController;
@@ -76,4 +77,10 @@ Route::middleware('role:cashier,manager,admin,super_admin')->group(function () {
     Route::get('/api/notifications', [NotificationController::class, 'index']);
     Route::patch('/api/notifications/read-all', [NotificationController::class, 'readAll']);
     Route::patch('/api/notifications/{id}/read', [NotificationController::class, 'read']);
+});
+
+Route::middleware('role:manager,admin,super_admin')->group(function () {
+    Route::post('/api/product-master/{kind}', [ProductMasterController::class, 'save'])->whereIn('kind', ['brands', 'subcategories']);
+    Route::patch('/api/product-master/{kind}/{id}', [ProductMasterController::class, 'save'])->whereIn('kind', ['brands', 'subcategories'])->whereNumber('id');
+    Route::get('/api/inventory-history', [ProductMasterController::class, 'inventory']);
 });

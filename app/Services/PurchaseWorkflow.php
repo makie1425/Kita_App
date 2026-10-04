@@ -25,6 +25,7 @@ class PurchaseWorkflow
             'lines.*.supplierId' => ['nullable', 'integer'],
         ]);
         $hash = hash('sha256', json_encode($data));
+
         return DB::transaction(function () use ($request, $data, $hash) {
             InventoryRules::lockActor($request);
             $sequence = DB::table('inventory_sequences')->where('name', 'purchase_orders')->lockForUpdate()->first();
@@ -64,7 +65,7 @@ class PurchaseWorkflow
                 if (! $unit) {
                     throw ValidationException::withMessages(['lines' => 'Set the inventory unit before requesting this item.']);
                 }
-                $lines[$product->id] = ['requestId' => $id, 'productId' => $product->id, 'name' => $product->name,
+                $lines[$product->id] = ['requestId' => $id, 'productId' => $product->id, 'name' => InventoryRules::productLabel($product),
                     'category' => $product->category, 'unit' => $unit, 'qty' => $qty, 'supplierId' => $supplierId,
                     'unitCost' => InventoryRules::unitCost($product)];
             }
@@ -94,6 +95,7 @@ class PurchaseWorkflow
             'lines.*.productId' => ['required', 'integer', 'distinct'],
             'lines.*.qty' => ['required', 'integer', 'between:1,1000000'],
         ]);
+
         return DB::transaction(function () use ($request, $data, $id) {
             InventoryRules::lockActor($request);
             $record = DB::table('item_requests')->where('id', $id)->lockForUpdate()->first();
@@ -167,7 +169,9 @@ class PurchaseWorkflow
             }
             DB::table('item_requests')->where('id', $id)->update($values);
             InventoryRules::audit($request->user()->name, 'Purchase review: '.$data['action'], $id, json_encode($before), json_encode($data));
-            $label = match ($data['action']) { 'approved' => 'Approved', 'disapproved' => 'Declined', default => 'Updated' };
+            $label = match ($data['action']) {
+                'approved' => 'Approved', 'disapproved' => 'Declined', default => 'Updated'
+            };
             WorkflowNotifications::send([WorkflowNotifications::owner($record->requestedById, $record->requestedByRole), $request->user()], $request->user(),
                 'Purchase request '.$label, 'PO '.$id.' was '.strtolower($label).' by '.$request->user()->name.'.'.(! empty($data['note']) ? ' '.$data['note'] : ''), 'purchase', $id);
 

@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\FifoInventory;
 use App\Services\ManagerApproval;
 use App\Services\SaleCheckout;
 use App\Services\StockMovement;
+use App\Services\WorkflowNotifications;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\JsonResponse;
@@ -169,6 +171,9 @@ class TransactionController extends Controller
                     StockMovement::record($line->productId, $before, $after, $action, $uuid, $request->user());
                     $product->stock = $after;
                 }
+                if (! $restock) {
+                    FifoInventory::returnStock($line->productId, $return['qty'], $uuid, false);
+                }
                 DB::table('transaction_lines')->where('id', $line->id)->update([
                     'refundedQty' => $return['newQty'], 'refundedAmount' => $return['cumulative'] / 100, 'updated_at' => now(),
                 ]);
@@ -192,7 +197,7 @@ class TransactionController extends Controller
             $refunded = $action === 'exchange' ? 0 : SaleCheckout::cents($transaction->refundedAmount) + $refundCents;
             DB::table('transactions')->where('uuid', $uuid)->update(['status' => $status, 'refundedAmount' => $refunded / 100, 'refundDate' => now()->toDateString()]);
             SaleCheckout::audit($request->user()->name, ucfirst($action).' approved by '.$manager->name, $uuid, $transaction->status, $status.'; '.$data['reason']);
-            \App\Services\WorkflowNotifications::send([$request->user(), $manager], $request->user(), ucfirst($action).' approved',
+            WorkflowNotifications::send([$request->user(), $manager], $request->user(), ucfirst($action).' approved',
                 'Transaction '.$uuid.': '.$action.' approved by '.$manager->name.'.', 'activity', $uuid);
 
             return response()->json(['message' => ucfirst($action).' approved by '.$manager->name.'.', 'status' => $status,

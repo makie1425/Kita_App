@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Services\InventoryRules;
-use App\Services\StockMovement;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -31,12 +30,11 @@ class ProductController extends Controller
                     throw ValidationException::withMessages(['id' => 'Stock ID already exists.']);
                 }
                 $product = $this->productValues($validated) + [
-                    'id' => $id, 'minStock' => 0, 'parentId' => null, 'variantLabel' => '',
+                    'id' => $id, 'parentId' => null, 'variantLabel' => '',
                     'barcodeStatus' => 'Scanned', 'archivedAt' => null, 'archivedBy' => null,
                 ];
-                $product['registrationQuantity'] = $validated['stock'];
+                $product['registrationQuantity'] = 0;
                 DB::table('products')->insert($product);
-                StockMovement::record($id, 0, $validated['stock'], 'registration', (string) $id, $request->user());
                 InventoryRules::audit($request->user()->name, 'Registered item', (string) $id, null, json_encode($product));
                 DB::table('inventory_sequences')->where('name', 'products')->update(['lastValue' => max($latest, $id)]);
 
@@ -61,16 +59,27 @@ class ProductController extends Controller
                 if (isset($validated['id']) && (int) $validated['id'] !== (int) $id) {
                     throw ValidationException::withMessages(['id' => 'Stock ID cannot be changed.']);
                 }
-                if ($validated['stock'] !== (int) $existing->stock) {
-                    throw ValidationException::withMessages(['stock' => 'Use a stock adjustment to change the quantity.']);
+                if (isset($validated['stock']) && $validated['stock'] !== (int) $existing->stock) {
+                    throw ValidationException::withMessages(['stock' => 'Stock is changed only by receiving or outgoing transactions.']);
                 }
+                $validated['stock'] = (int) $existing->stock;
                 $values = $this->productValues($validated);
+                foreach (['brandId', 'subcategoryId', 'size', 'sizeUnit', 'minStock'] as $field) {
+                    if (! array_key_exists($field, $validated)) {
+                        $values[$field] = $existing->{$field};
+                    }
+                }
+                if ($values['subcategoryId'] && ! DB::table('subcategories')->where('id', $values['subcategoryId'])->where('category', $values['category'])->exists()) {
+                    throw ValidationException::withMessages(['subcategoryId' => 'Choose a subcategory belonging to the selected category.']);
+                }
+                if (($existing->stock > 0 || DB::table('inventory_batches')->where('productId', $id)->exists()) && $values['stockUnit'] !== $existing->stockUnit) {
+                    throw ValidationException::withMessages(['stockUnit' => 'Cannot change the inventory unit after inventory history exists.']);
+                }
                 $priceChanged = (float) $existing->price !== (float) $values['price'] || (float) $existing->unitPrice !== (float) $values['unitPrice'];
                 if ($priceChanged && ! trim((string) $request->input('reason'))) {
                     throw ValidationException::withMessages(['reason' => 'A reason is required for price changes.']);
                 }
-                $values['cost'] = $existing->registrationQuantity === null ? $existing->cost
-                    : InventoryRules::lineTotal($existing->registrationQuantity, $values['unitPrice'], 'unitPrice', 99999999.99);
+                $values['cost'] = $existing->cost;
                 DB::table('products')->where('id', $id)->update($values);
                 foreach (['price', 'unitPrice'] as $field) {
                     if ((float) $existing->{$field} !== (float) $values[$field]) {
@@ -105,7 +114,12 @@ class ProductController extends Controller
             'vatClass' => ['nullable', Rule::in(['VATable', 'VAT-Exempt', 'Zero-Rated'])],
             'price' => InventoryRules::moneyRules(),
             'unitPrice' => InventoryRules::moneyRules(),
-            'stock' => ['required', 'integer', 'min:0', 'max:2147483647'],
+            'stock' => ['sometimes', 'integer', 'min:0', $id === null ? 'max:0' : 'max:2147483647'],
+            'brandId' => ['nullable', 'integer', Rule::exists('brands', 'id')->where('status', 'Active')],
+            'subcategoryId' => [Rule::requiredIf($id === null && DB::table('subcategories')->where('category', $request->input('category'))->where('status', 'Active')->exists()), 'nullable', 'integer', Rule::exists('subcategories', 'id')->where('category', $request->input('category'))->where('status', 'Active')],
+            'size' => ['nullable', 'required_with:sizeUnit', 'numeric', 'gt:0', 'max:999999999', 'decimal:0,3'],
+            'sizeUnit' => ['nullable', 'required_with:size', Rule::in(['mL', 'Liter', 'g', 'kg', 'cm', 'm', 'Piece'])],
+            'minStock' => ['sometimes', 'integer', 'min:0', 'max:2147483647'],
             'barcode' => ['required', 'string', 'max:80', Rule::unique('products', 'barcode')->ignore($id)],
             'supplierId' => ['nullable', 'integer', Rule::exists('suppliers', 'id')->where('status', 'Active')->whereNull('archivedAt')],
             'batch' => ['nullable', 'string', 'max:40'],
@@ -121,11 +135,11 @@ class ProductController extends Controller
             'category.exists' => 'Select an active category.', 'supplierId.exists' => 'Select an active supplier.',
             'stock.integer' => 'Quantity must be a whole number.', 'stock.min' => 'Quantity must not be negative.',
         ]);
-        $validated['stock'] = (int) $validated['stock'];
+        $validated['stock'] = isset($validated['stock']) ? (int) $validated['stock'] : null;
         $validated['vatClass'] = $validated['vatClass'] ?? 'VAT-Exempt';
         // Current stock may differ from the initial registration quantity after movements.
         // Update computes cost from the locked original record instead.
-        $validated['cost'] = $id === null ? InventoryRules::lineTotal($validated['stock'], $validated['unitPrice'], 'unitPrice', 99999999.99) : 0;
+        $validated['cost'] = 0;
 
         return $validated;
     }
@@ -135,7 +149,9 @@ class ProductController extends Controller
         return [
             'name' => $validated['name'], 'category' => $validated['category'], 'vatClass' => $validated['vatClass'],
             'price' => $validated['price'], 'unitPrice' => $validated['unitPrice'], 'cost' => $validated['cost'],
-            'stock' => $validated['stock'], 'unit' => trim($validated['stockUnit']), 'status' => $validated['status'] ?? 'Active',
+            'stock' => $validated['stock'] ?? 0,
+            'brandId' => $validated['brandId'] ?? null, 'subcategoryId' => $validated['subcategoryId'] ?? null,
+            'size' => $validated['size'] ?? null, 'sizeUnit' => $validated['sizeUnit'] ?? null, 'minStock' => $validated['minStock'] ?? 0, 'unit' => trim($validated['stockUnit']), 'status' => $validated['status'] ?? 'Active',
             'batch' => $validated['batch'] ?? '', 'lot' => $validated['lot'] ?? '', 'expiry' => $validated['expiry'] ?? null,
             'barcode' => $validated['barcode'], 'supplierId' => $validated['supplierId'] ?? null,
             'purchaseUnit' => trim($validated['purchaseUnit']), 'stockUnit' => trim($validated['stockUnit']),

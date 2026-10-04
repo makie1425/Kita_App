@@ -28,7 +28,7 @@ class ManagementWorkflowTest extends TestCase
 
     private function item(array $replace = []): array
     {
-        return array_replace(['name' => 'Mask', 'category' => 'Medical', 'vatClass' => 'VATable', 'price' => '12.50', 'unitPrice' => '3.25', 'stock' => 4, 'barcode' => 'MASK001', 'supplierId' => 1, 'purchaseUnit' => 'Piece', 'stockUnit' => 'Piece', 'conversionFactor' => 1, 'status' => 'Active'], $replace);
+        return array_replace(['name' => 'Mask', 'category' => 'Medical', 'vatClass' => 'VATable', 'price' => '12.50', 'unitPrice' => '3.25', 'stock' => 0, 'barcode' => 'MASK001', 'supplierId' => 1, 'purchaseUnit' => 'Piece', 'stockUnit' => 'Piece', 'conversionFactor' => 1, 'status' => 'Active'], $replace);
     }
 
     private function createItem(): int
@@ -36,15 +36,15 @@ class ManagementWorkflowTest extends TestCase
         return $this->postJson('/api/products', $this->item())->assertCreated()->json('product.id');
     }
 
-    public function test_item_registration_calculates_cost_and_protects_unique_stock_id(): void
+    public function test_item_registration_starts_empty_and_protects_unique_stock_id(): void
     {
         $id = $this->createItem();
-        $this->assertDatabaseHas('products', ['id' => $id, 'cost' => 13, 'unitPrice' => 3.25, 'registrationQuantity' => 4]);
+        $this->assertDatabaseHas('products', ['id' => $id, 'cost' => 0, 'unitPrice' => 3.25, 'registrationQuantity' => 0, 'stock' => 0]);
         $this->postJson('/api/products', $this->item(['id' => $id, 'barcode' => 'NEW']))->assertUnprocessable()->assertJsonValidationErrors('id');
         $this->postJson('/api/products', $this->item())->assertUnprocessable()->assertJsonValidationErrors('barcode');
         $id2 = $this->postJson('/api/products', $this->item(['barcode' => 'MASK002']))->assertCreated()->json('product.id');
         $this->assertNotEquals($id, $id2);
-        $this->assertDatabaseCount('stock_movements', 2);
+        $this->assertDatabaseCount('stock_movements', 0);
     }
 
     public function test_invalid_items_fail_without_saving(): void
@@ -74,7 +74,7 @@ class ManagementWorkflowTest extends TestCase
         $id = $this->createItem();
         DB::table('products')->where('id', $id)->update(['stock' => 2]);
         $this->patchJson('/api/products/'.$id, $this->item(['stock' => 2, 'unitPrice' => 4, 'reason' => 'New supplier price']))->assertOk();
-        $this->assertDatabaseHas('products', ['id' => $id, 'stock' => 2, 'cost' => 16, 'registrationQuantity' => 4]);
+        $this->assertDatabaseHas('products', ['id' => $id, 'stock' => 2, 'cost' => 0, 'registrationQuantity' => 0]);
         $this->patchJson('/api/products/'.$id, $this->item(['stock' => 3]))->assertUnprocessable();
         $this->assertDatabaseCount('field_version_history', 1);
     }
@@ -93,28 +93,30 @@ class ManagementWorkflowTest extends TestCase
         $id = $this->createItem();
         DB::table('products')->where('id', $id)->update(['stock' => 100000000]);
         $this->patchJson('/api/products/'.$id, $this->item(['stock' => 100000000, 'unitPrice' => 4, 'reason' => 'Updated unit cost']))
-            ->assertOk()->assertJsonPath('product.cost', 16);
-        $this->assertDatabaseHas('products', ['id' => $id, 'stock' => 100000000, 'registrationQuantity' => 4, 'cost' => 16]);
+            ->assertOk()->assertJsonPath('product.cost', fn ($value) => (float) $value === 0.0);
+        $this->assertDatabaseHas('products', ['id' => $id, 'stock' => 100000000, 'registrationQuantity' => 0, 'cost' => 0]);
     }
 
     public function test_adjustments_require_admin_and_preserve_history(): void
     {
         $id = $this->createItem();
-        foreach ([3, -2] as $delta) {
+        DB::table('products')->where('id', $id)->update(['stock' => 4]);
+        foreach ([-1, -2] as $delta) {
             $adjustment = $this->actingAs($this->manager)->postJson('/api/inventory/adjustments', ['productId' => $id, 'qtyChange' => $delta, 'reason' => 'Count correction', 'comment' => 'Count checked'])->assertCreated()->json('id');
             $this->patchJson('/api/inventory/adjustments/'.$adjustment, ['status' => 'Approved'])->assertForbidden();
             $this->actingAs($this->admin)->patchJson('/api/inventory/adjustments/'.$adjustment, ['status' => 'Approved'])->assertOk();
             $this->patchJson('/api/inventory/adjustments/'.$adjustment, ['status' => 'Approved'])->assertConflict();
             $this->patchJson('/api/inventory/adjustments/'.$adjustment, ['status' => 'Rejected'])->assertConflict();
         }
-        $this->assertDatabaseHas('products', ['id' => $id, 'stock' => 5]);
+        $this->assertDatabaseHas('products', ['id' => $id, 'stock' => 1]);
         $this->assertDatabaseCount('adjustments', 2);
-        $this->assertDatabaseCount('stock_movements', 3);
+        $this->assertDatabaseCount('stock_movements', 2);
     }
 
     public function test_adjustment_rechecks_stock_at_approval(): void
     {
         $id = $this->createItem();
+        DB::table('products')->where('id', $id)->update(['stock' => 4]);
         $body = ['productId' => $id, 'qtyChange' => -4, 'reason' => 'Damage', 'comment' => 'Broken'];
         $adjustment = $this->postJson('/api/inventory/adjustments', $body)->assertCreated()->json('id');
         DB::table('products')->where('id', $id)->update(['stock' => 1]);

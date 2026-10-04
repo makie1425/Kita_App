@@ -78,7 +78,7 @@ class SaleCheckout
             if ($subtotal > 9999999999 || $total > 9999999999) {
                 throw ValidationException::withMessages([$itemsKey => 'The order amount is too large.']);
             }
-            $lines[] = ['productId' => $product->id, 'name' => $product->name,
+            $lines[] = ['productId' => $product->id, 'name' => InventoryRules::productLabel($product),
                 'stockId' => (string) $product->id, 'unit' => $product->stockUnit ?? $product->unit,
                 'qty' => (int) $item['qty'], 'unitPrice' => $unitPrice / 100,
                 'discountAmount' => ($base - $net) / 100, 'lineTotal' => $net / 100, 'stockBefore' => (int) $product->stock];

@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\FifoInventory;
 use App\Services\InventoryRules;
 use App\Services\PurchaseWorkflow;
 use App\Services\StockMovement;
+use App\Services\WorkflowNotifications;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -50,6 +52,9 @@ class PurchasingController extends Controller
             'lines' => ['required', 'array', 'min:1', 'max:500'],
             'lines.*.productId' => ['required', 'integer', 'distinct'],
             'lines.*.qty' => ['required', 'integer', 'between:1,1000000'],
+            'lines.*.unitCost' => ['sometimes', ...InventoryRules::moneyRules()],
+            'lines.*.batchNumber' => ['nullable', 'string', 'max:80'],
+            'lines.*.expiryDate' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:receivedDate'],
         ]);
         // Generated from the PO and receiving version; ignore client-supplied references.
         $data['deliveryReference'] = $id.'-R'.str_pad((string) ($data['version'] + 1), 3, '0', STR_PAD_LEFT);
@@ -84,6 +89,7 @@ class PurchasingController extends Controller
             abort_if($orderLines->pluck('productId')->duplicates()->isNotEmpty(), 409, 'This legacy PO has duplicate item lines and requires reconciliation before receiving.');
             $receiptId = 'RCV-'.Str::ulid();
             DB::table('receiving_records')->insert(['id' => $receiptId, 'poId' => $id]);
+            $receivedCents = 0;
             foreach ($data['lines'] as $line) {
                 $ordered = $orderLines->firstWhere('productId', $line['productId']);
                 if (! $ordered) {
@@ -101,6 +107,10 @@ class PurchasingController extends Controller
                 if ($received > $ordered->orderedQty && ! trim($data['notes'] ?? '')) {
                     throw ValidationException::withMessages(['notes' => 'Explain the excess delivery before posting it.']);
                 }
+                $cost = (float) ($line['unitCost'] ?? $ordered->unitCost);
+                $receivedCents += (int) round(InventoryRules::lineTotal($line['qty'], $cost) * 100);
+                FifoInventory::opening($product->id, (int) $product->stock);
+                FifoInventory::receive($product->id, $line['qty'], $cost, $data['receivedDate'], $receiptId, $order->supplierId, 'purchase_receiving', $line['batchNumber'] ?? null, $line['expiryDate'] ?? null);
                 DB::table('products')->where('id', $product->id)->update(['stock' => $after]);
                 StockMovement::record($product->id, $product->stock, $after, 'purchase_receiving', $receiptId, $request->user());
                 DB::table('purchase_order_lines')->where('id', $ordered->id)->update(['deliveredQty' => $received]);
@@ -109,6 +119,7 @@ class PurchasingController extends Controller
                     'receivingId' => $receiptId, 'productId' => $product->id, 'poQty' => $ordered->orderedQty,
                     'deliveredQty' => $line['qty'], 'name' => $ordered->name, 'category' => $ordered->category ?? $product->category,
                     'unit' => $ordered->unit ?? ($product->stockUnit ?: $product->unit), 'conditionText' => 'Accepted',
+                    'unitCost' => $cost, 'batchNumber' => $line['batchNumber'] ?? null, 'expiryDate' => $line['expiryDate'] ?? null,
                 ]);
             }
             $matches = $orderLines->every(fn ($line) => (int) $line->deliveredQty === (int) $line->orderedQty);
@@ -124,7 +135,7 @@ class PurchasingController extends Controller
             $shortageSummary = collect($inspection)->filter(fn ($line) => $line['missing'] > 0)
                 ->map(fn ($line) => $line['name'].': '.$line['missing'].' '.($line['unit'] ?? 'units').' missing')->implode('; ');
             $status = $matches ? 'Fully Received' : ($short ? 'Partially Received' : 'Received with Discrepancy');
-            $deliveredValue = $orderLines->sum(fn ($line) => InventoryRules::lineTotal($line->deliveredQty, $line->unitCost));
+            $deliveredValue = ((int) round((float) $order->deliveredValue * 100) + $receivedCents) / 100;
             if ($deliveredValue > 9999999999.99) {
                 throw ValidationException::withMessages(['lines' => 'Received value exceeds the supported amount.']);
             }
@@ -145,10 +156,10 @@ class PurchasingController extends Controller
             ]);
             DB::table('item_requests')->where('id', $order->itemRequestId)->update(['status' => $status]);
             InventoryRules::audit($request->user()->name, 'Received purchase delivery', $id, $order->status, json_encode(['receiptId' => $receiptId, 'status' => $status, 'lines' => $data['lines']]));
-            $approver = \App\Services\WorkflowNotifications::owner($purchaseRequest->approvedById ?? $order->createdById, $purchaseRequest->approvedByRole ?? $order->createdByRole);
-            \App\Services\WorkflowNotifications::send([
-                ...($approver ? [$approver] : \App\Services\WorkflowNotifications::reviewers()),
-                \App\Services\WorkflowNotifications::owner($purchaseRequest->requestedById, $purchaseRequest->requestedByRole), $request->user(),
+            $approver = WorkflowNotifications::owner($purchaseRequest->approvedById ?? $order->createdById, $purchaseRequest->approvedByRole ?? $order->createdByRole);
+            WorkflowNotifications::send([
+                ...($approver ? [$approver] : WorkflowNotifications::reviewers()),
+                WorkflowNotifications::owner($purchaseRequest->requestedById, $purchaseRequest->requestedByRole), $request->user(),
             ], $request->user(), 'Stock received', 'PO '.$id.': '.$status.'. Delivery '.$data['deliveryReference'].' recorded by '.$request->user()->name.'.'.($short ? ' Shortage report: '.$shortageSummary.'. Actual received items have been added to inventory.' : ''), 'receiving', $id);
 
             return response()->json(['message' => 'Delivery recorded and actual quantities added to inventory.'.($short ? ' A shortage report has been saved.' : ''), 'id' => $receiptId, 'poId' => $id, 'status' => $status, 'inspection' => $inspection], 201);
@@ -163,6 +174,7 @@ class PurchasingController extends Controller
             'phone' => ['nullable', 'string', 'max:40'], 'email' => ['nullable', 'email', 'max:160'],
             'address' => ['nullable', 'string', 'max:255'],
         ]);
+
         return DB::transaction(function () use ($request, $data) {
             InventoryRules::lockActor($request);
             $sequence = DB::table('inventory_sequences')->where('name', 'suppliers')->lockForUpdate()->first();

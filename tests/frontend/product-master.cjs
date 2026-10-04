@@ -1,0 +1,15 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+const ctx=vm.createContext({React:{createElement:(type,props,...children)=>({type,props,children})},DCLogic:class{setState(p){Object.assign(this.state,typeof p==='function'?p(this.state):p)}},window:{},crypto:{randomUUID:()=> 'test'}});
+vm.runInContext(fs.readFileSync('public/app.js','utf8')+';globalThis.App=Component;',ctx);
+const app=new ctx.App();
+const product={id:1,name:'Coke',category:'Beverages',stock:0,minStock:10,price:80,unitPrice:55,unit:'Bottle',stockUnit:'Bottle',purchaseUnit:'Bottle',conversionFactor:1,status:'Active',barcode:'COKE',size:1,sizeUnit:'Liter',brandId:1,subcategoryId:1};
+app.state.data={PRODUCTS:[product],CATEGORIES:[{name:'Beverages',status:'Active',classification:'Non-Perishable'}],BRANDS:[{id:1,name:'Coca-Cola',status:'Active'}],SUBCATEGORIES:[{id:1,name:'Soft Drinks',category:'Beverages',status:'Active'}],SUPPLIERS:[],ADJUSTMENTS:[],PURCHASE_ORDERS:[],RECEIVING_RECORDS:[],BATCH_RECALL:[]};
+Object.assign(app.state,{suppliersLocal:[],productsLocal:[product],categoriesLocal:app.state.data.CATEGORIES,adjustmentsLocal:[],purchaseData:{requests:[],orders:[]},inventoryHistory:{products:[product],batches:[],movements:[]},screen:'mgrRequest'});
+const text=node=>node==null?'':typeof node==='string'?node:Array.isArray(node)?node.map(text).join(' '):text(node.children);
+const inputs=node=>node==null||typeof node!=='object'?[]:Array.isArray(node)?node.flatMap(inputs):[...(node.type==='input'?[node.props.id]:[]),...inputs(node.children)];
+const reg=app.buildMgrRegistration();assert(!inputs(reg).includes('registration-regQuantity'));assert(inputs(reg).includes('registration-regSize'));assert(inputs(reg).includes('registration-regReorderLevel'));
+assert(!text(app.buildPurchaseRequests()).includes('Add New Product'));
+for(const method of ['buildMgrCategories','buildInventoryHistory','buildManualLookupModal','buildItemPickerModal'])assert(app[method](),method);
+app.state.invTab='stock';assert(app.buildMgrInventory());
+app.editProductMaster(product);assert(text(app.buildMgrRegistration()).includes('Edit Product'));
+console.log('Product master, purchasing, inventory, history and lookup screens rendered; no initial stock control, size/reorder fields and editing verified.');

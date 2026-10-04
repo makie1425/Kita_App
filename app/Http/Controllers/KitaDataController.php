@@ -19,6 +19,8 @@ class KitaDataController extends Controller
                 'BUSINESS_DATE' => now()->toDateString(),
                 'CATEGORIES' => $this->rows($pdo, 'SELECT name, status, classification, archivedAt, archivedBy FROM categories ORDER BY name'),
                 'PRODUCTS' => $this->products($pdo),
+                'BRANDS' => DB::table('brands')->orderBy('name')->get(),
+                'SUBCATEGORIES' => DB::table('subcategories')->orderBy('name')->get(),
                 'SUPPLIERS' => $this->suppliers($pdo),
                 'ITEM_REQUESTS' => $this->itemRequests($pdo),
                 'PURCHASE_ORDERS' => $this->purchaseOrders($pdo),
@@ -81,7 +83,7 @@ class KitaDataController extends Controller
     {
         return $this->numericRows(
             $pdo,
-            'SELECT id, name, category, vatClass, price, cost, unitPrice, registrationQuantity, stock, minStock, unit, status, batch, lot, expiry, barcode, supplierId, parentId, variantLabel, purchaseUnit, stockUnit, conversionFactor, barcodeStatus, archivedAt, archivedBy FROM products ORDER BY id',
+            'SELECT brandId, subcategoryId, size, sizeUnit, id, name, category, vatClass, price, cost, unitPrice, registrationQuantity, stock, minStock, unit, status, batch, lot, expiry, barcode, supplierId, parentId, variantLabel, purchaseUnit, stockUnit, conversionFactor, barcodeStatus, archivedAt, archivedBy FROM products ORDER BY id',
             ['id', 'price', 'cost', 'unitPrice', 'registrationQuantity', 'stock', 'minStock', 'supplierId', 'parentId', 'conversionFactor']
         );
     }
@@ -270,13 +272,13 @@ class KitaDataController extends Controller
             ->orderByDesc(DB::table('transaction_lines')->selectRaw('MIN(id)')
                 ->whereColumn('transaction_uuid', 'transactions.uuid'))
             ->orderBy('uuid')->get()->map(function ($record) use ($lines) {
-            $row = (array) $record;
-            $row = $this->numericRow($row, ['total', 'subtotal', 'discountAmount', 'refundedAmount', 'tendered', 'paid', 'changeAmount']);
-            $row['change'] = $row['changeAmount'];
-            $row['lines'] = ($lines->get($record->uuid) ?? collect())->map(fn ($line) => $this->numericRow((array) $line, ['productId', 'qty', 'unitPrice', 'discountAmount', 'lineTotal', 'refundedQty', 'refundedAmount']))->all();
+                $row = (array) $record;
+                $row = $this->numericRow($row, ['total', 'subtotal', 'discountAmount', 'refundedAmount', 'tendered', 'paid', 'changeAmount']);
+                $row['change'] = $row['changeAmount'];
+                $row['lines'] = ($lines->get($record->uuid) ?? collect())->map(fn ($line) => $this->numericRow((array) $line, ['productId', 'qty', 'unitPrice', 'discountAmount', 'lineTotal', 'refundedQty', 'refundedAmount']))->all();
 
-            return $row;
-        })->all();
+                return $row;
+            })->all();
     }
 
     private function batchRecall(PDO $pdo): array

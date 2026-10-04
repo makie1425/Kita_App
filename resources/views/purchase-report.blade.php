@@ -42,8 +42,8 @@
     @forelse($receipts as $receipt)
         <section class="receipt"><strong class="mono">{{ $receipt->id }}</strong> · Supplier reference: {{ $receipt->deliveryReference ?? 'Not recorded' }}
         <p>Date received: {{ $receipt->date }} · Recorded at: {{ $receipt->received_at ?? 'Not recorded' }}<br>Received by: {{ $receipt->receivedBy ?? 'Not recorded' }} · Status after delivery: {{ $receipt->deliveryStatus }}</p>
-        <div class="table-wrap" tabindex="0" role="region" aria-label="Delivery items"><table><thead><tr><th>Item</th><th>Ordered Qty</th><th>Received Order</th><th>Unit</th></tr></thead><tbody>
-        @foreach($receiptLines->get($receipt->id, collect()) as $line)<tr><td>{{ $line->name ?? 'Item #'.$line->productId }}</td><td>{{ $line->poQty }}</td><td>{{ $line->deliveredQty }}</td><td>{{ $line->unit ?? 'Not recorded' }}</td></tr>@endforeach
+        <div class="table-wrap" tabindex="0" role="region" aria-label="Delivery items"><table><thead><tr><th>Item</th><th>Ordered Qty</th><th>Received Order</th><th>Unit</th><th>Actual unit cost</th><th>Batch</th><th>Expiry</th></tr></thead><tbody>
+        @foreach($receiptLines->get($receipt->id, collect()) as $line)<tr><td>{{ $line->name ?? 'Item #'.$line->productId }}</td><td>{{ $line->poQty }}</td><td>{{ $line->deliveredQty }}</td><td>{{ $line->unit ?? 'Not recorded' }}</td><td>{{ $line->unitCost === null ? 'Not recorded' : number_format($line->unitCost, 2) }}</td><td>{{ $line->batchNumber ?? '-' }}</td><td>{{ $line->expiryDate ?? '-' }}</td></tr>@endforeach
         </tbody></table></div>
         @php($inspection = json_decode($receipt->inspection ?? 'null', true))
         @if(is_array($inspection))

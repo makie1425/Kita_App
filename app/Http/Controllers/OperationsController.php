@@ -3,7 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Services\InventoryRules;
+use App\Services\PurchaseWorkflow;
 use App\Services\StockMovement;
+use App\Services\WorkflowNotifications;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -19,7 +21,7 @@ class OperationsController extends Controller
         $data = $request->validate([
             'id' => ['sometimes', 'required', 'string', 'max:30', 'regex:/^[A-Za-z0-9_-]+$/', 'unique:adjustments,id'],
             'productId' => ['required', 'integer', 'min:1'],
-            'qtyChange' => ['required', 'integer', 'not_in:0', 'between:-2147483647,2147483647'],
+            'qtyChange' => ['required', 'integer', 'not_in:0', 'between:-2147483647,-1'],
             'reason' => ['required', 'string', 'max:80'], 'comment' => ['required', 'string', 'max:2000'], 'photo' => ['sometimes', 'boolean'],
         ]);
         $id = $data['id'] ?? 'ADJ-'.Str::ulid();
@@ -34,7 +36,7 @@ class OperationsController extends Controller
                 'requestedById' => $request->user()->id, 'requestedByRole' => $request->user()->role,
             ]);
             InventoryRules::audit($request->user()->name, 'Submitted adjustment', $id, null, 'Pending Admin Approval');
-            \App\Services\WorkflowNotifications::send([...\App\Services\WorkflowNotifications::reviewers(), $request->user()], $request->user(),
+            WorkflowNotifications::send([...WorkflowNotifications::reviewers(), $request->user()], $request->user(),
                 'Inventory approval requested', $request->user()->name.' submitted adjustment '.$id.' for approval.', 'adjustment', $id);
         }, 3);
 
@@ -51,6 +53,9 @@ class OperationsController extends Controller
             abort_unless($adjustment, 404, 'Adjustment not found.');
             abort_unless($adjustment->status === 'Pending Admin Approval', 409, 'This adjustment has already been processed.');
             if ($data['status'] === 'Approved') {
+                if ($adjustment->qtyChange > 0) {
+                    throw ValidationException::withMessages(['qtyChange' => 'Receive a purchase to add stock. Positive manual adjustments are no longer allowed.']);
+                }
                 $product = InventoryRules::product($adjustment->productId);
                 $after = $this->stockAfter($product->stock, $adjustment->qtyChange);
                 DB::table('products')->where('id', $product->id)->update(['stock' => $after]);
@@ -58,7 +63,7 @@ class OperationsController extends Controller
             }
             DB::table('adjustments')->where('id', $id)->update(['status' => $data['status']]);
             InventoryRules::audit($request->user()->name, $data['status'].' adjustment', $id, $adjustment->status, $data['status']);
-            \App\Services\WorkflowNotifications::send([\App\Services\WorkflowNotifications::owner($adjustment->requestedById, $adjustment->requestedByRole), $request->user()], $request->user(),
+            WorkflowNotifications::send([WorkflowNotifications::owner($adjustment->requestedById, $adjustment->requestedByRole), $request->user()], $request->user(),
                 'Inventory adjustment '.$data['status'], 'Adjustment '.$id.' was '.strtolower($data['status']).' by '.$request->user()->name.'.', 'adjustment', $id);
 
             return response()->json(['message' => 'Inventory adjustment updated.', 'id' => $id]);
@@ -67,12 +72,12 @@ class OperationsController extends Controller
 
     public function storeRequest(Request $request): JsonResponse
     {
-        return app(\App\Services\PurchaseWorkflow::class)->create($request);
+        return app(PurchaseWorkflow::class)->create($request);
     }
 
     public function updateRequest(Request $request, string $id): JsonResponse
     {
-        return app(\App\Services\PurchaseWorkflow::class)->review($request, $id);
+        return app(PurchaseWorkflow::class)->review($request, $id);
     }
 
     public function addPurchaseOrderItems(Request $request, string $id): JsonResponse
@@ -143,7 +148,7 @@ class OperationsController extends Controller
             if ($qty < 1 || $qty > 1000000) {
                 throw ValidationException::withMessages(['lines' => 'Quantity must be greater than zero and within the allowed range.']);
             }
-            $lines[$product->id] = ['productId' => $product->id, 'name' => $product->name, 'qty' => $qty, 'supplierId' => $supplier,
+            $lines[$product->id] = ['productId' => $product->id, 'name' => InventoryRules::productLabel($product), 'qty' => $qty, 'supplierId' => $supplier,
                 'unitCost' => $cost, 'lineTotal' => InventoryRules::lineTotal($qty, $cost)];
             if (isset($line['unitCost'])) {
                 $lines[$product->id]['explicitCost'] = $cost;

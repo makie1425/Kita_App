@@ -50,6 +50,14 @@ class InventoryRules
         return $product;
     }
 
+    public static function productLabel(object $product): string
+    {
+        $brand = empty($product->brandId) ? null : DB::table('brands')->where('id', $product->brandId)->value('name');
+        $size = empty($product->size) ? null : (string) (float) $product->size;
+
+        return implode(' ', array_filter([$product->name, $brand, $size, $product->sizeUnit ?? null], fn ($v) => $v !== null && $v !== ''));
+    }
+
     public static function unitCost(object $product, string $field = 'lines'): float
     {
         if (! isset($product->unitPrice) || ! is_numeric($product->unitPrice) || (float) $product->unitPrice < 0) {

@@ -100,7 +100,7 @@ function statusStyle(status) {
   const s = String(status||"").toLowerCase().replace(/[_-]+/g," ");
   if (/\b(inactive|rejected|disapproved|failed|cancelled|canceled|blocked|quarantine|discrepancy|damaged|declined|void|voided|expired|timeout)\b|timed out/.test(s)) return {bg:COLORS.redBg,fg:"#b91c1c"};
   if (/\b(released|release|refunded|refund|reversed)\b/.test(s)) return {bg:COLORS.blueBg,fg:"#1d4ed8"};
-  if (/\b(pending|unpaid|draft|scheduled|partial|partially|processing|awaiting|waiting|reserved|reservation|outstanding)\b|proceed to purchase|subject to reorder|not paid/.test(s)) return {bg:COLORS.amberBg,fg:COLORS.amber};
+  if (/low stock|\b(pending|unpaid|draft|scheduled|partial|partially|processing|awaiting|waiting|reserved|reservation|outstanding)\b|proceed to purchase|subject to reorder|not paid/.test(s)) return {bg:COLORS.amberBg,fg:COLORS.amber};
   if (/\b(active|approved|paid|delivered|resolved|closed|full|completed|confirmed|checkout)\b|fully received|inventory updated/.test(s)) return {bg:COLORS.greenBg,fg:"#15803d"};
   if (/\b(unused|informational|system|auto|forwarded)\b/.test(s)) return {bg:COLORS.blueBg,fg:"#1d4ed8"};
   return {bg:"#eef0f4",fg:COLORS.textSoft};
@@ -386,7 +386,7 @@ class Component extends DCLogic {
     if(existing){ this.setState(s=>({cart:s.cart.map(l=>l.productId===p.id?{...l,qty:l.qty+1,pulse:true}:l)})); this.toast(`Added 1 more "${p.name}".`);
       setTimeout(()=>this.setState(s=>({cart:s.cart.map(l=>l.productId===p.id?{...l,pulse:false}:l)})),900); return; }
     const promo=this.activePromo(p.id);
-    this.setState(s=>({cart:[...s.cart,{lineId:Date.now()+Math.random(),productId:p.id,name:p.name,qty:1,unitPrice:p.price,originalPrice:p.price,vatClass:p.vatClass,manual:!!manual,
+    this.setState(s=>({cart:[...s.cart,{lineId:Date.now()+Math.random(),productId:p.id,name:this.productLabel(p),qty:1,unitPrice:p.price,originalPrice:p.price,vatClass:p.vatClass,manual:!!manual,
       overridden:false,overrideReason:"",overrideApprover:"",promo,pulse:false}]}));
     this.toast(`Added "${p.name}"${manual?" (Manual Entry)":""}${promo?" â€” promo "+promo.name+" applied":""}.`);
   };
@@ -632,7 +632,7 @@ class Component extends DCLogic {
   submitAdjustment=()=>{
     const f=this.state.newAdjForm,q=Number(f.qtyChange);
     if(!f.productId||!Number.isInteger(q)||q<=0||!f.comment.trim()||!f.reason.trim()){this.toast("Select an item, positive whole quantity, reason, and comment.","error");return;}
-    this.authPost("/api/inventory/adjustments",{productId:Number(f.productId),qtyChange:(this.state.adjustmentType==="increase"?1:-1)*q,reason:f.reason,comment:f.comment,photo:false})
+    this.authPost("/api/inventory/adjustments",{productId:Number(f.productId),qtyChange:-q,reason:f.reason,comment:f.comment,photo:false})
       .then(res=>{this.setState({newAdjForm:{productId:"",qtyChange:"",reason:"Shrinkage",comment:""}});this.toast(res.message);return this.reloadCatalog();}).catch(error=>this.toast(error.message,"error"));
   };
   openCashierModal=(mode,cashier)=>this.openAcctModal(mode==="add"?"create":"edit",cashier);
@@ -668,13 +668,13 @@ class Component extends DCLogic {
     this.setState({screen:'mgrPurchaseHistory'});this.reloadPurchasing().catch(()=>{});this.toast('Open a recorded delivery from Transaction History to print its report.');
   };
   openCategoryModal=()=>this.setState({categoryModalOpen:true,categoryEditing:false,categoryForm:{name:"",status:"Active",classification:""},categoryError:""});
-  editCategory=c=>()=>this.setState({categoryModalOpen:true,categoryEditing:true,categoryForm:{...c},categoryError:""});
+  editCategory=c=>()=>this.setState({categoryModalOpen:true,categoryEditing:true,categoryForm:{...c},categoryOriginalName:c.name,categoryError:""});
   closeCategoryModal=()=>this.setState({categoryModalOpen:false});
   setCategoryField=field=>e=>this.setState(s=>({categoryForm:{...s.categoryForm,[field]:e.target.value},categoryError:""}));
   saveCategory=()=>{
     const f=this.state.categoryForm;
     if(!f.name.trim()||!["Perishable","Non-Perishable"].includes(f.classification)){this.setState({categoryError:"Enter a category name and classification."});return;}
-    this.authPost(this.state.categoryEditing?`/api/categories/${encodeURIComponent(f.name)}`:"/api/categories",f,this.state.categoryEditing?"PATCH":"POST").then(response=>{
+    this.authPost(this.state.categoryEditing?`/api/categories/${encodeURIComponent(this.state.categoryOriginalName)}`:"/api/categories",f,this.state.categoryEditing?"PATCH":"POST").then(response=>{
       const category=response.category;
       this.setState(s=>({categoryModalOpen:false,
         categoriesLocal:[...(s.categoriesLocal||[]).filter(c=>c.name!==category.name),category],
@@ -780,7 +780,7 @@ class Component extends DCLogic {
     const value=e.target.value;
     this.setState(s=>{
       const next={...s,[field]:value};
-      return {[field]:value,...(["regUnitPrice","regQuantity"].includes(field)?{regCostPrice:this.registrationCost(next.regUnitPrice,next.regQuantity)}:{})};
+      return {[field]:value,...(field==="regCategory"?{regSubcategoryId:""}:{}),...(["regUnitPrice","regQuantity"].includes(field)?{regCostPrice:this.registrationCost(next.regUnitPrice,next.regQuantity)}:{})};
     });
   };
   saveRegistration=()=>{
@@ -790,27 +790,26 @@ class Component extends DCLogic {
     const name = regProductName.trim();
     if(!name||!regCategory){ this.toast("Product name and category are required.","error"); return; }
     if(!regScannedBarcode.trim()){ this.toast("Scan the item barcode before saving registration.","error"); return; }
-    const qty=Number(regQuantity);
-    if(String(regQuantity).trim()===""||!Number.isInteger(qty)||qty<0){ this.toast("Enter a whole quantity of zero or more.","error"); return; }
+    const qty=this.state.regEditing?(productsLocal||data.PRODUCTS).find(p=>p.id===this.state.regEditing).stock:0;
     const price=parseFloat(regRetailPrice||regUnitPrice);
     if(!this.validAmount(regRetailPrice||regUnitPrice)){ this.toast("Enter a valid retail price or unit price.","error"); return; }
     if(!this.validAmount(regUnitPrice)){this.toast("Enter a valid unit price with at most two decimal places.","error");return;}
-    const calculatedCost=this.registrationCost(regUnitPrice,regQuantity);
+    const calculatedCost="0";
     if(calculatedCost===""){ this.toast("Enter a valid unit price to calculate cost price.","error"); return; }
     const cost=Number(calculatedCost);
     if(!this.validAmount(regConversionFactor)||Number(regConversionFactor)<=0){ this.toast("Enter a positive conversion factor with at most two decimal places.","error"); return; }
     const conversionFactor=Number(regConversionFactor);
     const catalog=productsLocal||data.PRODUCTS;
-    if(catalog.some(p=>p.barcode===regScannedBarcode.trim())){ this.toast("This barcode is already registered.","error"); return; }
+    if(catalog.some(p=>p.id!==this.state.regEditing&&p.barcode===regScannedBarcode.trim())){ this.toast("This barcode is already registered.","error"); return; }
     const sku="";
     const barcode=regScannedBarcode.trim();
     const nextId=Math.max(0,...catalog.map(p=>Number(p.id)||0))+1;
     const supplier=(data.SUPPLIERS||[]).find(s=>s.name===regSupplier);
     const product={id:nextId,name,category:regCategory,vatClass:"VAT-Exempt",price,cost,stock:qty,minStock:0,unit:regStockUnit||"Piece",status:regStatus||"Active",batch:regBatch||"",lot:regLot||"",expiry:regExpiry||"",barcode,supplierId:supplier?supplier.id:regSupplier,parentId:null,variantLabel:"",purchaseUnit:regPurchaseUnit||"Piece",stockUnit:regStockUnit||"Piece",conversionFactor,barcodeStatus:"Scanned",archivedAt:null,archivedBy:null,unitPrice:Number(regUnitPrice)};
     this.registrationBusy=true;this.setState({registrationSaving:true});
-    this.authPost("/api/products",{id:this.state.regStockId?Number(this.state.regStockId):undefined,unitPrice:Number(regUnitPrice),name,category:regCategory,vatClass:"VAT-Exempt",price,cost,stock:qty,barcode,supplierId:supplier?supplier.id:null,batch:regBatch,lot:regLot,expiry:regExpiry,purchaseUnit:regPurchaseUnit,stockUnit:regStockUnit,conversionFactor,status:regStatus}).then(response=>{
-      const savedProduct={...product,id:response.product.id};
-      this.setState({productsLocal:[...catalog,savedProduct],regSaved:true,regSku:String(response.product.id),regBarcode:barcode,regRegisteredQty:qty});
+    this.authPost("/api/products"+(this.state.regEditing?"/"+this.state.regEditing:""),{reason:this.state.regEditReason||null,id:this.state.regStockId?Number(this.state.regStockId):undefined,unitPrice:Number(regUnitPrice),brandId:this.state.regBrandId||null,subcategoryId:this.state.regSubcategoryId||null,size:this.state.regSize||null,sizeUnit:this.state.regSizeUnit||null,minStock:Number(this.state.regReorderLevel||0),name,category:regCategory,vatClass:"VAT-Exempt",price,cost,stock:qty,barcode,supplierId:supplier?supplier.id:null,batch:regBatch,lot:regLot,expiry:regExpiry,purchaseUnit:regPurchaseUnit,stockUnit:regStockUnit,conversionFactor,status:regStatus},this.state.regEditing?"PATCH":"POST").then(response=>{
+      const savedProduct={...product,...response.product};
+      this.setState({productsLocal:[...catalog.filter(p=>p.id!==savedProduct.id),savedProduct],regSaved:true,regSku:String(response.product.id),regBarcode:barcode,regRegisteredQty:qty});
       this.reloadCatalog().then(()=>this.toast(`"${name}" registered and saved to the product catalog.`)).catch(()=>this.toast(`"${name}" saved, but the catalog could not refresh. Reload the page.` ,"warn"));
     }).catch(error=>this.toast("Product could not be registered: "+error.message,"error")).finally(()=>{this.registrationBusy=false;this.setState({registrationSaving:false});});
   };
@@ -863,7 +862,7 @@ class Component extends DCLogic {
     if(ids.length===0){ this.toast("Select at least one item.","error"); return; }
     const existingIds=new Set(this.state.newReqCart.map(l=>l.productId));
     const added=ids.filter(id=>data.PRODUCTS.some(p=>String(p.id)===String(id)&&p.status==="Active")).map(id=>{ const p=data.PRODUCTS.find(pp=>String(pp.id)===String(id));
-      return {category:p.category,supplierId:itemPickerFilterSupplier||p.supplierId,productId:p.id,name:p.name,qty:1}; }).filter(l=>!existingIds.has(l.productId));
+      return {category:p.category,supplierId:itemPickerFilterSupplier||p.supplierId,productId:p.id,name:this.productLabel(p),qty:1}; }).filter(l=>!existingIds.has(l.productId));
     this.setState(s=>({newReqCart:[...s.newReqCart.map(l=>ids.includes(String(l.productId))?{...l,qty:Number(l.qty)+1}:l),...added],itemPickerOpen:false}));
     this.toast(`${added.length} item(s) added to the request.`);
   };
@@ -981,7 +980,7 @@ class Component extends DCLogic {
     const categoryOf=p=>String(p.category||"").trim()||"Uncategorized";
     const categories=[...new Set(catalog.map(categoryOf))].sort((a,b)=>a.localeCompare(b));
     const q=manualSearch.trim().toLowerCase();
-    const results=catalog.filter(p=>(!manualCategory||categoryOf(p)===manualCategory)&&(p.name.toLowerCase().includes(q)||categoryOf(p).toLowerCase().includes(q)));
+    const results=catalog.filter(p=>(!manualCategory||categoryOf(p)===manualCategory)&&([p.name,(data.BRANDS||[]).find(b=>String(b.id)===String(p.brandId))?.name,p.size,p.sizeUnit,p.barcode,categoryOf(p)].join(" ").toLowerCase().includes(q)));
     return h("div",{key:"mlm",style:{position:"fixed",inset:0,background:"rgba(15,31,74,0.38)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:50,padding:16}},
       h("div",{role:"dialog","aria-modal":true,"aria-label":"Manual Product Lookup",style:{width:520,maxWidth:"100%",maxHeight:"80vh",background:"#fff",borderRadius:14,display:"flex",flexDirection:"column",overflow:"hidden"}},[
         h("div",{key:"body",style:{minHeight:0,overflowY:"auto",padding:20}},[
@@ -998,7 +997,7 @@ class Component extends DCLogic {
           ...results.filter(p=>categoryOf(p)===category).map(p=>{
             const available=p.status==="Active"&&p.stock>0;
             return h("button",{key:p.id,type:"button",disabled:!available,onClick:this.addManualProduct(p),style:{width:"100%",background:"transparent",border:0,borderBottom:"1px solid #eef1f6",display:"flex",justifyContent:"space-between",gap:12,textAlign:"left",padding:"12px 8px",cursor:available?"pointer":"not-allowed",opacity:available?1:0.5}},[
-              h("span",{key:"details"},[h("span",{key:"name",style:{display:"block",fontWeight:600,fontSize:13}},p.name),h("span",{key:"stock",style:{display:"block",fontSize:11,color:COLORS.textMuted}},p.status!=="Active"?p.status:p.stock>0?p.stock+" in stock":"Out of stock")]),
+              h("span",{key:"details"},[h("span",{key:"name",style:{display:"block",fontWeight:600,fontSize:13}},[p.name,(data.BRANDS||[]).find(b=>String(b.id)===String(p.brandId))?.name,p.size,p.sizeUnit].filter(Boolean).join(" ")),h("span",{key:"stock",style:{display:"block",fontSize:11,color:COLORS.textMuted}},p.status!=="Active"?p.status:p.stock>0?p.stock+" in stock":"Out of stock")]),
               h("span",{key:"price",style:{fontWeight:700,whiteSpace:"nowrap"}},peso(p.price)),
             ]);
           }),
@@ -1248,42 +1247,9 @@ class Component extends DCLogic {
     try{const result=await this.authPost('/api/suppliers',this.state.purchaseSupplierDraft||{});this.setState({newReqSupplier:String(result.supplier.id),purchaseSupplierOpen:false,purchaseSupplierDraft:{}});await this.reloadCatalog();this.toast(result.message);}
     catch(error){this.toast(error.message,'error');}finally{this.supplierSaving=false;}
   };
-  openNewPurchaseProduct=()=>this.setState(s=>({
-    itemPickerOpen:false,purchaseProductOpen:true,
-    newReqSupplier:s.newReqSupplier||s.itemPickerFilterSupplier||'',
-    purchaseProductDraft:{...s.purchaseProductDraft,name:s.purchaseProductDraft?.name||s.itemPickerSearch.trim(),category:s.purchaseProductDraft?.category||s.itemPickerFilterCategory,quantity:s.purchaseProductDraft?.quantity||'1'}
-  }));
-  savePurchaseProduct=async()=>{
-    if(this.purchaseProductSaving)return;
-    if(!this.state.newReqSupplier){this.toast('Select a supplier first.','error');return;}
-    const f=this.state.purchaseProductDraft||{};
-    if(!f.unit){this.toast('Select an inventory unit.','error');return;}
-    const quantity=Number(f.quantity??1);
-    if(!Number.isInteger(quantity)||quantity<1||quantity>1000000){this.toast('Enter a purchase quantity from 1 to 1,000,000.','error');return;}
-    this.purchaseProductSaving=true;
-    try{
-      const result=await this.authPost('/api/products',{...f,supplierId:Number(this.state.newReqSupplier),stock:0,stockUnit:f.unit,purchaseUnit:f.unit,conversionFactor:1,status:'Active',vatClass:'VAT-Exempt'});
-      const p=result.product;
-      this.setState(s=>({purchaseProductOpen:false,purchaseProductDraft:{},newReqCart:[...s.newReqCart,{productId:p.id,name:p.name,category:p.category,unit:p.stockUnit,qty:quantity,supplierId:p.supplierId}]}));this.toast('New product added to the purchase request. Stock will update after receiving.');
-      await this.reloadCatalog().catch(()=>this.toast('Product saved and added to your request. Refresh the catalog when the connection is restored.','warn'));
-    }catch(error){this.toast(error.message,'error');}finally{this.purchaseProductSaving=false;}
-  };
   purchaseQuickForm(kind){
-    const h=React.createElement,supplier=kind==='Supplier',key='purchase'+kind+'Draft',f=this.state[key]||{};
-    const field=(name,label,type='text')=>h('label',{key:name},[label,h('input',{type,value:f[name]||'',onChange:e=>this.setState({[key]:{...f,[name]:e.target.value}})})]);
-    return h('section',{className:'purchase-inline-form'},[
-      h('h3',null,supplier?'Add Supplier':'Purchase New Product'),
-      field('name','Name'),...(supplier?[field('contact','Contact person'),field('phone','Phone'),field('email','Email','email'),field('address','Address')]:[
-        h('label',null,['Category',h('select',{value:f.category||'',onChange:e=>this.setState({[key]:{...f,category:e.target.value}})},[h('option',{value:''},'Select category'),...(this.state.data?.CATEGORIES||[]).filter(c=>c.status==='Active').map(c=>h('option',{key:c.name,value:c.name},c.name))])]),
-        field('quantity','Purchase quantity','number'),
-        h('label',{key:'unit'},['Inventory unit',h('select',{required:true,value:f.unit||'',onChange:e=>this.setState({[key]:{...f,unit:e.target.value}})},[
-          h('option',{key:'placeholder',value:'',disabled:true},'Select unit'),
-          ...['Piece','Pack','Box','Case','Sack','Tray','Bottle','Can','Tub','Kg'].map(unit=>h('option',{key:unit,value:unit},unit))
-        ])]),
-        field('barcode','Unique barcode'),field('unitPrice','Unit cost (\u20B1)','number'),field('price','Retail price (\u20B1)','number'),h('p',null,'Initial stock is zero. Stock is added only when a delivery is received.')
-      ]),
-      btn('Cancel',()=>this.setState({['purchase'+kind+'Open']:false})),btn(supplier?'Save Supplier':'Add New Product to Request',supplier?this.savePurchaseSupplier:this.savePurchaseProduct,'primary')
-    ]);
+    const h=React.createElement,f=this.state.purchaseSupplierDraft||{};
+    return card([sectionTitle('Add Supplier'),...['name','contact','phone','email','address'].map(name=>h('label',{key:name},[name,h('input',{value:f[name]||'',onChange:e=>this.setState({purchaseSupplierDraft:{...f,[name]:e.target.value}})})])),btn('Save Supplier',this.savePurchaseSupplier),btn('Cancel',()=>this.setState({purchaseSupplierOpen:false}))]);
   }
   buildPurchaseRequests(){
     const h=React.createElement,s=this.state,tab=s.screen==='mgrRequestView'?'view':s.screen==='mgrPurchaseHistory'?'history':'create';
@@ -1297,8 +1263,8 @@ class Component extends DCLogic {
     }
     if(!s.data)return h('p',null,loadingStatus('Loading inventory and suppliers...'));
     return h('div',null,[sectionTitle('Create Purchase Request','Choose one supplier per PO. Quantities are in inventory units; stock changes only after receiving.'),
-      h('div',{className:'purchase-filters'},[h('label',null,['Supplier',h('select',{value:s.newReqSupplier||'',onChange:e=>this.setState({newReqSupplier:e.target.value})},[h('option',{value:''},'Select supplier'),...s.data.SUPPLIERS.filter(sp=>sp.status==='Active'&&!sp.archivedAt).map(sp=>h('option',{key:sp.id,value:sp.id},sp.name))])]),!s.purchaseProductOpen?btn('+ Add Items',this.openItemPicker,'primary'):null]),
-      s.purchaseProductOpen?this.purchaseQuickForm('Product'):null,
+      h('div',{className:'purchase-filters'},[h('label',null,['Supplier',h('select',{value:s.newReqSupplier||'',onChange:e=>this.setState({newReqSupplier:e.target.value})},[h('option',{value:''},'Select supplier'),...s.data.SUPPLIERS.filter(sp=>sp.status==='Active'&&!sp.archivedAt).map(sp=>h('option',{key:sp.id,value:sp.id},sp.name))])]),btn('+ Add Items',this.openItemPicker,'primary')]),
+
       this.recordTable('purchase-cart',['Item','Category','Quantity','Unit','Action'],s.newReqCart.map((l,i)=>tr([td(l.name),td(l.category),td(h('input',{'aria-label':'Quantity for '+l.name,type:'number',min:1,step:1,value:l.qty,onChange:this.setReqCartQty(i)})),td(this.purchaseUnit(l)),td(btn('Remove',this.removeReqLine(i)))],i))),
       h('label',{className:'purchase-notes'},['Purchase notes',h('textarea',{value:s.purchaseNotes||'',maxLength:2000,onChange:e=>this.setState({purchaseNotes:e.target.value})})]),
       btn('Submit Purchase Request',this.submitPurchase,'primary'),
@@ -1308,7 +1274,7 @@ class Component extends DCLogic {
   purchaseRequestDetails(){
     const h=React.createElement,r=this.state.purchaseData?.requests.find(r=>r.id===this.state.purchaseRequestDetail);if(!r)return null;
     return h('section',{className:'sa-panel'},[h('h2',null,r.id),h('p',null,`${r.supplierName||this.purchaseSupplier(r.lines[0]?.supplierId)} | ${r.status} | Requested by ${r.requestedBy}`),
-      table(['Item','Category','Requested','Reviewed quantity','Unit'],r.lines.map(l=>tr([td(l.name),td(l.category),td(l.qty),td(l.confirmedQty??l.qty),td(this.purchaseUnit(l))],l.id))),h('p',null,r.notes||''),h('p',null,r.disapprovalReason||r.adminNote||''),btn('Close details',()=>this.setState({purchaseRequestDetail:null})),r.poId?this.purchaseReportLink(r.poId):null]);
+      table(['Item','Category','Requested','Reviewed quantity','Unit'],r.lines.map(l=>tr([td(l.name),td(l.category),td(l.qty),td(l.confirmedQty??l.qty),td(this.purchaseUnit(l)),...['receiveCosts','receiveBatches','receiveExpiries'].map((field,i)=>td(h('input',{'aria-label':['Actual unit cost','Batch number','Expiry date'][i]+' for '+l.name,type:i===0?'number':i===2?'date':'text',min:0,step:'0.01',value:this.state[field]?.[l.productId]??(i===0?l.unitCost:''),onChange:e=>this.setState(s=>({[field]:{...s[field],[l.productId]:e.target.value}}))})))],l.id))),h('p',null,r.notes||''),h('p',null,r.disapprovalReason||r.adminNote||''),btn('Close details',()=>this.setState({purchaseRequestDetail:null})),r.poId?this.purchaseReportLink(r.poId):null]);
   }
   reviewPurchase=async(record,action)=>{
     if(this.reviewBusy)return;
@@ -1334,7 +1300,7 @@ class Component extends DCLogic {
       ])),!requests.length?h('p',{className:'record-empty'},'No pending requests match these filters.'):null,this.purchaseRequestDetails()
     ]);
   }
-  openPurchaseReceiving=order=>this.setState({purchaseReceivingId:order.id,receiveQty:{},receiveNotes:'',receiveReference:'',receiveDate:this.state.data?.BUSINESS_DATE||new Date().toISOString().slice(0,10),receiveKey:crypto.randomUUID(),receiveVersion:order.receivingVersion,receiveError:''});
+  openPurchaseReceiving=order=>this.setState({purchaseReceivingId:order.id,receiveQty:{},receiveCosts:{},receiveBatches:{},receiveExpiries:{},receiveNotes:'',receiveReference:'',receiveDate:this.state.data?.BUSINESS_DATE||new Date().toISOString().slice(0,10),receiveKey:crypto.randomUUID(),receiveVersion:order.receivingVersion,receiveError:''});
   confirmPurchaseReceiving=async()=>{
     if(this.receivingBusy)return;
     const order=this.state.purchaseData.orders.find(o=>o.id===this.state.purchaseReceivingId);
@@ -1343,7 +1309,7 @@ class Component extends DCLogic {
     if(!window.confirm('Confirm actual delivered quantities for '+order.id+'? Inventory will be updated immediately.'))return;
     this.receivingBusy=true;this.setState({receivingSaving:true,receiveError:''});
     try{
-      const result=await this.authPost(`/api/purchase-orders/${encodeURIComponent(order.id)}/receive`,{idempotencyKey:this.state.receiveKey,version:this.state.receiveVersion,receivedDate:this.state.receiveDate,notes:this.state.receiveNotes,lines:entered.map(([productId,qty])=>({productId:Number(productId),qty:Number(qty)}))});
+      const result=await this.authPost(`/api/purchase-orders/${encodeURIComponent(order.id)}/receive`,{idempotencyKey:this.state.receiveKey,version:this.state.receiveVersion,receivedDate:this.state.receiveDate,notes:this.state.receiveNotes,lines:entered.map(([productId,qty])=>({productId:Number(productId),qty:Number(qty),unitCost:this.state.receiveCosts?.[productId]??order.lines.find(l=>String(l.productId)===productId).unitCost,batchNumber:this.state.receiveBatches?.[productId]||null,expiryDate:this.state.receiveExpiries?.[productId]||null}))});
       this.setState({purchaseReceivingId:null,lastReceivedPo:order.id});this.toast(result.message);await Promise.all([this.reloadPurchasing(),this.reloadCatalog()]);
     }catch(error){this.setState({receiveError:error.message});}finally{this.receivingBusy=false;this.setState({receivingSaving:false});}
   };
@@ -1352,7 +1318,7 @@ class Component extends DCLogic {
     const order=this.state.purchaseData.orders.find(o=>o.id===this.state.purchaseReceivingId);
     if(order)return h('div',null,[sectionTitle('Receive '+order.id,`${order.supplierName||this.purchaseSupplier(order.supplierId)} | ${order.status}`),
       h('p',null,'Inspect and enter actual delivered quantities. Received items will be added to inventory immediately. Missing items are saved in a shortage report. Leave undelivered items blank.'),
-      table(['Item','Category','Ordered','Previously received','Received order','Missing','Excess','Unit'],order.lines.map(l=>tr([td(l.name),td(l.category),td(l.orderedQty),td(l.deliveredQty||0),td(h('input',{'aria-label':'Receive '+l.name,type:'number',min:1,step:1,value:this.state.receiveQty[l.productId]??'',onChange:e=>this.setState(s=>({receiveQty:{...s.receiveQty,[l.productId]:e.target.value}}))})),td(Math.max(0,Number(l.orderedQty)-Number(l.deliveredQty||0)-Number(this.state.receiveQty[l.productId]||0))),td(Math.max(0,Number(l.deliveredQty||0)+Number(this.state.receiveQty[l.productId]||0)-Number(l.orderedQty))),td(this.purchaseUnit(l))],l.id))),
+      table(['Item','Category','Ordered','Previously received','Received order','Missing','Excess','Unit','Actual unit cost','Batch','Expiry'],order.lines.map(l=>tr([td(l.name),td(l.category),td(l.orderedQty),td(l.deliveredQty||0),td(h('input',{'aria-label':'Receive '+l.name,type:'number',min:1,step:1,value:this.state.receiveQty[l.productId]??'',onChange:e=>this.setState(s=>({receiveQty:{...s.receiveQty,[l.productId]:e.target.value}}))})),td(Math.max(0,Number(l.orderedQty)-Number(l.deliveredQty||0)-Number(this.state.receiveQty[l.productId]||0))),td(Math.max(0,Number(l.deliveredQty||0)+Number(this.state.receiveQty[l.productId]||0)-Number(l.orderedQty))),td(this.purchaseUnit(l))],l.id))),
       h('div',{className:'purchase-filters'},[h('label',null,['Delivery reference',h('input',{readOnly:true,value:'Assigned automatically from '+order.id,'aria-label':'Automatic delivery reference'})]),h('label',null,['Date received',h('input',{type:'date',max:this.state.data?.BUSINESS_DATE,value:this.state.receiveDate,onChange:e=>this.setState({receiveDate:e.target.value})})])]),
       h('label',{className:'purchase-notes'},['Receiving notes (required for excess delivery)',h('textarea',{maxLength:2000,value:this.state.receiveNotes,onChange:e=>this.setState({receiveNotes:e.target.value})})]),
       this.state.receiveError?h('p',{role:'alert',className:'alert'},this.state.receiveError):null,
@@ -1385,7 +1351,7 @@ class Component extends DCLogic {
       (!itemPickerFilterCategory||p.category===itemPickerFilterCategory) &&
       (!itemPickerFilterSupplier||String(p.supplierId)===String(itemPickerFilterSupplier)) &&
       (!itemPickerLowStockOnly||isLow(p)) &&
-      (!q||p.name.toLowerCase().includes(q)));
+      (!q||(this.productLabel(p)+" "+p.barcode).toLowerCase().includes(q)));
     items = [...items].sort((a,b)=>(isLow(b)?1:0)-(isLow(a)?1:0));
     const count=Object.values(itemPickerChecked).filter(Boolean).length;
     return React.createElement("div",{style:{position:"fixed",inset:0,background:"rgba(15,31,74,0.38)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:50,padding:20}},
@@ -1393,7 +1359,7 @@ class Component extends DCLogic {
         React.createElement("div",{key:"t",style:{fontWeight:800,marginBottom:10}},"Add Items"),
         React.createElement("div",{key:"new-product",style:{padding:12,marginBottom:12,background:COLORS.brandBg,borderRadius:8}},[
           React.createElement("p",{style:{margin:"0 0 8px",fontSize:13,color:COLORS.textSoft}},"Purchasing a product that is not in inventory yet?"),
-          btn("+ Purchase New Product",this.openNewPurchaseProduct,"primary")
+          btn("Register Product First",()=>{this.setState({itemPickerOpen:false,regEditing:null,regStockId:""});this.goScreen("mgrRegistration")();},"primary")
         ]),
         lowStockCount>0?React.createElement("div",{key:"banner",style:{background:COLORS.redBg,color:COLORS.red,padding:"8px 12px",borderRadius:8,fontSize:12,fontWeight:700,marginBottom:10}},`âš  ${lowStockCount} item(s) are currently low on stock â€” consider adding them to this request.`):null,
         React.createElement("div",{key:"filters",style:{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:8,marginBottom:8,minWidth:0}},[
@@ -1403,7 +1369,7 @@ class Component extends DCLogic {
         ]),
         React.createElement("label",{key:"lowtoggle",style:{display:"flex",alignItems:"center",gap:6,fontSize:12,fontWeight:700,color:COLORS.red,marginBottom:10,cursor:"pointer"}},[React.createElement("input",{key:"cb",type:"checkbox",checked:itemPickerLowStockOnly,onChange:this.toggleItemPickerLowStockOnly}),"Low Stock Only"]),
         React.createElement("div",{key:"list",style:{flex:1,overflowY:"auto",border:"1px solid "+COLORS.border,borderRadius:8}},
-          items.length===0?React.createElement("div",{style:{padding:20,textAlign:"center",color:COLORS.textMuted,fontSize:13}},"No existing items match. Use Purchase New Product above to add a new item to your request."):
+          items.length===0?React.createElement("div",{style:{padding:20,textAlign:"center",color:COLORS.textMuted,fontSize:13}},"No existing items match. Register the product first above to add a new item to your request."):
           items.map(p=>{ const low=isLow(p);
             return React.createElement("label",{key:p.id,style:{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderBottom:"1px solid #eef1f6",cursor:"pointer",background:low?COLORS.redBg:"transparent"}},[
               React.createElement("input",{key:"cb",type:"checkbox",checked:!!itemPickerChecked[p.id],onChange:this.toggleItemPickerCheck(p.id)}),
@@ -1422,6 +1388,7 @@ class Component extends DCLogic {
   }
   buildMgrPO(){ return this.buildPurchaseReceiving(); }
   buildMgrInventory(){
+    if(this.state.inventoryHistoryOpen)return this.buildInventoryHistory();
     const {data,invTab,adjustmentsLocal}=this.state; if(!data) return null;
     const tabs=[["adjustments","Adjustments"],["writeoffs","Write-Offs / Disposal / Transfers"],["recall","Batch Recall"],["reconciliation","Reconciliation & Counts"],["expiry","Near-Expiry Monitoring"],["table","Inventory Table"],["categories","Categories"]];
     let body;
@@ -1435,9 +1402,9 @@ class Component extends DCLogic {
             React.createElement("div",{key:"l",style:{fontSize:12,fontWeight:700,color:COLORS.textSoft,marginBottom:8}},"â€” Adjustment Details"),
             React.createElement("div",{key:"grid",style:{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:10,marginBottom:10}},[
               React.createElement("select",{key:"p",value:newAdjForm.productId,onChange:this.setNewAdjField("productId"),style:{padding:8,border:"1px solid "+COLORS.border,borderRadius:7}},[React.createElement("option",{key:"-",value:""},"Productâ€¦"),...data.PRODUCTS.map(p=>React.createElement("option",{key:p.id,value:p.id},p.name))]),
-              React.createElement("select",{key:"direction",value:this.state.adjustmentType||"decrease",onChange:e=>this.setState({adjustmentType:e.target.value}),"aria-label":"Adjustment type",style:{padding:8,border:"1px solid "+COLORS.border,borderRadius:7}},[React.createElement("option",{key:"decrease",value:"decrease"},"Stock decrease"),React.createElement("option",{key:"increase",value:"increase"},"Stock increase")]),
+              React.createElement("select",{key:"direction",value:this.state.adjustmentType||"decrease",onChange:e=>this.setState({adjustmentType:e.target.value}),"aria-label":"Adjustment type",style:{padding:8,border:"1px solid "+COLORS.border,borderRadius:7}},[React.createElement("option",{key:"decrease",value:"decrease"},"Stock decrease")]),
               React.createElement("input",{key:"q",value:newAdjForm.qtyChange,onChange:this.setNewAdjField("qtyChange"),type:"number",min:1,step:1,placeholder:"Adjustment quantity",style:{padding:8,border:"1px solid "+COLORS.border,borderRadius:7}}),
-              React.createElement("select",{key:"r",value:newAdjForm.reason,onChange:this.setNewAdjField("reason"),style:{padding:8,border:"1px solid "+COLORS.border,borderRadius:7}},["Shrinkage","Damaged","Lost","Expired","Count correction","Returned stock"].map(o=>React.createElement("option",{key:o},o))),
+              React.createElement("select",{key:"r",value:newAdjForm.reason,onChange:this.setNewAdjField("reason"),style:{padding:8,border:"1px solid "+COLORS.border,borderRadius:7}},["Shrinkage","Damaged","Lost","Expired","Count correction"].map(o=>React.createElement("option",{key:o},o))),
             ]),
             React.createElement("textarea",{key:"c",value:newAdjForm.comment,onChange:this.setNewAdjField("comment"),placeholder:"Comment (required)",style:{width:"100%",padding:8,border:"1px solid "+COLORS.border,borderRadius:7,minHeight:50,marginBottom:10}}),
             btn("Submit Adjustment",this.submitAdjustment,"primary"),
@@ -1481,21 +1448,20 @@ class Component extends DCLogic {
       body=React.createElement("div",null,[
         unlinked.length?React.createElement("div",{key:"warn",style:{marginBottom:12,background:COLORS.amberBg,color:COLORS.amber,padding:"10px 12px",borderRadius:8,fontSize:12,fontWeight:600}},`âš  ${unlinked.length} product(s) not yet linked to any supplier â€” un-orderable via Create Request: ${unlinked.map(p=>p.name).join(", ")}`):null,
         invCount>0?React.createElement("div",{key:"bar",style:{marginBottom:10}},btn(`Move to Archive (${invCount})`,this.moveInvSelectedToArchive,"danger")):null,
-        this.recordTable("inventory",["","Product","Stock","Min Stock","Cost Price","Unit Price","Retail Price","Batch","Lot","Status","Category","Print PO"],activeProducts.map((p,i)=>{ const low=p.stock<=p.minStock;
+        this.recordTable("inventory",["","Product","Stock","Min Stock","Brand","Subcategory","Size / Unit","Estimated Cost","Retail Price","Status","Category","Actions"],activeProducts.map((p,i)=>{ const low=p.stock<=p.minStock;
         return tr([td(React.createElement("input",{type:"checkbox",checked:!!invSelected[p.id],onChange:this.toggleInvSelect(p.id)})),
           td(p.name,{color:low?COLORS.red:undefined,fontWeight:low?700:400}),td(p.stock,{color:low?COLORS.red:undefined,fontWeight:low?700:400}),td(p.minStock),
-          td(peso(p.cost)),
+          td((data.BRANDS||[]).find(b=>String(b.id)===String(p.brandId))?.name||"-"),td((data.SUBCATEGORIES||[]).find(b=>String(b.id)===String(p.subcategoryId))?.name||"-"),td((p.size||"")+" "+(p.sizeUnit||"")+" / "+(p.stockUnit||p.unit)),
           td(React.createElement("span",{onClick:this.setPriceEditTarget(p.id,"unitPrice"),style:{cursor:"pointer",borderBottom:"1px dashed "+COLORS.textMuted}},peso(p.unitPrice))),
           td(React.createElement("span",{onClick:this.setPriceEditTarget(p.id,"price"),style:{cursor:"pointer",borderBottom:"1px dashed "+COLORS.textMuted}},peso(p.price))),
-          td(p.batch,{fontFamily:"'JetBrains Mono',monospace",fontSize:12}),td(p.lot,{fontFamily:"'JetBrains Mono',monospace",fontSize:12}),
           td(badge(p.status)),td(p.category),
-          td(React.createElement("button",{onClick:this.printApprovedPO(p.id),title:"Print Approved Purchase Order",style:{background:"none",border:"none",color:COLORS.brand,cursor:"pointer",fontWeight:700}},"ðŸ–¨"))],i); })),
+          td(btn("Edit Product",()=>this.editProductMaster(p)))],i); })),
       ]);
     }
     return React.createElement("div",null,[
       React.createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:10}},[
         sectionTitle("Inventory","Adjustments, disposal, recall, reconciliation, near-expiry, and stock table"),
-        React.createElement("div",{key:"actions",style:{display:"flex",gap:8}},[btn("+ Add Item",this.goScreen("mgrRegistration"),"primary"),btn("+ Add Category",this.openCategoryModal),btn("âš  Add Damage",this.openAddDamage,"danger")]),
+        React.createElement("div",{key:"actions",style:{display:"flex",gap:8}},[btn("Inventory / Cost History",()=>{this.setState({inventoryHistoryOpen:true});this.loadInventoryHistory();}),btn("+ Add Item",this.goScreen("mgrRegistration"),"primary"),btn("+ Add Category",this.openCategoryModal),btn("âš  Add Damage",this.openAddDamage,"danger")]),
       ]),
       React.createElement("div",{style:{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap"}},tabs.map(([k,l])=>React.createElement("button",{key:k,onClick:this.setInvTab(k),style:{padding:"8px 14px",borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer",background:invTab===k?COLORS.brand:"#fff",color:invTab===k?"#fff":COLORS.text,border:"1px solid "+(invTab===k?COLORS.brand:COLORS.border)}},l))),
       body, React.createElement("div",{style:{marginTop:14,fontSize:12,color:COLORS.red,fontWeight:600}},"â›” Negative-inventory guard: any action dropping stock below 0 is hard-blocked."),
@@ -1570,9 +1536,9 @@ class Component extends DCLogic {
       ]));
   }
   buildMgrCategories(){
-    const categories=(this.state.categoriesLocal||[]).filter(c=>c.status==="Active"&&!c.archivedAt);
+    const categories=(this.state.categoriesLocal||[]).filter(c=>!c.archivedAt);
     return React.createElement("div",null,[
-      sectionTitle("Categories","Create a category for new products, then register the product before requesting a purchase."),
+      sectionTitle("Categories, Subcategories and Brands","Create a category for new products, then register the product before requesting a purchase."),
       React.createElement("div",{key:"actions",style:{display:"flex",gap:8,flexWrap:"wrap",marginBottom:16}},[
         btn("+ Add Category",this.openCategoryModal,"primary"),
         btn("Register New Product",this.goScreen("mgrRegistration")),
@@ -1581,9 +1547,54 @@ class Component extends DCLogic {
       this.recordTable("categories",["Category","Classification","Products","Action"],categories.map(c=>tr([
         td(c.name),td(c.classification||"Not classified"),
         td((this.state.productsLocal||[]).filter(p=>p.category===c.name).length),
-        td(btn("Edit",this.editCategory(c))),
+        td([btn("Edit",this.editCategory(c)),btn(c.status==="Active"?"Deactivate":"Activate",()=>this.authPost("/api/categories/"+encodeURIComponent(c.name),{status:c.status==="Active"?"Inactive":"Active"},"PATCH").then(()=>this.reloadCatalog()).catch(e=>this.toast(e.message,"error"))),badge(c.status)]),
       ],c.name))),
+      this.buildMasterLists(),
       this.state.categoryModalOpen?this.buildCategoryModal():null,
+    ]);
+  }
+  saveMaster=async()=>{
+    if(this.masterBusy)return;
+    const f=this.state.masterForm;if(!f)return;
+    this.masterBusy=true;
+    try{await this.authPost('/api/product-master/'+f.kind+(f.id?'/'+f.id:''),{name:f.name,category:f.category,status:f.status},f.id?'PATCH':'POST');await this.reloadCatalog();this.setState({masterForm:null});this.toast('Saved.');}
+    catch(e){this.toast(e.message,'error');}finally{this.masterBusy=false;}
+  };
+  buildMasterLists(){
+    const h=React.createElement,f=this.state.masterForm,data=this.state.data;
+    return h('section',null,[...['brands','subcategories'].map(kind=>card([
+      sectionTitle(kind==='brands'?'Brands':'Subcategories'),btn('Add '+(kind==='brands'?'brand':'subcategory'),()=>this.setState({masterForm:{kind,name:'',category:'',status:'Active'}})),
+      this.recordTable(kind,['Name',...(kind==='subcategories'?['Category']:[]),'Status','Actions'],(data[kind.toUpperCase()]||[]).map(r=>tr([td(r.name),...(kind==='subcategories'?[td(r.category)]:[]),td(badge(r.status)),td([btn('Edit',()=>this.setState({masterForm:{...r,kind}})),btn(r.status==='Active'?'Deactivate':'Activate',async()=>{try{await this.authPost('/api/product-master/'+kind+'/'+r.id,{...r,status:r.status==='Active'?'Inactive':'Active'},'PATCH');await this.reloadCatalog();}catch(e){this.toast(e.message,'error');}})])],r.id)))
+    ])),f?card([
+      h('h3',null,(f.id?'Edit ':'Add ')+f.kind),h('label',null,['Name ',h('input',{value:f.name,maxLength:100,onChange:e=>this.setState({masterForm:{...f,name:e.target.value}})})]),
+      f.kind==='subcategories'?h('label',null,['Category ',h('select',{value:f.category,onChange:e=>this.setState({masterForm:{...f,category:e.target.value}})},[h('option',{value:''},'Select category'),...data.CATEGORIES.filter(c=>c.status==='Active').map(c=>h('option',{value:c.name,key:c.name},c.name))])]):null,
+      btn('Save',this.saveMaster),btn('Cancel',()=>this.setState({masterForm:null}))
+    ]):null]);
+  }
+  loadInventoryHistory=async()=>{
+    this.setState({inventoryHistoryLoading:true,inventoryHistoryError:''});
+    try{const query=new URLSearchParams(Object.entries(this.state.inventoryFilters||{}).filter(([,v])=>v));const r=await fetch('/api/inventory-history?'+query,{headers:{Accept:'application/json'}});const body=await r.json();if(!r.ok)throw new Error(body.message||'Could not load history.');this.setState({inventoryHistory:body});}
+    catch(e){this.setState({inventoryHistoryError:e.message});}finally{this.setState({inventoryHistoryLoading:false});}
+  };
+  exportInventoryHistory=kind=>()=>{
+    const history=this.state.inventoryHistory;if(!history)return;
+    const columns={products:['id','name','category','brandId','subcategoryId','size','sizeUnit','stockUnit','stock','minStock'],batches:['id','productId','name','category','subcategory','brand','size','sizeUnit','stockUnit','receivedDate','supplier','receiptId','source','batchNumber','expiryDate','quantityReceived','quantityRemaining','unitCost'],movements:['created_at','productId','name','referenceType','referenceId','quantityChange','quantityBefore','quantityAfter']}[kind];
+    const cell=value=>{let text=String(value??'');if(/^[=+@\-\t\r]/.test(text))text="'"+text;return '"'+text.replace(/"/g,'""')+'"';};
+    const csv=[columns,...history[kind].map(row=>columns.map(key=>row[key]))].map(row=>row.map(cell).join(',')).join('\r\n');
+    const url=URL.createObjectURL(new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8;'}));
+    const link=document.createElement('a');link.href=url;link.download='kita-'+kind+'.csv';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  };
+  buildInventoryHistory(){
+    const h=React.createElement,d=this.state.data,f=this.state.inventoryFilters||{},history=this.state.inventoryHistory;
+    const field=(key,label,options)=>h('label',{key},[label,options?h('select',{value:f[key]||'',onChange:e=>this.setState({inventoryFilters:{...f,[key]:e.target.value}})},[h('option',{value:''},'All'),...options.map(([value,text])=>h('option',{key:value,value},text))]):h('input',{type:'date',value:f[key]||'',onChange:e=>this.setState({inventoryFilters:{...f,[key]:e.target.value}})})]);
+    return h('div',null,[sectionTitle('Inventory and Purchase Cost History','Each receipt retains its cost. Opening balances have estimated legacy costs, not reconstructed delivery history.'),
+      btn('Back to Inventory',()=>this.setState({inventoryHistoryOpen:false})),
+      h('div',{className:'purchase-filters'},[field('category','Category',d.CATEGORIES.map(c=>[c.name,c.name])),field('subcategoryId','Subcategory',(d.SUBCATEGORIES||[]).map(c=>[c.id,c.name])),field('brandId','Brand',(d.BRANDS||[]).map(c=>[c.id,c.name])),field('productId','Product',d.PRODUCTS.map(c=>[c.id,c.name+' #'+c.id])),field('supplierId','Supplier',d.SUPPLIERS.map(c=>[c.id,c.name])),field('from','Received from'),field('to','Received to'),field('lowStock','Current stock',[['1','Low stock only']])]),
+      btn('Apply filters',this.loadInventoryHistory),btn('Print report',()=>window.print()),...['products','batches','movements'].map(kind=>btn('Export '+kind,this.exportInventoryHistory(kind))),
+      this.state.inventoryHistoryLoading?loadingStatus('Loading inventory history...'):null,this.state.inventoryHistoryError?h('p',{role:'alert'},this.state.inventoryHistoryError):null,
+      history?this.recordTable('inventory-current',['Product / Brand / Size','Category','Subcategory','Barcode','Stock unit','Available','Reorder level','Stock status'],history.products.map(p=>tr([td(this.productLabel(p)),td(p.category),td((d.SUBCATEGORIES||[]).find(c=>String(c.id)===String(p.subcategoryId))?.name||'-'),td(p.barcode),td(p.stockUnit),td(p.stock),td(p.minStock),td(badge(p.stock<=p.minStock?'Low stock':'Available'))],p.id))):null,
+      history?this.recordTable('inventory-batches',['Product','Category / Subcategory','Brand','Size / Unit','Received','Supplier','Reference','Source','Batch / Expiry','Qty received','Remaining','Unit cost','Remaining value'],history.batches.map(b=>tr([td(b.name),td(b.category+' / '+(b.subcategory||'-')),td(b.brand||'-'),td((b.size||'')+' '+(b.sizeUnit||'')+' / '+b.stockUnit),td(b.source==='legacy_opening'?'Opening balance (date unknown)':b.receivedDate),td(b.supplier||'-'),td(b.receiptId||'Opening balance'),td(b.source),td((b.batchNumber||'-')+' / '+(b.expiryDate||'-')),td(b.quantityReceived),td(b.quantityRemaining),td(peso(b.unitCost)),td(peso(b.quantityRemaining*b.unitCost))],b.id))):null,
+      history?card([h('h3',null,'Inventory movements (latest 500)'),this.recordTable('inventory-movements',['Date','Product','Type','Reference','Change','Before','After'],history.movements.map(m=>tr([td(m.created_at),td(m.name),td(m.referenceType),td(m.referenceId),td(m.quantityChange),td(m.quantityBefore),td(m.quantityAfter)],m.id)))]):null
     ]);
   }
   buildCategoryModal(){
@@ -1593,7 +1604,7 @@ class Component extends DCLogic {
         h("h2",{key:"title",id:"category-dialog-title",className:"panel-title"},categoryEditing?"Edit category":"Add category"),
         h("p",{key:"help",className:"form-section-description"},"Group related products and choose how they are classified."),
         h("div",{key:"name",className:"field-group"},[
-          h("label",{htmlFor:"category-name"},"Category name *"),h("input",{id:"category-name",autoFocus:true,required:true,readOnly:categoryEditing,value:f.name,onChange:this.setCategoryField("name"),maxLength:100,placeholder:"e.g. Household supplies","aria-invalid":!!categoryError,"aria-describedby":categoryError?"category-error":undefined}),
+          h("label",{htmlFor:"category-name"},"Category name *"),h("input",{id:"category-name",autoFocus:true,required:true,value:f.name,onChange:this.setCategoryField("name"),maxLength:100,placeholder:"e.g. Household supplies","aria-invalid":!!categoryError,"aria-describedby":categoryError?"category-error":undefined}),
         ]),
         h("div",{key:"classification",className:"field-group"},[
           h("label",{htmlFor:"category-classification"},"Classification *"),h("select",{id:"category-classification",required:true,value:f.classification||"",onChange:this.setCategoryField("classification"),"aria-invalid":!!categoryError,"aria-describedby":categoryError?"category-error":undefined},[h("option",{key:"empty",value:""},"Select classification"),...["Perishable","Non-Perishable"].map(value=>h("option",{key:value,value},value))]),
@@ -1602,10 +1613,12 @@ class Component extends DCLogic {
         h("div",{key:"actions",className:"dialog-actions"},[btn("Cancel",this.closeCategoryModal),btn(categoryEditing?"Save changes":"Create category",this.saveCategory,"primary")]),
       ]));
   }
+  productLabel=p=>[p.name,(this.state.data?.BRANDS||[]).find(b=>String(b.id)===String(p.brandId))?.name,p.size?Number(p.size):null,p.sizeUnit].filter(Boolean).join(' ');
+  editProductMaster=p=>this.setState({screen:'mgrRegistration',regEditing:p.id,regStockId:String(p.id),regProductName:p.name,regCategory:p.category,regBrandId:p.brandId||'',regSubcategoryId:p.subcategoryId||'',regSize:p.size||'',regSizeUnit:p.sizeUnit||'',regReorderLevel:p.minStock||0,regScannedBarcode:p.barcode||'',regSupplier:(this.state.data.SUPPLIERS.find(s=>s.id===p.supplierId)||{}).name||'',regStockUnit:p.stockUnit||p.unit,regPurchaseUnit:p.purchaseUnit||p.unit,regConversionFactor:p.conversionFactor||1,regUnitPrice:String(p.unitPrice??0),regRetailPrice:String(p.price??0),regStatus:p.status,regSaved:false,regEditReason:''});
   buildMgrRegistration(){
     const h=React.createElement,s=this.state,data=s.data;
     const products=s.productsLocal||data.PRODUCTS;
-    const units=["Piece","Pack","Box","Case","Sack","Tray","Bottle","Can","Tub","Kg"];
+    const units=["Piece","Pack","Box","Case","Sack","Tray","Bottle","Can","Tub","Kg","Liter"];
     const field=(key,label,options={})=>{
       const id="registration-"+key,helpId=id+"-help";
       return h("div",{key,className:"field-group"},[
@@ -1622,37 +1635,39 @@ class Component extends DCLogic {
       h("legend",null,[h("span",{className:"section-number"},number),title]),h("p",{className:"form-section-description"},description),h("div",{className:"form-grid"},fields),
     ]);
     return h("div",{className:"registration-page"},[
-      sectionTitle("Product Registration","Set up a product for inventory and purchasing. Fields marked * are required."),
-      h("div",{key:"actions",className:"page-toolbar"},[btn("+ Add Category",this.openCategoryModal),s.regSaved?h("span",{role:"status",className:"saved-indicator"},"Product saved. Stock ID: "+s.regSku):null]),
+      sectionTitle(s.regEditing?"Edit Product":"Product Registration","Product information is separate from stock. New products start at zero; receiving adds stock."),
+      h("div",{key:"actions",className:"page-toolbar"},[btn("New Product",()=>this.setState({regEditing:null,regStockId:"",regProductName:"",regScannedBarcode:"",regSaved:false,regBrandId:"",regSubcategoryId:"",regSize:"",regSizeUnit:"",regEditReason:""})),btn("+ Add Category",this.openCategoryModal),s.regSaved?h("span",{role:"status",className:"saved-indicator"},"Product saved. Stock ID: "+s.regSku):null]),
       h("datalist",{key:"names",id:"reg-product-options"},[...new Set(products.map(p=>p.name))].sort().map(name=>h("option",{key:name,value:name}))),
       group("01","Product details","Identify the item and choose its category and supplier.",[
-        field("regProductName","Product name",{required:true}),field("regStockId","Stock ID",{type:"number",step:1,placeholder:"Created automatically",help:"Optional. Leave blank to generate a unique ID."}),
+        field("regProductName","Product name",{required:true}),field("regStockId","Stock ID",{type:"number",step:1,readOnly:!!s.regEditing,placeholder:"Created automatically",help:"Optional. Leave blank to generate a unique ID."}),
         field("regScannedBarcode","Scanned barcode",{required:true,placeholder:"Scan or enter the item barcode"}),
         select("regCategory","Category",data.CATEGORIES.filter(c=>c.status==="Active").map(c=>c.name),true),
+        h("label",{className:"field-group"},["Brand",h("select",{value:s.regBrandId||"",onChange:this.setRegField("regBrandId")},[h("option",{value:""},"Unbranded / not applicable"),...(data.BRANDS||[]).filter(b=>b.status==="Active").map(b=>h("option",{value:b.id,key:b.id},b.name))])]),
+        h("label",{className:"field-group"},["Subcategory",h("select",{value:s.regSubcategoryId||"",onChange:this.setRegField("regSubcategoryId")},[h("option",{value:""},"Not applicable"),...(data.SUBCATEGORIES||[]).filter(c=>c.status==="Active"&&c.category===s.regCategory).map(c=>h("option",{value:c.id,key:c.id},c.name))])]),
+        field("regSize","Size / measurement",{type:"number",step:"0.001"}),select("regSizeUnit","Measurement unit",["mL","Liter","g","kg","cm","m","Piece"]),
         select("regSupplier","Supplier",data.SUPPLIERS.filter(sp=>sp.status==="Active").map(sp=>sp.name)),
         select("regStatus","Status",["Active","Inactive"]),
       ]),
-      group("02","Stock and units","Enter only the stock already on hand. Use 0 for products awaiting purchase.",[
-        field("regQuantity","Initial quantity",{type:"number",step:1,required:true,placeholder:"0 if not yet purchased"}),
+      group("02","Units and reorder level","New products start with zero stock. Receive a purchase to add inventory.",[
+        field("regReorderLevel","Reorder level",{type:"number",step:1}),
         select("regPurchaseUnit","Purchase unit",units,true),select("regStockUnit","Stock unit",units,true),
         field("regConversionFactor","Conversion factor",{type:"number",required:true,help:"Number of stock units in one purchase unit."}),
       ]),
       group("03","Pricing","Purchase cost and selling price are recorded separately.",[
-        field("regUnitPrice","Unit price (\u20B1)",{type:"number",required:true}),
-        field("regCostPrice","Cost price (\u20B1)",{type:"number",readOnly:true,help:"Calculated from unit price multiplied by initial quantity."}),
+        field("regUnitPrice","Estimated purchase cost (\u20B1)",{type:"number",required:true}),
+
         field("regRetailPrice","Retail price (\u20B1)",{type:"number",help:"If blank, the unit price is used."}),
       ]),
-      group("04","Traceability","Add batch and expiry details when applicable.",[
-        field("regBatch","Batch number"),field("regLot","Lot number"),field("regExpiry","Expiration date",{type:"date"}),
-      ]),
+      s.regEditing?field("regEditReason","Reason for price change"):null,
       h("div",{key:"save",className:"form-actions"},[
         h("span",{className:"form-action-note"},"Choose an active supplier before requesting a purchase."),
         h("button",{type:"button",className:"primary-button",disabled:!!s.registrationSaving,"aria-busy":!!s.registrationSaving,onClick:this.saveRegistration},s.registrationSaving?"Saving product...":s.regSaved?"Product registered":"Save product registration"),
       ]),
       s.regSaved?h("div",{key:"print",className:"kita-card registration-receipt"},[
-        h("h2",{className:"panel-title"},"Registration complete"),h("p",null,`Stock ID: ${s.regSku} | Barcode: ${s.regBarcode} | Initial quantity: ${s.regRegisteredQty}`),
+        h("h2",{className:"panel-title"},"Registration complete"),h("p",null,`Stock ID: ${s.regSku} | Barcode: ${s.regBarcode} | Available stock: ${s.regRegisteredQty}`),
         h("label",{className:"record-page-size"},["Label quantity",h("input",{type:"number",min:1,value:s.regPrintQty,onChange:this.setRegPrintQty})]),btn("Print labels",this.printLabels),
       ]):null,
+      card([h('h2',null,'Product Master'),this.recordTable('product-master',['Product / Brand / Size','Category','Barcode','Unit','Available','Status','Action'],products.map(p=>tr([td(this.productLabel(p)),td(p.category),td(p.barcode),td(p.stockUnit||p.unit),td(p.stock),td(badge(p.status)),td(btn('Edit Product',()=>this.editProductMaster(p)))],p.id)))]),
       s.categoryModalOpen?this.buildCategoryModal():null,
     ]);
   }
@@ -1989,6 +2004,7 @@ class Component extends DCLogic {
       this.recordTable("supplier-records",["Supplier","Category","Status","Details"],data.SUPPLIERS.map(s=>tr([td(s.name,{fontWeight:600}),td(s.category),td(badge(s.status)),td(React.createElement("button",{onClick:this.openSupplierDetail(s.id),style:{color:COLORS.brand,background:"none",border:"none",fontWeight:700,cursor:"pointer"}},"View â†’"))],s.id)))]);
   }
   buildAdmReports(){
+    if(this.state.inventoryHistoryOpen)return this.buildInventoryHistory();
     const {repDateMode,repDay,repMonth,repMonthFrom,repMonthTo,repDayFrom,repDayTo,repPaymentType}=this.state;
     const types=["Sales Report","Inventory Report","Low Stock Items Report","Remaining Supplies Report","Expired Inventory Report","Stocks Change Report","Inventory Disposals and Returns Report","Purchase Order Report","Purchase Order Requests Log Report","Purchased Items Report","Supplier Performance Report"];
     const months=["January","February","March","April","May","June","July","August","September","October","November","December"];
@@ -2012,7 +2028,7 @@ class Component extends DCLogic {
         React.createElement("div",{key:"t"},[lbl("To Day"),React.createElement("input",{type:"number",min:1,max:31,value:repDayTo,onChange:this.setRepField("repDayTo"),style:{width:"100%",padding:8,border:"1px solid "+COLORS.border,borderRadius:7}})]),
       ]);
     }
-    return React.createElement("div",null,[sectionTitle("Reports"),
+    return React.createElement("div",null,[sectionTitle("Reports"),btn("Inventory / Cost History",()=>{this.setState({inventoryHistoryOpen:true});this.loadInventoryHistory();}),
       card([
         React.createElement("div",{key:"grid",style:{display:"grid",gridTemplateColumns:"minmax(0,2fr) minmax(0,1fr)",gap:10,marginBottom:12}},[
           React.createElement("select",{key:"t",style:{padding:8,border:"1px solid "+COLORS.border,borderRadius:7}},types.map(o=>React.createElement("option",{key:o},o))),
@@ -2162,11 +2178,11 @@ class Component extends DCLogic {
       cashier:[{label:null,items:[{key:"pos",label:"Checkout"},{key:"refunds",label:"Refunds / Exchanges / Voids"},{key:"shift",label:"My Shift Transactions"}]}],
       manager:[{label:"OPERATIONS",items:[{key:"mgrDashboard",label:"Dashboard"},{key:"pos",label:"Checkout"}]},
         {label:"PURCHASE REQUEST",items:[{key:"mgrRequest",label:"Create Request"},{key:"mgrRequestView",label:"View Requests"},{key:"mgrPurchaseHistory",label:"Transaction History"},{key:"mgrPO",label:"Stock Receiving"}]},
-        {label:"INVENTORY",items:[{key:"mgrInventory",label:"Inventory"},{key:"mgrCategories",label:"Categories"},{key:"mgrRegistration",label:"Barcode/Item Registration"},{key:"archive",label:"Archive"}]},
+        {label:"INVENTORY",items:[{key:"mgrInventory",label:"Inventory"},{key:"mgrCategories",label:"Categories / Brands"},{key:"mgrRegistration",label:"Barcode/Item Registration"},{key:"archive",label:"Archive"}]},
         {label:"TEAM & MERCH",items:[{key:"mgrCashiers",label:"Cashier Accounts"},{key:"mgrPromotions",label:"Promotions"},{key:"mgrSupplier",label:"Supplier"}]}],
       admin:[{label:null,items:[{key:"admDashboard",label:"Dashboard/Analytics"}]},
         {label:"PURCHASING",items:[{key:"admPurchasedOrders",label:"Purchase Requests"},{key:"admForwarded",label:"Forwarded Purchase Requests"},{key:"admDisapproved",label:"Disapproved Purchase Requests"},{key:"admReceivingApprovals",label:"Receiving History"}]},
-        {label:"CONTROLS",items:[{key:"admInventoryApprovals",label:"Inventory Adjustment Approvals"},{key:"admSuppliers",label:"Supplier Records"},{key:"admReports",label:"Reports"},{key:"archive",label:"Archive"}]},
+        {label:"CONTROLS",items:[{key:"mgrCategories",label:"Categories / Brands"},{key:"mgrRegistration",label:"Product Registration"},{key:"mgrInventory",label:"Inventory"},{key:"admInventoryApprovals",label:"Inventory Adjustment Approvals"},{key:"admSuppliers",label:"Supplier Records"},{key:"admReports",label:"Reports"},{key:"archive",label:"Archive"}]},
         {label:"ADMIN",items:[{key:"admManagers",label:"Manage Accounts"},{key:"admNotifications",label:"Notifications"}]}],
       superadmin:[{label:null,items:[{key:"saDashboard",label:"Dashboard"},{key:"saAdmins",label:"User Management"},{key:"saRoles",label:"Roles & Permissions"},{key:"saBackup",label:"Backup Configuration"},{key:"saAudit",label:"Audit Logs"}]}],
     };

@@ -45,7 +45,9 @@ class CategoryController extends Controller
     public function update(Request $request, string $name): JsonResponse
     {
         InventoryRules::authorize($request);
+        $request->merge(['name' => trim((string) $request->input('name', $name))]);
         $validated = $request->validate([
+            'name' => ['required', 'string', 'max:100', Rule::unique('categories', 'name')->ignore($name, 'name')],
             'classification' => ['sometimes', 'required', Rule::in(['Perishable', 'Non-Perishable'])],
             'status' => ['sometimes', 'required', Rule::in(['Active', 'Inactive'])],
         ]);
@@ -54,10 +56,15 @@ class CategoryController extends Controller
             abort_unless($category, 404, 'Category not found.');
             if ($validated) {
                 DB::table('categories')->where('name', $name)->update($validated);
+                if ($validated['name'] !== $name) {
+                    DB::table('products')->where('category', $name)->update(['category' => $validated['name']]);
+                    DB::table('subcategories')->where('category', $name)->update(['category' => $validated['name']]);
+                    DB::table('promotions')->where('category', $name)->update(['category' => $validated['name']]);
+                }
                 InventoryRules::audit($request->user()->name, 'Updated category', $name, json_encode($category), json_encode($validated));
             }
 
-            return DB::table('categories')->where('name', $name)->first();
+            return DB::table('categories')->where('name', $validated['name'])->first();
         });
 
         return response()->json(['message' => 'Category updated.', 'category' => $category]);
