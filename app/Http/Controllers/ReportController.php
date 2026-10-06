@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Services\InventoryRules;
+use App\Services\TransactionNumber;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -37,13 +38,14 @@ class ReportController extends Controller
             $columns += ['Stock ID' => 'id', 'Barcode' => 'barcode', 'Unit' => 'unit', 'Stock' => 'stock', 'Reorder level' => 'minimum', 'Retail price (PHP)' => 'price', 'Status' => 'status'];
             $select = array_merge($select, ['p.id', 'p.barcode', 'p.stockUnit as unit', 'p.stock', 'p.minStock as minimum', 'p.price', 'p.status']);
         } elseif ($type === 'sales') {
-            $title = 'Sales Lines';
+            $title = 'Sales Transaction Detail';
             $query->join('transaction_lines as line', 'line.productId', '=', 'p.id')->join('transactions as t', 't.uuid', '=', 'line.transaction_uuid');
+            $query->leftJoin('transaction_numbers as tn', 'tn.transaction_uuid', '=', 't.uuid');
             $dateColumn = 't.date';
             $note .= ' Amounts are recorded line totals; refunds shown are cumulative, including refunds after the sale date. All recorded transaction statuses are listed.';
-            $columns += ['Sale date' => 'date', 'Transaction' => 'reference', 'Status' => 'status', 'Quantity' => 'quantity', 'Line total (PHP)' => 'amount', 'Refunded (PHP)' => 'refunded'];
+            $columns = ['Transaction No.' => 'reference', 'Sale date' => 'date'] + $columns + ['Status' => 'status', 'Quantity' => 'quantity', 'Line total (PHP)' => 'amount', 'Refunded (PHP)' => 'refunded'];
             $select[0] = 'line.name as product';
-            $select = array_merge($select, ['t.date', 't.uuid as reference', 't.status', 'line.qty as quantity', 'line.lineTotal as amount', 'line.refundedAmount as refunded']);
+            $select = array_merge($select, ['t.date', 't.uuid as reference', 'tn.id as numberId', 'tn.issued_date as numberDate', 't.status', 'line.qty as quantity', 'line.lineTotal as amount', 'line.refundedAmount as refunded']);
         } elseif ($type === 'receipts') {
             $title = 'Received Stock';
             $query->join('inventory_batches as b', 'b.productId', '=', 'p.id')->where('b.source', '<>', 'legacy_opening');
@@ -55,9 +57,13 @@ class ReportController extends Controller
         } else {
             $title = 'Stock Movements';
             $query->join('stock_movements as m', 'm.productId', '=', 'p.id');
+            $query->leftJoin('transaction_numbers as tn', function ($join) {
+                $join->on('tn.transaction_uuid', '=', 'm.referenceId')
+                    ->whereIn('m.referenceType', ['checkout', 'payment_reservation', 'payment_release', 'refund', 'void', 'exchange', 'exchange_replacement']);
+            });
             $dateColumn = 'm.created_at';
             $columns += ['Recorded at' => 'date', 'Type' => 'movement', 'Reference' => 'reference', 'Change' => 'change', 'Before' => 'before', 'After' => 'after'];
-            $select = array_merge($select, ['m.created_at as date', 'm.referenceType as movement', 'm.referenceId as reference', 'm.quantityChange as change', 'm.quantityBefore as before', 'm.quantityAfter as after']);
+            $select = array_merge($select, ['m.created_at as date', 'm.referenceType as movement', 'm.referenceId as reference', 'tn.id as numberId', 'tn.issued_date as numberDate', 'm.quantityChange as change', 'm.quantityBefore as before', 'm.quantityAfter as after']);
         }
         foreach (['category' => 'p.category', 'brandId' => 'p.brandId', 'subcategoryId' => 'p.subcategoryId', 'productId' => 'p.id', 'supplierId' => $type === 'receipts' ? 'b.supplierId' : 'p.supplierId'] as $key => $column) {
             if ($request->filled($key)) {
@@ -78,6 +84,29 @@ class ReportController extends Controller
             $note .= ' Restricted to products currently at or below their reorder level.';
         }
         $rows = $query->orderBy('p.id')->get($select);
+        foreach ($rows as $row) {
+            if (in_array($type, ['sales', 'movements'])) {
+                $row->transactionId = $row->reference;
+                if ($row->numberId) {
+                    $row->reference = TransactionNumber::format($row->numberId, $row->numberDate);
+                }
+                if ($type === 'sales' && $row->status === 'Unused') {
+                    $row->status = 'Completed';
+                }
+                unset($row->numberId, $row->numberDate);
+            }
+        }
+        $moneyKeys = ['price', 'amount', 'refunded', 'cost'];
+        $numericKeys = array_merge($moneyKeys, ['stock', 'minimum', 'quantity', 'remaining', 'change', 'before', 'after']);
+        $summary = ['Detail rows' => number_format($rows->count())];
+        if ($type === 'sales') {
+            $summary += ['Transactions' => number_format($rows->pluck('reference')->unique()->count()), 'Recorded line totals (PHP)' => number_format($rows->sum('amount'), 2), 'Cumulative refunds (PHP)' => number_format($rows->sum('refunded'), 2)];
+        } elseif ($type === 'inventory') {
+            $summary += ['Products at reorder level' => number_format($rows->filter(fn ($row) => $row->stock <= $row->minimum)->count())];
+        } elseif ($type === 'receipts') {
+            $summary += ['Received value (PHP)' => number_format($rows->sum(fn ($row) => round($row->quantity * $row->cost, 2)), 2)];
+        }
+        $preparedBy = $request->user()->name;
         $generated = now()->timezone('Asia/Manila')->format('Y-m-d H:i:s').' Asia/Manila';
         $labels = ['Type' => $title];
         foreach (['from' => 'From', 'to' => 'To', 'category' => 'Category'] as $key => $label) {
@@ -105,7 +134,7 @@ class ReportController extends Controller
                 fclose($out);
             }, 'kita-'.$type.'-'.now()->format('Y-m-d').'.csv', ['Content-Type' => 'text/csv; charset=UTF-8', 'Cache-Control' => 'no-store']);
         }
-        $data = compact('title', 'columns', 'rows', 'note', 'generated', 'labels');
+        $data = compact('title', 'columns', 'rows', 'note', 'generated', 'labels', 'summary', 'moneyKeys', 'numericKeys', 'preparedBy');
         if ($request->input('format') === 'print') {
             return response()->view('reports.print', $data)->header('Cache-Control', 'no-store');
         }

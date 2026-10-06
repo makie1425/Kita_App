@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\User;
+use App\Services\TransactionNumber;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
@@ -25,6 +26,7 @@ class ReportsTest extends TestCase
         foreach (['2026-10-01', '2026-10-06', '2026-10-07'] as $index => $date) {
             DB::table('stock_movements')->insert(['productId' => 1, 'quantityChange' => 1, 'quantityBefore' => 1, 'quantityAfter' => 2, 'referenceType' => 'receiving', 'referenceId' => (string) $index, 'created_at' => $date.' 12:00:00']);
             DB::table('transactions')->insert(['uuid' => 'sale-'.$index, 'date' => $date, 'status' => 'Completed']);
+            TransactionNumber::assign('sale-'.$index, $date);
             DB::table('transaction_lines')->insert(['transaction_uuid' => 'sale-'.$index, 'productId' => 1, 'name' => '=Danger,<script>', 'qty' => 1, 'unitPrice' => 10, 'lineTotal' => 10]);
             DB::table('inventory_batches')->insert(['productId' => 1, 'supplierId' => 1, 'quantityReceived' => 2, 'quantityRemaining' => 2, 'unitCost' => 10, 'receivedDate' => $date, 'source' => 'receiving', 'created_at' => $date]);
         }
@@ -47,6 +49,31 @@ class ReportsTest extends TestCase
         $this->actingAs(User::factory()->create(['role' => 'admin', 'status' => 'Active']));
         $this->getJson('/reports/data?type=inventory&lowStock=1&brandId=1')->assertOk()->assertJsonCount(1, 'rows')->assertJsonPath('rows.0.id', 1);
         $this->getJson('/reports/data?type=inventory&category=Missing')->assertOk()->assertJsonCount(0, 'rows');
+    }
+
+    public function test_transaction_numbers_remain_stable_across_filters_and_exports(): void
+    {
+        $number = TransactionNumber::assign('sale-1', '2026-10-06');
+        $this->assertMatchesRegularExpression('/^TXN-20261006-\d{6}$/', $number);
+        $this->assertSame($number, TransactionNumber::assign('sale-1', '2026-10-07'));
+        $this->assertDatabaseCount('transaction_numbers', 3);
+        $query = '/reports/data?type=sales&from=2026-10-06&to=2026-10-06';
+        $this->getJson($query)->assertJsonPath('rows.0.reference', $number)->assertJsonPath('summary.Transactions', '1')->assertJsonPath('summary.Recorded line totals (PHP)', '10.00');
+        $this->get($query.'&format=print')->assertOk()->assertSee($number)->assertSee('PREPARED BY')->assertSee('10.00');
+        $this->assertStringContainsString($number, $this->get($query.'&format=csv')->streamedContent());
+        DB::table('stock_movements')->insert(['productId' => 1, 'quantityChange' => -1, 'quantityBefore' => 2, 'quantityAfter' => 1, 'referenceType' => 'checkout', 'referenceId' => 'sale-1', 'created_at' => '2026-10-08 12:00:00']);
+        $this->getJson('/reports/data?type=movements&from=2026-10-08')->assertOk()->assertJsonPath('rows.0.reference', $number);
+    }
+
+    public function test_migration_numbers_older_transactions_without_changing_their_ids(): void
+    {
+        $migration = require database_path('migrations/2026_10_06_000004_add_transaction_numbers.php');
+        $migration->down();
+        $migration->up();
+        $this->assertDatabaseCount('transaction_numbers', 3);
+        $this->assertDatabaseHas('transactions', ['uuid' => 'sale-1']);
+        $this->assertDatabaseHas('transaction_lines', ['transaction_uuid' => 'sale-1']);
+        $this->getJson('/reports/data?type=sales&from=2026-10-06&to=2026-10-06')->assertJsonPath('rows.0.reference', 'TXN-20261006-000002');
     }
 
     public function test_validation_and_access_control(): void

@@ -49,6 +49,8 @@ class CheckoutStockTest extends TestCase
         $this->assertDatabaseCount('stock_movements', 1);
         $this->postJson('/api/transactions', $this->sale(5))->assertConflict();
         $this->assertDatabaseCount('transactions', 1);
+        $this->assertDatabaseCount('transaction_numbers', 1);
+        $this->assertDatabaseHas('transaction_numbers', ['transaction_uuid' => 'TXN-test']);
     }
 
     public function test_invalid_quantities_unavailable_products_and_insufficient_stock_fail(): void

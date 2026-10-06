@@ -102,6 +102,7 @@ class SaleCheckout
             'changeAmount' => ($status === 'Unused' ? $tendered - $paid : 0) / 100, 'referenceNo' => null,
         ];
         DB::table('transactions')->insert($record);
+        $record['transactionNumber'] = TransactionNumber::assign($data['uuid'], $record['date']);
         foreach ($sale['lines'] as $line) {
             $before = $line['stockBefore'];
             unset($line['stockBefore']);

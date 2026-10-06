@@ -2120,9 +2120,10 @@ class Component extends DCLogic {
       btn(s.reportLoading?'Generating...':'Generate report',this.generateReport,'primary'),btn('Reset filters',()=>{this.reportRequestId=(this.reportRequestId||0)+1;this.setState({reportFilters:{type:'sales'},reportResult:null,reportError:'',reportLoading:false});})]),
       s.reportError?h('p',{role:'alert'},s.reportError):null,
       r?h('section',null,[h('h2',null,r.title),h('p',null,'Generated: '+r.generated+' | '+r.rows.length+' records'),h('p',null,Object.entries(r.labels).map(([key,value])=>key+': '+value).join(' | ')),h('p',null,r.note),
+        h('div',{className:'report-summary'},Object.entries(r.summary||{}).map(([label,value])=>h('div',{key:label,className:'report-metric'},[h('span',null,label),h('strong',null,value)]))),
         h('div',{className:'page-toolbar'},[h('a',{className:'kita-button',href:url('print'),target:'_blank',rel:'noopener'},'Print / Save PDF'),h('a',{className:'kita-button',href:url('csv')},'Export CSV')]),
         h('p',null,'Exports use the displayed report filters. After changing filters, generate the report again.'),
-        r.rows.length?this.recordTable('generated-report',Object.keys(r.columns),r.rows.map((row,i)=>tr(Object.values(r.columns).map(key=>td(row[key]??'-')),i))):h('p',null,'No records match these filters.')
+        r.rows.length?this.recordTable('generated-report',Object.keys(r.columns),r.rows.map((row,i)=>tr(Object.values(r.columns).map(key=>td(row[key]==null?'-':(r.moneyKeys||[]).includes(key)?Number(row[key]).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}):row[key],(r.numericKeys||[]).includes(key)?{textAlign:'right',fontVariantNumeric:'tabular-nums'}:key==='reference'?{fontFamily:'monospace'}:{})),i))):h('p',null,'No records match these filters.')
       ]):null
     ]);
   }
