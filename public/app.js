@@ -1626,12 +1626,18 @@ class Component extends DCLogic {
   buildCategoryModal(){
     const h=React.createElement,{categoryForm:f,categoryError,categoryEditing}=this.state;
     const step=categoryEditing?'category':this.state.categoryStep||'category';
+    const steps=['category','subcategory','brand'],stepIndex=steps.indexOf(step);
+    const dialog=children=>h('div',{key:'category-setup-overlay',style:{position:'fixed',inset:0,background:'rgba(15,31,74,0.38)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:50,padding:16},onKeyDown:e=>{if(e.key==='Escape')this.closeCategoryModal();}},
+      h('div',{key:'category-setup-dialog',role:'dialog','aria-modal':true,'aria-labelledby':'category-dialog-title',className:'category-dialog',style:{width:460,maxWidth:'100%',maxHeight:'90vh',overflowY:'auto',background:'#fff',padding:24}},[
+        h('h2',{key:'title',id:'category-dialog-title',className:'panel-title'},categoryEditing?'Edit category':'Add category'),
+        !categoryEditing?h('ol',{key:'steps','aria-label':'Category setup steps',style:{display:'flex',gap:8,listStyle:'none',padding:0,margin:'16px 0'}},steps.map((name,index)=>h('li',{key:name,'aria-current':step===name?'step':undefined,style:{flex:1,padding:'10px 6px',borderRadius:8,fontSize:13,fontWeight:700,textAlign:'center',background:index===stepIndex?COLORS.brand:COLORS.brandBg,color:index===stepIndex?'#fff':COLORS.brandDark}},`${index+1}. ${name[0].toUpperCase()+name.slice(1)}`))):null,
+        !categoryEditing?h('p',{key:'progress',role:'status'},`Step ${stepIndex+1} of 3`):null,
+        h('div',{key:step},children)
+      ]));
     if(step!=='category'){
       const isSub=step==='subcategory',s=this.state;
-      return h('div',{style:{position:'fixed',inset:0,background:'rgba(15,31,74,0.38)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:50},onKeyDown:e=>{if(e.key==='Escape')this.closeCategoryModal();}},
-        h('div',{role:'dialog','aria-modal':true,'aria-labelledby':'category-setup-title',className:'category-dialog',style:{width:420,maxWidth:'95vw',background:'#fff',padding:24}},[
-          h('h2',{id:'category-setup-title',className:'panel-title'},isSub?'Add subcategory':'Add brand'),
-          h('p',null,`Step ${isSub?2:3} of 3: Category → Subcategory → Brand`),
+      return dialog([
+          h('h3',null,isSub?'Add subcategory':'Add brand'),
           h('p',null,'Category: '+s.categorySetupCategory),
           !isSub?h('p',null,'Subcategory: '+((s.data.SUBCATEGORIES||[]).find(r=>String(r.id)===String(s.regSubcategoryId))?.name||'')):null,
           h('div',{className:'field-group'},[
@@ -1641,13 +1647,10 @@ class Component extends DCLogic {
           !isSub?h('div',{className:'field-group'},[h('label',{htmlFor:'category-setup-brand'},'Or choose an existing brand'),h('select',{id:'category-setup-brand',value:s.categorySetupBrandId||'',onChange:e=>this.setState({categorySetupBrandId:e.target.value,categorySetupName:'',categoryError:''})},[h('option',{value:''},'Select brand'),...(s.data.BRANDS||[]).filter(b=>b.status==='Active').map(b=>h('option',{key:b.id,value:b.id},b.name))])]):null,
           categoryError?h('div',{role:'alert',className:'alert'},categoryError):null,
           h('p',{className:'form-section-description'},'Completed steps are saved. You can finish later from Categories, Subcategories and Brands.'),
-          h('div',{className:'dialog-actions'},[btn('Finish later',this.closeCategoryModal),btn(isSub?'Save and continue to brand':'Finish setup',this.saveCategory,'primary')])
-        ]));
+          h('div',{className:'dialog-actions'},[btn('Finish later',this.closeCategoryModal),btn(isSub?'Next: Brand':'Finish setup',this.saveCategory,'primary')])
+        ]);
     }
-    return h("div",{style:{position:"fixed",inset:0,background:"rgba(15,31,74,0.38)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:50},onKeyDown:e=>{if(e.key==="Escape")this.closeCategoryModal();}},
-      h("div",{role:"dialog","aria-modal":true,"aria-labelledby":"category-dialog-title",className:"category-dialog",style:{width:420,background:"#fff",padding:24}},[
-        h("h2",{key:"title",id:"category-dialog-title",className:"panel-title"},categoryEditing?"Edit category":"Add category"),
-        !categoryEditing?h('p',null,'Step 1 of 3: Category → Subcategory → Brand'):null,
+    return dialog([
         h("p",{key:"help",className:"form-section-description"},"Group related products and choose how they are classified."),
         h("div",{key:"name",className:"field-group"},[
           h("label",{htmlFor:"category-name"},"Category name *"),h("input",{id:"category-name",autoFocus:true,required:true,value:f.name,onChange:this.setCategoryField("name"),maxLength:100,placeholder:"e.g. Household supplies","aria-invalid":!!categoryError,"aria-describedby":categoryError?"category-error":undefined}),
@@ -1656,8 +1659,8 @@ class Component extends DCLogic {
           h("label",{htmlFor:"category-classification"},"Classification *"),h("select",{id:"category-classification",required:true,value:f.classification||"",onChange:this.setCategoryField("classification"),"aria-invalid":!!categoryError,"aria-describedby":categoryError?"category-error":undefined},[h("option",{key:"empty",value:""},"Select classification"),...["Perishable","Non-Perishable"].map(value=>h("option",{key:value,value},value))]),
         ]),
         categoryError?h("div",{key:"error",id:"category-error",role:"alert",className:"alert"},categoryError):null,
-        h("div",{key:"actions",className:"dialog-actions"},[btn("Cancel",this.closeCategoryModal),btn(categoryEditing?"Save changes":"Save and continue to subcategory",this.saveCategory,"primary")]),
-      ]));
+        h("div",{key:"actions",className:"dialog-actions"},[btn("Cancel",this.closeCategoryModal),btn(categoryEditing?"Save changes":"Next: Subcategory",this.saveCategory,"primary")]),
+      ]);
   }
   subcategoriesFor=(category,includeInactive=false)=>(this.state.data.SUBCATEGORIES||[]).filter(c=>c.category===category&&(includeInactive||c.status==='Active'));
   buildSubcategorySelect(category,value,onChange,{registration=false,includeInactive=false}={}){
