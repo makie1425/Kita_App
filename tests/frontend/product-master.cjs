@@ -13,3 +13,49 @@ for(const method of ['buildMgrCategories','buildInventoryHistory','buildManualLo
 app.state.invTab='stock';assert(app.buildMgrInventory());
 app.editProductMaster(product);assert(text(app.buildMgrRegistration()).includes('Edit Product'));
 console.log('Product master, purchasing, inventory, history and lookup screens rendered; no initial stock control, size/reorder fields and editing verified.');
+
+// Exercise the rendered controls across modules with unrelated and inactive subcategories.
+app.state.data.CATEGORIES.push({name:'Snacks',status:'Active'}, {name:'Other',status:'Active'});
+app.state.data.SUBCATEGORIES.push({id:2,name:'Chips',category:'Snacks',status:'Active'}, {id:3,name:'Old soda',category:'Beverages',status:'Inactive'});
+app.state.data.PRODUCTS.push({...product,id:2,name:'Crisps',category:'Snacks',subcategoryId:2});
+app.state.productsLocal=app.state.data.PRODUCTS;
+app.state.suppliersLocal=[{products:[{productId:1},{productId:2}]}];
+const nodes=node=>node==null||typeof node!=='object'?[]:Array.isArray(node)?node.flatMap(nodes):[node,...nodes(node.children)];
+const subSelect=tree=>nodes(tree).find(n=>n.type==='select'&&n.props['aria-label']==='Subcategory');
+const categorySelect=tree=>nodes(tree).find(n=>n.type==='select'&&nodes(n.children).some(o=>o.type==='option'&&o.props.value==='Beverages'));
+const change=(control,value)=>control.props.onChange({target:{value}});
+for(const [method,categoryKey,subKey] of [
+  ['buildMgrRegistration','regCategory','regSubcategoryId'],
+  ['buildManualLookupModal','manualCategory','manualSubcategoryId'],
+  ['buildItemPickerModal','itemPickerFilterCategory','itemPickerSubcategoryId'],
+  ['buildMgrInventory','inventoryCategory','inventorySubcategoryId'],
+]){
+  Object.assign(app.state,{[categoryKey]:'Beverages',[subKey]:'1'});
+  let tree=app[method]();
+  assert(text(subSelect(tree)).includes('Soft Drinks'),method);
+  assert(!text(subSelect(tree)).includes('Chips'),method);
+  if(method!=='buildMgrInventory')assert(!text(subSelect(tree)).includes('Old soda'),method);
+  change(categorySelect(tree),'Snacks');
+  assert.strictEqual(app.state[subKey],'',method+' clears old selection');
+  tree=app[method]();
+  assert(text(subSelect(tree)).includes('Chips'),method);
+  assert(!text(subSelect(tree)).includes('Soft Drinks'),method);
+  change(subSelect(tree),'2');
+  if(method!=='buildMgrRegistration'){
+    tree=app[method]();assert(text(tree).includes('Crisps'),method);assert(!text(tree).includes('Coke'),method);
+  }
+  change(categorySelect(tree),'');
+  assert(subSelect(app[method]()).props.disabled,method+' requires category first');
+}
+app.state.inventoryFilters={category:'Beverages',subcategoryId:'1',productId:'1'};
+let historyTree=app.buildInventoryHistory();
+assert(text(subSelect(historyTree)).includes('Old soda'),'History retains inactive subcategories');
+assert(!text(subSelect(historyTree)).includes('Chips'));
+change(categorySelect(historyTree),'Snacks');
+assert.strictEqual(app.state.inventoryFilters.subcategoryId,'');
+assert.strictEqual(app.state.inventoryFilters.productId,'');
+assert(text(subSelect(app.buildInventoryHistory())).includes('Chips'));
+app.state.regCategory='Other';
+assert(subSelect(app.buildMgrRegistration()).props.disabled);
+assert(text(subSelect(app.buildMgrRegistration())).includes('No subcategories'));
+console.log('Dependent subcategory options, resets, empty states and product filtering verified across all five modules.');
