@@ -1597,10 +1597,26 @@ class Component extends DCLogic {
     }catch(error){this.setState({subcategoryImportMessage:error.message});}
     finally{this.subcategoryImportBusy=false;}
   };
+  populateBrands=async()=>{
+    if(this.brandImportBusy)return;
+    this.brandImportBusy=true;
+    this.setState({brandImportMessage:'Adding standard brands...'});
+    try{
+      const result=await this.authPost('/api/product-master/brands/populate',{});
+      this.setState({brandImportMessage:result.added?result.message:'Standard brands are already present.'});
+      await this.reloadCatalog();
+    }catch(error){this.setState({brandImportMessage:error.message});}
+    finally{this.brandImportBusy=false;}
+  };
   buildMasterLists(){
     const h=React.createElement,f=this.state.masterForm,data=this.state.data;
     return h('section',null,[...['brands','subcategories'].map(kind=>card([
       sectionTitle(kind==='brands'?'Brands':'Subcategories'),btn('Add '+(kind==='brands'?'brand':'subcategory'),()=>this.setState({masterForm:{kind,name:'',category:'',status:'Active'}})),
+      kind==='brands'?h('div',{style:{margin:'12px 0'}},[
+        btn('Add standard brands',this.populateBrands,'primary'),
+        h('p',null,'Load a broad starter list for groceries, personal care, household supplies, appliances and electronics. Existing brands are preserved. Use Add brand for any others you carry.'),
+        this.state.brandImportMessage?h('p',{role:'status'},this.state.brandImportMessage):null
+      ]):null,
       kind==='subcategories'?h('div',{style:{margin:'12px 0'}},[
         btn('Add standard subcategories',this.populateSubcategories,'primary'),
         h('p',null,'Add common retail subcategories across the supported categories, including Appliances. Existing entries are preserved. Use Add subcategory for custom categories.'),

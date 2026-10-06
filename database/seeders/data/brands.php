@@ -1,0 +1,32 @@
+<?php
+
+// Broad retail starter list. Brands remain shared across product categories.
+return [
+    'Coca-Cola', 'Pepsi', 'Sprite', 'Royal', 'Fanta', '7UP', 'Mountain Dew', 'Mirinda', 'Mug', 'Schweppes',
+    'Summit', 'Absolute', 'Wilkins', 'Nature\'s Spring', 'Viva', 'Evian', 'Perrier', 'Pocari Sweat', 'Gatorade', 'Powerade',
+    'Red Bull', 'Monster', 'Cobra', 'Sting', 'C2', 'Nestea', 'Lipton', 'Tang', 'Eight O\'Clock', 'Zest-O', 'Dole', 'Del Monte', 'Minute Maid', 'Mogu Mogu', 'Rite n Lite',
+    'Nescafe', 'Kopiko', 'Great Taste', 'San Mig Coffee', 'Blend 45', 'UCC', 'Starbucks', 'G7', 'Twinings', 'Dilmah', 'Basilur', 'Milo', 'Ovaltine', 'Swiss Miss',
+    'Nestle', 'Bear Brand', 'Nido', 'Alaska', 'Alpine', 'Angel', 'Carnation', 'Cowhead', 'Anchor', 'Arla', 'Emborg', 'Magnolia', 'Dari Creme', 'Eden', 'Cheez Whiz', 'Kraft', 'President', 'Yakult', 'Dutch Mill', 'Selecta', 'Creamline', 'Aice',
+    'Gardenia', 'Fuwa Fuwa', 'Marby', 'French Baker', 'Goldilocks', 'Red Ribbon', 'Julie\'s Bakeshop', 'Quaker', 'Kellogg\'s', 'Weetabix', 'Maya', 'White King', 'Pillsbury', 'Betty Crocker', 'McCormick', 'Ferna', 'Gulaman King', 'Queen',
+    'Lucky Me!', 'Nissin', 'Payless', 'QuickChow', 'Indomie', 'Mi Sedaap', 'Samyang', 'Nongshim', 'Ottogi', 'Jin Ramen', 'Wai Wai', 'Mama',
+    'Argentina', 'CDO', 'Purefoods', 'San Marino', 'Century', '555', 'Ligo', 'Mega', 'Saba', 'Young\'s Town', 'Master', 'Rose Bowl', 'Hunt\'s', 'Maling', 'Spam', 'Libby\'s', 'Prem', 'Highlands', 'Holiday', 'Virginia', 'Swift', 'Tender Juicy', 'Frabelle', 'Bounty Fresh', 'Monterey', 'Bounty',
+    'Datu Puti', 'Silver Swan', 'UFC', 'Jufran', 'Mama Sita\'s', 'Mang Tomas', 'Knorr', 'Maggi', 'Ajinomoto', 'Aji-Ginisa', 'Lee Kum Kee', 'Kikkoman', 'Heinz', 'Lady\'s Choice', 'Best Foods', 'Clara Ole', 'Tabasco', 'Cholula', 'Sriracha',
+    'Marca Leon', 'Baguio', 'Golden Fiesta', 'Minola', 'Dona Elena', 'Bertolli', 'Filippo Berio', 'Crisco', 'Jolly', 'Ram', 'Ideal', 'San Remo', 'El Real', 'Barilla', 'Good Life',
+    'Jack n Jill', 'Oishi', 'Regent', 'Leslie\'s', 'Clover', 'Piattos', 'Nova', 'Chippy', 'V-Cut', 'Roller Coaster', 'Tostillas', 'Mr. Chips', 'Cheetos', 'Doritos', 'Lay\'s', 'Pringles', 'Ruffles',
+    'Rebisco', 'Fita', 'SkyFlakes', 'Magic Flakes', 'Hansel', 'Fudgee Barr', 'Cream-O', 'Oreo', 'Chips Ahoy!', 'Ritz', 'Nissin Monde', 'Monde', 'M.Y. San', 'Sunflower', 'Beng-Beng',
+    'Cadbury', 'Toblerone', 'Hershey\'s', 'KitKat', 'Snickers', 'Mars', 'M&M\'s', 'Ferrero Rocher', 'Kinder', 'Lindt', 'Goya', 'Choc Nut', 'Hany', 'Cloud 9', 'Delfi', 'Mentos', 'Kopiko Candy', 'Maxx', 'Potchi', 'V-Fresh', 'Dynamite', 'Skittles', 'Haribo', 'Wrigley\'s',
+    'Skippy', 'Lily\'s', 'Ludy\'s', 'Nutella', 'Smucker\'s', 'Biscoff', 'Bonne Maman', 'Jif',
+    'San Miguel', 'Red Horse', 'San Mig Light', 'Heineken', 'Budweiser', 'Corona', 'Tiger', 'Asahi', 'Tanduay', 'Emperador', 'Ginebra San Miguel', 'Alfonso', 'Fundador', 'Bacardi', 'Smirnoff', 'Absolut', 'Johnnie Walker', 'Jack Daniel\'s', 'Chivas Regal', 'Jose Cuervo', 'Baileys', 'Barefoot', 'Carlo Rossi',
+    'Pampers', 'Huggies', 'EQ', 'Drypers', 'Bambino', 'Enfagrow', 'Enfamil', 'Lactum', 'Similac', 'S-26', 'NAN', 'Gerber', 'Cerelac', 'Pigeon', 'Chicco', 'Avent', 'Johnson\'s', 'Cetaphil',
+    'Safeguard', 'Dove', 'Lux', 'Palmolive', 'Bioderm', 'Irish Spring', 'Dial', 'Dettol', 'Lifebuoy', 'Sunsilk', 'Pantene', 'Head & Shoulders', 'Rejoice', 'Clear', 'Cream Silk', 'TRESemme', 'Vaseline', 'Nivea', 'Pond\'s', 'Olay', 'Garnier', 'L\'Oreal',
+    'Colgate', 'Closeup', 'Hapee', 'Sensodyne', 'Oral-B', 'Listerine', 'Rexona', 'Old Spice', 'Axe', 'Gillette', 'Schick', 'Modess', 'Whisper', 'Sisters', 'Carefree', 'Kotex', 'Charmee', 'Belo', 'Celeteque', 'Human Nature', 'Ever Bilena', 'Careline', 'Maybelline', 'Revlon', 'Nichido',
+    'Tide', 'Ariel', 'Surf', 'Breeze', 'Pride', 'Champion', 'Wings', 'Calla', 'Downy', 'Del', 'Zonrox', 'Clorox', 'Joy', 'Axion', 'Smart', 'Mr. Clean', 'Domex', 'Lysol', 'Mr Muscle', 'Pine-Sol', 'Windex', 'Scotch-Brite', 'Baygon', 'Raid', 'Off!', 'Glade', 'Ambi Pur',
+    'Tisyu', 'Joy Tissue', 'Kleenex', 'Scott', 'Femme', 'Sanicare', 'Cheers', 'Softee', 'Green Cross', 'Casino', 'Biogenic', 'Bactidol', 'Betadine', 'Band-Aid', '3M', 'Omron', 'Ensure', 'Glucerna', 'Boost', 'Centrum', 'Enervon', 'Ceelin',
+    'Pedigree', 'Whiskas', 'Royal Canin', 'Purina', 'Friskies', 'Fancy Feast', 'Alpo', 'Special Cat', 'Special Dog', 'Aozi', 'Monello', 'Goodest', 'Kit Cat', 'Me-O', 'Temptations', 'Tetra', 'Sera',
+    'Samsung', 'LG', 'Panasonic', 'Sharp', 'Sony', 'Toshiba', 'Hitachi', 'Haier', 'Hisense', 'TCL', 'Whirlpool', 'Electrolux', 'Beko', 'Midea', 'Fujidenzo', 'Condura', 'Carrier', 'Daikin', 'Kolin', 'Koppel', 'Gree', 'American Home', 'Hanabishi', 'Astron', 'Asahi', 'Dowell', 'Kyowa', 'Imarflex', 'Standard', 'Camel', 'Union', 'Philips', 'Tefal', 'Oster', 'Black+Decker', 'Dyson', 'Xiaomi', 'De\'Longhi', 'Breville', 'KitchenAid',
+    'MyPhone', 'Cherry', 'Apple', 'Huawei', 'Oppo', 'Vivo', 'Realme', 'Infinix', 'Tecno', 'Nokia', 'Motorola', 'Honor', 'Asus', 'Acer', 'Lenovo', 'HP', 'Dell', 'Epson', 'Canon', 'Brother', 'Logitech', 'Anker', 'Belkin', 'TP-Link', 'SanDisk', 'Kingston',
+    'Stanley', 'Bosch', 'Makita', 'DeWalt', 'Ingco', 'Total', 'Tolsen', 'Lotus', 'Dremel', 'WD-40', 'Pioneer', 'Bostik', 'Boysen', 'Davies', 'Nippon Paint', 'Energizer', 'Duracell', 'Eveready', 'Firefly', 'Akari', 'Omni', 'Royu', 'Schneider Electric', 'Yale', 'Solex',
+    'Pilot', 'Uni', 'Faber-Castell', 'Dong-A', 'Pentel', 'Mongol', 'Crayola', 'Stabilo', 'BIC', 'Sharpie', 'HBW', 'Deli', 'Maped', 'Elmer\'s', 'Scotch', 'Post-it', 'Double A', 'Paper One',
+    'LocknLock', 'Tupperware', 'Orocan', 'Uratex', 'MegaBox', 'Luminarc', 'Corelle', 'Pyrex', 'Arcoroc', 'Chef\'s Classics', 'Masflex', 'Alps', 'Glad', 'Reynolds',
+    'Marlboro', 'Winston', 'Camel Tobacco', 'Philip Morris', 'Fortune', 'Mighty', 'Chesterfield', 'Mevius',
+];

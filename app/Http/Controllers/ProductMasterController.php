@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Services\InventoryRules;
+use Database\Seeders\RetailBrandSeeder;
 use Database\Seeders\RetailSubcategorySeeder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -10,6 +11,22 @@ use Illuminate\Validation\Rule;
 
 class ProductMasterController extends Controller
 {
+    public function populateBrands(Request $request)
+    {
+        InventoryRules::authorize($request);
+
+        return DB::transaction(function () use ($request) {
+            InventoryRules::lockActor($request);
+            DB::table('categories')->orderBy('name')->lockForUpdate()->get();
+            $before = DB::table('brands')->count();
+            (new RetailBrandSeeder)->run();
+            $added = DB::table('brands')->count() - $before;
+            InventoryRules::audit($request->user()->name, 'Added standard brands', 'Catalog', null, (string) $added);
+
+            return response()->json(['added' => $added, 'message' => $added.' standard brands added.']);
+        });
+    }
+
     public function populateSubcategories(Request $request)
     {
         InventoryRules::authorize($request);
