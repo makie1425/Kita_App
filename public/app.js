@@ -2092,50 +2092,39 @@ class Component extends DCLogic {
     return React.createElement("div",null,[sectionTitle("Supplier Records","Contact info, address, category, status (Active/Inactive only)"),
       this.recordTable("supplier-records",["Supplier","Category","Status","Details"],data.SUPPLIERS.map(s=>tr([td(s.name,{fontWeight:600}),td(s.category),td(badge(s.status)),td(React.createElement("button",{onClick:this.openSupplierDetail(s.id),style:{color:COLORS.brand,background:"none",border:"none",fontWeight:700,cursor:"pointer"}},"View â†’"))],s.id)))]);
   }
+  setReportFilter=(key,value)=>this.setState(s=>({reportFilters:{...(s.reportFilters||{type:'sales'}),[key]:value,...(key==='category'?{subcategoryId:'',productId:''}:['brandId','subcategoryId','supplierId'].includes(key)?{productId:''}:{}),...(key==='type'&&value==='inventory'?{from:'',to:''}:{})}}));
+  generateReport=async()=>{
+    const filters={...(this.state.reportFilters||{type:'sales'})};
+    const requestId=(this.reportRequestId||0)+1;this.reportRequestId=requestId;
+    this.setState({reportLoading:true,reportError:''});
+    try{
+      const response=await fetch('/reports/data?'+new URLSearchParams(Object.entries(filters).filter(([,v])=>v)),{headers:{Accept:'application/json'}});
+      const body=await response.json();if(!response.ok)throw new Error(body.message||'Could not generate report.');
+      if(this.reportRequestId===requestId)this.setState({reportResult:body,reportAppliedFilters:filters});
+    }catch(error){if(this.reportRequestId===requestId)this.setState({reportError:error.message,reportResult:null});}
+    finally{if(this.reportRequestId===requestId)this.setState({reportLoading:false});}
+  };
   buildAdmReports(){
-    if(this.state.inventoryHistoryOpen)return this.buildInventoryHistory();
-    const {repDateMode,repDay,repMonth,repMonthFrom,repMonthTo,repDayFrom,repDayTo,repPaymentType}=this.state;
-    const types=["Sales Report","Inventory Report","Low Stock Items Report","Remaining Supplies Report","Expired Inventory Report","Stocks Change Report","Inventory Disposals and Returns Report","Purchase Order Report","Purchase Order Requests Log Report","Purchased Items Report","Supplier Performance Report"];
-    const months=["January","February","March","April","May","June","July","August","September","October","November","December"];
-    const lbl=(t)=>React.createElement("label",{style:{fontSize:11,fontWeight:700,color:COLORS.textSoft,display:"block",marginBottom:4}},t);
-    const sel=(props,opts)=>React.createElement("select",Object.assign({style:{width:"100%",padding:8,border:"1px solid "+COLORS.border,borderRadius:7}},props),opts);
-    let dateControls;
-    if(repDateMode==="day"){
-      dateControls=React.createElement("div",{style:{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:10}},[
-        React.createElement("div",{key:"m"},[lbl("Month"),sel({value:repMonth,onChange:this.setRepField("repMonth")},[React.createElement("option",{key:"-",value:""},"Monthâ€¦"),...months.map(m=>React.createElement("option",{key:m,value:m},m))])]),
-        React.createElement("div",{key:"d"},[lbl("Day"),React.createElement("input",{type:"number",min:1,max:31,value:repDay,onChange:this.setRepField("repDay"),placeholder:"Day (1â€“31)",style:{width:"100%",padding:8,border:"1px solid "+COLORS.border,borderRadius:7}})]),
-      ]);
-    } else if(repDateMode==="month"){
-      dateControls=React.createElement("div",{style:{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:10}},[
-        React.createElement("div",{key:"f"},[lbl("From Month"),sel({value:repMonthFrom,onChange:this.setRepField("repMonthFrom")},[React.createElement("option",{key:"-",value:""},"Monthâ€¦"),...months.map(m=>React.createElement("option",{key:m,value:m},m))])]),
-        React.createElement("div",{key:"t"},[lbl("To Month"),sel({value:repMonthTo,onChange:this.setRepField("repMonthTo")},[React.createElement("option",{key:"-",value:""},"Monthâ€¦"),...months.map(m=>React.createElement("option",{key:m,value:m},m))])]),
-      ]);
-    } else {
-      dateControls=React.createElement("div",{style:{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:10}},[
-        React.createElement("div",{key:"m"},[lbl("Month"),sel({value:repMonth,onChange:this.setRepField("repMonth")},[React.createElement("option",{key:"-",value:""},"Monthâ€¦"),...months.map(m=>React.createElement("option",{key:m,value:m},m))])]),
-        React.createElement("div",{key:"f"},[lbl("From Day"),React.createElement("input",{type:"number",min:1,max:31,value:repDayFrom,onChange:this.setRepField("repDayFrom"),style:{width:"100%",padding:8,border:"1px solid "+COLORS.border,borderRadius:7}})]),
-        React.createElement("div",{key:"t"},[lbl("To Day"),React.createElement("input",{type:"number",min:1,max:31,value:repDayTo,onChange:this.setRepField("repDayTo"),style:{width:"100%",padding:8,border:"1px solid "+COLORS.border,borderRadius:7}})]),
-      ]);
-    }
-    return React.createElement("div",null,[sectionTitle("Reports"),btn("Inventory / Cost History",()=>{this.setState({inventoryHistoryOpen:true});this.loadInventoryHistory();}),
-      card([
-        React.createElement("div",{key:"grid",style:{display:"grid",gridTemplateColumns:"minmax(0,2fr) minmax(0,1fr)",gap:10,marginBottom:12}},[
-          React.createElement("select",{key:"t",style:{padding:8,border:"1px solid "+COLORS.border,borderRadius:7}},types.map(o=>React.createElement("option",{key:o},o))),
-          React.createElement("select",{key:"fmt",style:{padding:8,border:"1px solid "+COLORS.border,borderRadius:7}},["PDF","Excel","CSV"].map(o=>React.createElement("option",{key:o},o))),
-        ]),
-        React.createElement("div",{key:"datefilter",style:{marginBottom:12,padding:12,background:"#f8faff",borderRadius:8}},[
-          lbl("Filter by Date"),
-          React.createElement("div",{key:"modes",style:{display:"flex",gap:6,marginBottom:10}},[["day","Specific Day"],["month","Month Range"],["daymonth","Day Range within Month"]].map(([k,l])=>React.createElement("button",{key:k,onClick:()=>this.setState({repDateMode:k}),style:{padding:"6px 12px",borderRadius:20,fontSize:11,fontWeight:700,cursor:"pointer",background:repDateMode===k?COLORS.brand:"#fff",color:repDateMode===k?"#fff":COLORS.text,border:"1px solid "+(repDateMode===k?COLORS.brand:COLORS.border)}},l))),
-          dateControls,
-          repDateMode==="daymonth"?React.createElement("div",{key:"preview",style:{marginTop:8,fontSize:12,color:COLORS.textSoft}},`Range: ${repDayFrom||"â€¦"}â€“${repDayTo||"â€¦"} of ${repMonth||"â€¦"}`):null,
-        ]),
-        React.createElement("div",{key:"pay",style:{marginTop:12}},[lbl("Payment Type"),sel({value:repPaymentType,onChange:this.setRepField("repPaymentType"),style:{width:220,padding:8,border:"1px solid "+COLORS.border,borderRadius:7}},[React.createElement("option",{key:"all",value:"all"},"All Payment Types"),React.createElement("option",{key:"cash",value:"Cash"},"Cash"),React.createElement("option",{key:"ewallet",value:"E-Wallet"},"E-Wallet / QR Ph")])]),
-        React.createElement("div",{key:"a",style:{display:"flex",gap:8,marginTop:14}},[btn("Generate Report","","primary"),btn("Print"),btn("Export CSV")]),
-      ],{marginBottom:16}),
-      this.recordTable("reports",["Report","Range","Format","Generated","Link"],[
-        tr([td("Sales Summary"),td("Jul 17â€“23, 2026"),td("PDF"),td("2026-07-23"),td(React.createElement("a",{href:"#"},"Download"))],1),
-        tr([td("Purchase Order Report (Outstanding/Partial)"),td("July 2026"),td("Excel"),td("2026-07-22"),td(React.createElement("a",{href:"#"},"Download"))],2),
-      ])]);
+    const h=React.createElement,s=this.state,d=s.data,f=s.reportFilters||{type:'sales'},r=s.reportResult;
+    const field=(key,label,options)=>h('label',{key,className:'field-group'},[label,h(options?'select':'input',{value:f[key]||'',type:options?undefined:'date',disabled:!options&&f.type==='inventory',onChange:e=>this.setReportFilter(key,e.target.value)},options?[...(key==='type'?[]:[h('option',{key:'all',value:''},'All')]),...options.map(([value,text])=>h('option',{key:value,value},text))]:null)]);
+    const products=d.PRODUCTS.filter(p=>(!f.category||p.category===f.category)&&(!f.subcategoryId||String(p.subcategoryId)===String(f.subcategoryId))&&(!f.brandId||String(p.brandId)===String(f.brandId))&&(f.type==='receipts'||!f.supplierId||String(p.supplierId)===String(f.supplierId)));
+    const url=format=>'/reports/data?'+new URLSearchParams({...Object.fromEntries(Object.entries(s.reportAppliedFilters||{}).filter(([,v])=>v)),format});
+    return h('div',null,[sectionTitle('Reports','Filter and generate a report, then print, save as PDF or export all matching rows to CSV.'),
+      card([h('div',{className:'form-grid'},[
+        field('type','Report type',[['sales','Sales lines'],['inventory','Current inventory'],['receipts','Received stock'],['movements','Stock movements']]),
+        field('from','From date'),field('to','To date'),field('category','Category',d.CATEGORIES.map(c=>[c.name,c.name])),
+        this.buildSubcategorySelect(f.category,f.subcategoryId,e=>this.setReportFilter('subcategoryId',e.target.value),{includeInactive:true}),
+        field('brandId','Brand',(d.BRANDS||[]).map(b=>[b.id,b.name])),field('supplierId','Supplier',d.SUPPLIERS.map(p=>[p.id,p.name])),
+        field('productId','Product',products.map(p=>[p.id,this.productLabel(p)+' #'+p.id])),field('lowStock','Stock filter',[['1','Currently low stock']])
+      ]),f.type==='inventory'?h('p',null,'Current stock snapshot: dates do not apply. Use Stock movements for a date range.'):null,
+      btn(s.reportLoading?'Generating...':'Generate report',this.generateReport,'primary'),btn('Reset filters',()=>{this.reportRequestId=(this.reportRequestId||0)+1;this.setState({reportFilters:{type:'sales'},reportResult:null,reportError:'',reportLoading:false});})]),
+      s.reportError?h('p',{role:'alert'},s.reportError):null,
+      r?h('section',null,[h('h2',null,r.title),h('p',null,'Generated: '+r.generated+' | '+r.rows.length+' records'),h('p',null,Object.entries(r.labels).map(([key,value])=>key+': '+value).join(' | ')),h('p',null,r.note),
+        h('div',{className:'page-toolbar'},[h('a',{className:'kita-button',href:url('print'),target:'_blank',rel:'noopener'},'Print / Save PDF'),h('a',{className:'kita-button',href:url('csv')},'Export CSV')]),
+        h('p',null,'Exports use the displayed report filters. After changing filters, generate the report again.'),
+        r.rows.length?this.recordTable('generated-report',Object.keys(r.columns),r.rows.map((row,i)=>tr(Object.values(r.columns).map(key=>td(row[key]??'-')),i))):h('p',null,'No records match these filters.')
+      ]):null
+    ]);
   }
   buildAdmManagers(){
     const h=React.createElement,{accountsLocal,acctModalOpen,acctModalMode,acctForm:f}=this.state;
@@ -2268,6 +2257,7 @@ class Component extends DCLogic {
       manager:[{label:"OPERATIONS",items:[{key:"mgrDashboard",label:"Dashboard"},{key:"pos",label:"Checkout"}]},
         {label:"PURCHASE REQUEST",items:[{key:"mgrRequest",label:"Create Request"},{key:"mgrRequestView",label:"View Requests"},{key:"mgrPurchaseHistory",label:"Transaction History"},{key:"mgrPO",label:"Stock Receiving"}]},
         {label:"INVENTORY",items:[{key:"mgrInventory",label:"Inventory"},{key:"mgrCategories",label:"Categories / Brands"},{key:"mgrRegistration",label:"Barcode/Item Registration"},{key:"archive",label:"Archive"}]},
+        {label:"REPORTS",items:[{key:"admReports",label:"Reports"}]},
         {label:"TEAM & MERCH",items:[{key:"mgrCashiers",label:"Cashier Accounts"},{key:"mgrPromotions",label:"Promotions"},{key:"mgrSupplier",label:"Supplier"}]}],
       admin:[{label:null,items:[{key:"admDashboard",label:"Dashboard/Analytics"}]},
         {label:"PURCHASING",items:[{key:"admPurchasedOrders",label:"Purchase Requests"},{key:"admForwarded",label:"Forwarded Purchase Requests"},{key:"admDisapproved",label:"Disapproved Purchase Requests"},{key:"admReceivingApprovals",label:"Receiving History"}]},

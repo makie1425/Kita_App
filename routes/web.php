@@ -12,6 +12,7 @@ use App\Http\Controllers\PayMongoController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\ProductMasterController;
 use App\Http\Controllers\PurchasingController;
+use App\Http\Controllers\ReportController;
 use App\Http\Controllers\SuperAdminDashboardController;
 use App\Http\Controllers\TransactionController;
 use Illuminate\Support\Facades\Route;
@@ -35,6 +36,7 @@ Route::middleware('role:cashier,manager')->group(function () {
     Route::post('/api/payments/paymongo/{uuid}/cancel', [PayMongoController::class, 'cancelCheckout']);
 });
 Route::middleware('role:manager,admin')->group(function () {
+    Route::get('/reports/data', ReportController::class);
     Route::post('/api/inventory/adjustments', [OperationsController::class, 'storeAdjustment'])->name('adjustments.store');
     Route::post('/api/purchase-requests', [OperationsController::class, 'storeRequest'])->name('purchase-requests.store');
     Route::post('/api/purchase-orders/{id}/items', [OperationsController::class, 'addPurchaseOrderItems']);
