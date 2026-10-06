@@ -667,22 +667,40 @@ class Component extends DCLogic {
     if(order){window.open(`/purchase-orders/${encodeURIComponent(order.id)}/report`,'_blank','noopener');return;}
     this.setState({screen:'mgrPurchaseHistory'});this.reloadPurchasing().catch(()=>{});this.toast('Open a recorded delivery from Transaction History to print its report.');
   };
-  openCategoryModal=()=>this.setState({categoryModalOpen:true,categoryEditing:false,categoryForm:{name:"",status:"Active",classification:""},categoryError:""});
+  openCategoryModal=()=>this.setState({categoryModalOpen:true,categoryEditing:false,categoryStep:'category',categorySetupName:'',categorySetupBrandId:'',categoryForm:{name:"",status:"Active",classification:""},categoryError:""});
   editCategory=c=>()=>this.setState({categoryModalOpen:true,categoryEditing:true,categoryForm:{...c},categoryOriginalName:c.name,categoryError:""});
-  closeCategoryModal=()=>this.setState({categoryModalOpen:false});
+  closeCategoryModal=()=>{if(!this.categoryBusy)this.setState({categoryModalOpen:false});};
   setCategoryField=field=>e=>this.setState(s=>({categoryForm:{...s.categoryForm,[field]:e.target.value},categoryError:""}));
-  saveCategory=()=>{
+  saveCategory=async()=>{
+    if(this.categoryBusy)return;
+    if(!this.state.categoryEditing&&['subcategory','brand'].includes(this.state.categoryStep))return this.saveCategorySetup();
     const f=this.state.categoryForm;
     if(!f.name.trim()||!["Perishable","Non-Perishable"].includes(f.classification)){this.setState({categoryError:"Enter a category name and classification."});return;}
-    this.authPost(this.state.categoryEditing?`/api/categories/${encodeURIComponent(this.state.categoryOriginalName)}`:"/api/categories",f,this.state.categoryEditing?"PATCH":"POST").then(response=>{
+    this.categoryBusy=true;
+    try{
+      const response=await this.authPost(this.state.categoryEditing?`/api/categories/${encodeURIComponent(this.state.categoryOriginalName)}`:"/api/categories",f,this.state.categoryEditing?"PATCH":"POST");
       const category=response.category;
-      this.setState(s=>({categoryModalOpen:false,
+      this.setState(s=>({categoryModalOpen:!s.categoryEditing,categoryStep:'subcategory',categorySetupCategory:category.name,categorySetupName:'',categoryError:'',
         categoriesLocal:[...(s.categoriesLocal||[]).filter(c=>c.name!==category.name),category],
         data:{...s.data,CATEGORIES:[...(s.data.CATEGORIES||[]).filter(c=>c.name!==category.name),category]},
-        ...(!s.categoryEditing?{regCategory:category.name,regSubcategoryId:""}:{})}));
+        ...(!s.categoryEditing?{regCategory:category.name,regSubcategoryId:"",regBrandId:""}:{})}));
       this.toast("Category saved.");
-      return this.reloadCatalog().catch(()=>this.toast("Category saved, but the catalog could not refresh. Reload the page.","warn"));
-    }).catch(error=>this.setState({categoryError:error.message}));
+      await this.reloadCatalog().catch(()=>this.toast("Category saved, but the catalog could not refresh. Reload the page.","warn"));
+    }catch(error){this.setState({categoryError:error.message});}finally{this.categoryBusy=false;}
+  };
+  saveCategorySetup=async()=>{
+    if(this.categoryBusy)return;
+    const s=this.state,isSub=s.categoryStep==='subcategory',kind=isSub?'subcategories':'brands',name=(s.categorySetupName||'').trim();
+    const existing=!isSub&&(s.data.BRANDS||[]).find(b=>String(b.id)===String(s.categorySetupBrandId)&&b.status==='Active');
+    if(!name&&!existing){this.setState({categoryError:isSub?'Enter a subcategory name.':'Enter a brand name or choose an existing brand.'});return;}
+    this.categoryBusy=true;
+    try{
+      const record=existing||(await this.authPost('/api/product-master/'+kind,{name,status:'Active',...(isSub?{category:s.categorySetupCategory}:{})})).record;
+      this.setState(current=>({data:{...current.data,[kind.toUpperCase()]:[...(current.data[kind.toUpperCase()]||[]).filter(r=>String(r.id)!==String(record.id)),record]},categoryError:'',categorySetupName:'',
+        ...(isSub?{categoryStep:'brand',regSubcategoryId:record.id}:{categoryModalOpen:false,regBrandId:record.id})}));
+      this.toast(isSub?'Subcategory saved. Add the brand next.':'Category setup complete.');
+      await this.reloadCatalog().catch(()=>this.toast('Saved, but the catalog could not refresh. Reload the page.','warn'));
+    }catch(error){this.setState({categoryError:error.message});}finally{this.categoryBusy=false;}
   };
   setArchiveTab=tab=>()=>this.setState({archiveTab:tab,archiveChecked:{}});
   toggleArchiveCheck=key=>()=>this.setState(s=>({archiveChecked:{...s.archiveChecked,[key]:!s.archiveChecked[key]}}));
@@ -1607,9 +1625,29 @@ class Component extends DCLogic {
   }
   buildCategoryModal(){
     const h=React.createElement,{categoryForm:f,categoryError,categoryEditing}=this.state;
+    const step=categoryEditing?'category':this.state.categoryStep||'category';
+    if(step!=='category'){
+      const isSub=step==='subcategory',s=this.state;
+      return h('div',{style:{position:'fixed',inset:0,background:'rgba(15,31,74,0.38)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:50},onKeyDown:e=>{if(e.key==='Escape')this.closeCategoryModal();}},
+        h('div',{role:'dialog','aria-modal':true,'aria-labelledby':'category-setup-title',className:'category-dialog',style:{width:420,maxWidth:'95vw',background:'#fff',padding:24}},[
+          h('h2',{id:'category-setup-title',className:'panel-title'},isSub?'Add subcategory':'Add brand'),
+          h('p',null,`Step ${isSub?2:3} of 3: Category → Subcategory → Brand`),
+          h('p',null,'Category: '+s.categorySetupCategory),
+          !isSub?h('p',null,'Subcategory: '+((s.data.SUBCATEGORIES||[]).find(r=>String(r.id)===String(s.regSubcategoryId))?.name||'')):null,
+          h('div',{className:'field-group'},[
+            h('label',{htmlFor:'category-setup-name'},isSub?'Subcategory name *':'New brand name'),
+            h('input',{key:step,id:'category-setup-name',autoFocus:true,maxLength:100,value:s.categorySetupName||'',placeholder:isSub?'e.g. Refrigerators':'e.g. Samsung',onChange:e=>this.setState({categorySetupName:e.target.value,categorySetupBrandId:'',categoryError:''})})
+          ]),
+          !isSub?h('div',{className:'field-group'},[h('label',{htmlFor:'category-setup-brand'},'Or choose an existing brand'),h('select',{id:'category-setup-brand',value:s.categorySetupBrandId||'',onChange:e=>this.setState({categorySetupBrandId:e.target.value,categorySetupName:'',categoryError:''})},[h('option',{value:''},'Select brand'),...(s.data.BRANDS||[]).filter(b=>b.status==='Active').map(b=>h('option',{key:b.id,value:b.id},b.name))])]):null,
+          categoryError?h('div',{role:'alert',className:'alert'},categoryError):null,
+          h('p',{className:'form-section-description'},'Completed steps are saved. You can finish later from Categories, Subcategories and Brands.'),
+          h('div',{className:'dialog-actions'},[btn('Finish later',this.closeCategoryModal),btn(isSub?'Save and continue to brand':'Finish setup',this.saveCategory,'primary')])
+        ]));
+    }
     return h("div",{style:{position:"fixed",inset:0,background:"rgba(15,31,74,0.38)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:50},onKeyDown:e=>{if(e.key==="Escape")this.closeCategoryModal();}},
       h("div",{role:"dialog","aria-modal":true,"aria-labelledby":"category-dialog-title",className:"category-dialog",style:{width:420,background:"#fff",padding:24}},[
         h("h2",{key:"title",id:"category-dialog-title",className:"panel-title"},categoryEditing?"Edit category":"Add category"),
+        !categoryEditing?h('p',null,'Step 1 of 3: Category → Subcategory → Brand'):null,
         h("p",{key:"help",className:"form-section-description"},"Group related products and choose how they are classified."),
         h("div",{key:"name",className:"field-group"},[
           h("label",{htmlFor:"category-name"},"Category name *"),h("input",{id:"category-name",autoFocus:true,required:true,value:f.name,onChange:this.setCategoryField("name"),maxLength:100,placeholder:"e.g. Household supplies","aria-invalid":!!categoryError,"aria-describedby":categoryError?"category-error":undefined}),
@@ -1618,7 +1656,7 @@ class Component extends DCLogic {
           h("label",{htmlFor:"category-classification"},"Classification *"),h("select",{id:"category-classification",required:true,value:f.classification||"",onChange:this.setCategoryField("classification"),"aria-invalid":!!categoryError,"aria-describedby":categoryError?"category-error":undefined},[h("option",{key:"empty",value:""},"Select classification"),...["Perishable","Non-Perishable"].map(value=>h("option",{key:value,value},value))]),
         ]),
         categoryError?h("div",{key:"error",id:"category-error",role:"alert",className:"alert"},categoryError):null,
-        h("div",{key:"actions",className:"dialog-actions"},[btn("Cancel",this.closeCategoryModal),btn(categoryEditing?"Save changes":"Create category",this.saveCategory,"primary")]),
+        h("div",{key:"actions",className:"dialog-actions"},[btn("Cancel",this.closeCategoryModal),btn(categoryEditing?"Save changes":"Save and continue to subcategory",this.saveCategory,"primary")]),
       ]));
   }
   subcategoriesFor=(category,includeInactive=false)=>(this.state.data.SUBCATEGORIES||[]).filter(c=>c.category===category&&(includeInactive||c.status==='Active'));
