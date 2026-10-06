@@ -3,12 +3,30 @@
 namespace App\Http\Controllers;
 
 use App\Services\InventoryRules;
+use Database\Seeders\RetailSubcategorySeeder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 class ProductMasterController extends Controller
 {
+    public function populateSubcategories(Request $request)
+    {
+        InventoryRules::authorize($request);
+
+        return DB::transaction(function () use ($request) {
+            InventoryRules::lockActor($request);
+            // Serialize catalog imports, including requests from different managers.
+            DB::table('categories')->orderBy('name')->lockForUpdate()->get();
+            $before = DB::table('subcategories')->count();
+            (new RetailSubcategorySeeder)->run();
+            $added = DB::table('subcategories')->count() - $before;
+            InventoryRules::audit($request->user()->name, 'Added standard subcategories', 'Catalog', null, (string) $added);
+
+            return response()->json(['added' => $added, 'message' => $added.' standard subcategories added.']);
+        });
+    }
+
     public function save(Request $request, string $kind, ?int $id = null)
     {
         InventoryRules::authorize($request);

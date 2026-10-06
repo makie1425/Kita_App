@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\User;
 use Database\Seeders\RetailSubcategorySeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -10,6 +11,22 @@ use Tests\TestCase;
 class RetailSubcategoriesTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_manager_can_populate_from_the_screen_without_duplicates(): void
+    {
+        DB::table('categories')->insert(['name' => 'Beverages', 'status' => 'Active']);
+        $this->actingAs(User::factory()->create(['role' => 'manager', 'status' => 'Active']));
+        $catalog = require database_path('seeders/data/subcategories.php');
+        $this->postJson('/api/product-master/subcategories/populate')->assertOk()->assertJsonPath('added', count($catalog['Beverages']));
+        $this->postJson('/api/product-master/subcategories/populate')->assertOk()->assertJsonPath('added', 0);
+        $this->assertDatabaseHas('subcategories', ['name' => 'Energy Drinks', 'category' => 'Beverages']);
+    }
+
+    public function test_cashier_cannot_populate_subcategories(): void
+    {
+        $this->actingAs(User::factory()->create(['role' => 'cashier', 'status' => 'Active']));
+        $this->postJson('/api/product-master/subcategories/populate')->assertForbidden();
+    }
 
     public function test_catalog_covers_each_category_and_preserves_existing_records(): void
     {

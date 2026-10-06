@@ -80,6 +80,7 @@ Route::middleware('role:cashier,manager,admin,super_admin')->group(function () {
 });
 
 Route::middleware('role:manager,admin,super_admin')->group(function () {
+    Route::post('/api/product-master/subcategories/populate', [ProductMasterController::class, 'populateSubcategories']);
     Route::post('/api/product-master/{kind}', [ProductMasterController::class, 'save'])->whereIn('kind', ['brands', 'subcategories']);
     Route::patch('/api/product-master/{kind}/{id}', [ProductMasterController::class, 'save'])->whereIn('kind', ['brands', 'subcategories'])->whereNumber('id');
     Route::get('/api/inventory-history', [ProductMasterController::class, 'inventory']);
