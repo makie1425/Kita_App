@@ -10,13 +10,13 @@ app.openPurchaseReceiving(order);
 const nodes=n=>n==null||typeof n!=='object'?[]:Array.isArray(n)?n.flatMap(nodes):[n,...nodes(n.children)];
 const controls=nodes(app.buildPurchaseReceiving()).filter(n=>n.type==='input');
 const input=label=>controls.find(n=>n.props['aria-label']===label);
-for(const label of ['Actual unit cost','Selling price','Batch number','Expiry date'])assert(input(label+' for Water'),label);
+for(const label of ['Retail cost','Selling price','Batch number','Expiry date'])assert(input(label+' for Water'),label);
 let payload;app.authPost=async(url,p)=>{payload=p;return {message:'Saved'}};
 app.toast=()=>{};app.reloadPurchasing=app.reloadCatalog=async()=>{};
 (async()=>{
   input('Receive Water').props.onChange({target:{value:'2'}});
   await app.confirmPurchaseReceiving();assert(!payload,'Blank prices must block submission');
-  input('Actual unit cost for Water').props.onChange({target:{value:'10.50'}});
+  input('Retail cost for Water').props.onChange({target:{value:'10.50'}});
   input('Selling price for Water').props.onChange({target:{value:'15.00'}});
   input('Batch number for Water').props.onChange({target:{value:'B-1'}});
   input('Expiry date for Water').props.onChange({target:{value:'2027-01-01'}});

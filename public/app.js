@@ -1346,7 +1346,7 @@ class Component extends DCLogic {
     const order=this.state.purchaseData.orders.find(o=>o.id===this.state.purchaseReceivingId);
     const entered=Object.entries(this.state.receiveQty||{}).filter(([,qty])=>String(qty).trim()!=='');
     if(!entered.length||entered.some(([,qty])=>!Number.isInteger(Number(qty))||Number(qty)<=0)){this.setState({receiveError:'Enter positive whole quantities for delivered items. Leave undelivered items blank.'});return;}
-    if(entered.some(([id])=>!this.validAmount(this.state.receiveCosts?.[id]??'')||!this.validAmount(this.receivingPrice(id)))){this.setState({receiveError:'Enter an actual unit cost and selling price for each delivered item (up to two decimal places).'});return;}
+    if(entered.some(([id])=>!this.validAmount(this.state.receiveCosts?.[id]??'')||!this.validAmount(this.receivingPrice(id)))){this.setState({receiveError:'Enter a retail cost and selling price for each delivered item (up to two decimal places).'});return;}
     if(!window.confirm('Confirm actual delivered quantities for '+order.id+'? Inventory will be updated immediately.'))return;
     this.receivingBusy=true;this.setState({receivingSaving:true,receiveError:''});
     try{
@@ -1357,7 +1357,7 @@ class Component extends DCLogic {
   receivingPrice=id=>this.state.receivePrices?.[id]??((this.state.productsLocal||this.state.data?.PRODUCTS||[]).find(p=>String(p.id)===String(id))?.price||'');
   buildReceivingFields(line){
     const h=React.createElement,id=line.productId;
-    return [['receiveCosts','Actual unit cost','number'],['receivePrices','Selling price','number'],['receiveBatches','Batch number','text'],['receiveExpiries','Expiry date','date']].map(([field,label,type])=>td(h('input',{
+    return [['receiveCosts','Retail cost','number'],['receivePrices','Selling price','number'],['receiveBatches','Batch number','text'],['receiveExpiries','Expiry date','date']].map(([field,label,type])=>td(h('input',{
       'aria-label':label+' for '+line.name,type,style:{minWidth:type==='date'?145:120},
       ...(type==='number'?{min:0,step:'0.01'}:{}),
       value:field==='receivePrices'?this.receivingPrice(id):(this.state[field]?.[id]??''),
@@ -1368,8 +1368,8 @@ class Component extends DCLogic {
     const h=React.createElement,state=this.purchasingState();if(state)return state;
     const order=this.state.purchaseData.orders.find(o=>o.id===this.state.purchaseReceivingId);
     if(order)return h('div',null,[sectionTitle('Receive '+order.id,`${order.supplierName||this.purchaseSupplier(order.supplierId)} | ${order.status}`),
-      h('p',null,'Enter delivered quantities, actual purchase cost and selling price per stock unit. Confirming the receipt adds stock and updates the selling price. Each batch retains its own purchase cost. Missing items are saved in a shortage report. Leave undelivered items blank.'),
-      table(['Item','Category','Ordered','Previously received','Received order','Missing','Excess','Stock unit','Actual unit cost (PHP)','Selling price (PHP)','Batch','Expiry'],order.lines.map(l=>tr([td(l.name),td(l.category),td(l.orderedQty),td(l.deliveredQty||0),td(h('input',{'aria-label':'Receive '+l.name,type:'number',min:1,step:1,value:this.state.receiveQty[l.productId]??'',onChange:e=>this.setState(s=>({receiveQty:{...s.receiveQty,[l.productId]:e.target.value}}))})),td(Math.max(0,Number(l.orderedQty)-Number(l.deliveredQty||0)-Number(this.state.receiveQty[l.productId]||0))),td(Math.max(0,Number(l.deliveredQty||0)+Number(this.state.receiveQty[l.productId]||0)-Number(l.orderedQty))),td(this.purchaseUnit(l)),...this.buildReceivingFields(l)],l.id))),
+      h('p',null,'Enter delivered quantities, retail cost and selling price per stock unit. Confirming the receipt adds stock and updates the selling price. Each batch retains its own purchase cost. Missing items are saved in a shortage report. Leave undelivered items blank.'),
+      table(['Item','Category','Ordered','Previously received','Received order','Missing','Excess','Stock unit','Retail cost (PHP)','Selling price (PHP)','Batch','Expiry'],order.lines.map(l=>tr([td(l.name),td(l.category),td(l.orderedQty),td(l.deliveredQty||0),td(h('input',{'aria-label':'Receive '+l.name,type:'number',min:1,step:1,value:this.state.receiveQty[l.productId]??'',onChange:e=>this.setState(s=>({receiveQty:{...s.receiveQty,[l.productId]:e.target.value}}))})),td(Math.max(0,Number(l.orderedQty)-Number(l.deliveredQty||0)-Number(this.state.receiveQty[l.productId]||0))),td(Math.max(0,Number(l.deliveredQty||0)+Number(this.state.receiveQty[l.productId]||0)-Number(l.orderedQty))),td(this.purchaseUnit(l)),...this.buildReceivingFields(l)],l.id))),
       h('div',{className:'purchase-filters'},[h('label',null,['Delivery reference',h('input',{readOnly:true,value:'Assigned automatically from '+order.id,'aria-label':'Automatic delivery reference'})]),h('label',null,['Date received',h('input',{type:'date',max:this.state.data?.BUSINESS_DATE,value:this.state.receiveDate,onChange:e=>this.setState({receiveDate:e.target.value})})])]),
       h('label',{className:'purchase-notes'},['Receiving notes (required for excess delivery)',h('textarea',{maxLength:2000,value:this.state.receiveNotes,onChange:e=>this.setState({receiveNotes:e.target.value})})]),
       this.state.receiveError?h('p',{role:'alert',className:'alert'},this.state.receiveError):null,
