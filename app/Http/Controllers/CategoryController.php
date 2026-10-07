@@ -26,7 +26,7 @@ class CategoryController extends Controller
         if (DB::table('categories')->whereRaw('LOWER(name) = ?', [mb_strtolower($validated['name'])])->exists()) {
             throw ValidationException::withMessages(['name' => 'This category already exists.']);
         }
-        $category = $validated + ['status' => 'Active', 'archivedAt' => null, 'archivedBy' => null];
+        $category = $validated + ['created_at' => now()->format('Y-m-d H:i:s.u'), 'status' => 'Active', 'archivedAt' => null, 'archivedBy' => null];
         try {
             DB::transaction(function () use ($category, $request): void {
                 DB::table('categories')->insert($category);

@@ -17,10 +17,10 @@ class KitaDataController extends Controller
 
             return response()->json([
                 'BUSINESS_DATE' => now()->toDateString(),
-                'CATEGORIES' => $this->rows($pdo, 'SELECT name, status, classification, archivedAt, archivedBy FROM categories ORDER BY name'),
+                'CATEGORIES' => $this->rows($pdo, 'SELECT name, status, classification, archivedAt, archivedBy FROM categories ORDER BY created_at DESC, name'),
                 'PRODUCTS' => $this->products($pdo),
-                'BRANDS' => DB::table('brands')->orderBy('name')->get(),
-                'SUBCATEGORIES' => DB::table('subcategories')->orderBy('name')->get(),
+                'BRANDS' => DB::table('brands')->orderByDesc('id')->get(),
+                'SUBCATEGORIES' => DB::table('subcategories')->orderByDesc('id')->get(),
                 'SUPPLIERS' => $this->suppliers($pdo),
                 'ITEM_REQUESTS' => $this->itemRequests($pdo),
                 'PURCHASE_ORDERS' => $this->purchaseOrders($pdo),
@@ -83,7 +83,7 @@ class KitaDataController extends Controller
     {
         return $this->numericRows(
             $pdo,
-            'SELECT brandId, subcategoryId, size, sizeUnit, id, name, category, vatClass, price, cost, unitPrice, registrationQuantity, stock, minStock, unit, status, batch, lot, expiry, barcode, supplierId, parentId, variantLabel, purchaseUnit, stockUnit, conversionFactor, barcodeStatus, archivedAt, archivedBy FROM products ORDER BY id',
+            'SELECT brandId, subcategoryId, size, sizeUnit, id, name, category, vatClass, price, cost, unitPrice, registrationQuantity, stock, minStock, unit, status, batch, lot, expiry, barcode, supplierId, parentId, variantLabel, purchaseUnit, stockUnit, conversionFactor, barcodeStatus, archivedAt, archivedBy FROM products ORDER BY created_at DESC, id DESC',
             ['id', 'price', 'cost', 'unitPrice', 'registrationQuantity', 'stock', 'minStock', 'supplierId', 'parentId', 'conversionFactor']
         );
     }
@@ -96,7 +96,7 @@ class KitaDataController extends Controller
             $row['products'] = [];
 
             return $row;
-        }, $this->rows($pdo, 'SELECT id, name, status, contact, phone, email, address, category, archivedAt, archivedBy, callbackLog FROM suppliers ORDER BY id'));
+        }, $this->rows($pdo, 'SELECT id, name, status, contact, phone, email, address, category, archivedAt, archivedBy, callbackLog FROM suppliers ORDER BY id DESC'));
 
         $index = [];
         foreach ($suppliers as $key => $supplier) {
@@ -121,7 +121,7 @@ class KitaDataController extends Controller
 
     private function itemRequests(PDO $pdo): array
     {
-        $requests = $this->rows($pdo, 'SELECT id, category, status, dateRequested, requestedBy, adminNote, disapprovalReason, poId FROM item_requests ORDER BY dateRequested, id');
+        $requests = $this->rows($pdo, 'SELECT id, category, status, dateRequested, requestedBy, adminNote, disapprovalReason, poId FROM item_requests ORDER BY dateRequested DESC, id DESC');
         $index = [];
 
         foreach ($requests as $key => $request) {
@@ -151,7 +151,7 @@ class KitaDataController extends Controller
             $row['lines'] = [];
 
             return $row;
-        }, $this->rows($pdo, 'SELECT id, itemRequestId, supplierId, status, supplierCallback, orderedValue, deliveredValue, invoicedValue, paidValue, outstandingValue, cancelledValue, receivingRecordIds, created, confirmedQty FROM purchase_orders ORDER BY created, id'));
+        }, $this->rows($pdo, 'SELECT id, itemRequestId, supplierId, status, supplierCallback, orderedValue, deliveredValue, invoicedValue, paidValue, outstandingValue, cancelledValue, receivingRecordIds, created, confirmedQty FROM purchase_orders ORDER BY created DESC, id DESC'));
 
         $index = [];
         foreach ($orders as $key => $order) {
@@ -178,7 +178,7 @@ class KitaDataController extends Controller
             $row['lines'] = [];
 
             return $row;
-        }, $this->rows($pdo, 'SELECT id, poId, date, deliveryStatus, discrepancy, discrepancyType, supplierContact, outcome, adminApproval, barcodeAssignment FROM receiving_records ORDER BY date, id'));
+        }, $this->rows($pdo, 'SELECT id, poId, date, deliveryStatus, discrepancy, discrepancyType, supplierContact, outcome, adminApproval, barcodeAssignment FROM receiving_records ORDER BY date DESC, id DESC'));
 
         $index = [];
         foreach ($records as $key => $record) {
@@ -210,12 +210,12 @@ class KitaDataController extends Controller
             $row['photo'] = (bool) $row['photo'];
 
             return $row;
-        }, $this->rows($pdo, 'SELECT id, productId, qtyChange, reason, status, photo, comment, remarks, date FROM adjustments ORDER BY date, id'));
+        }, $this->rows($pdo, 'SELECT id, productId, qtyChange, reason, status, photo, comment, remarks, date FROM adjustments ORDER BY date DESC, id DESC'));
     }
 
     private function promotions(PDO $pdo): array
     {
-        $promotions = $this->numericRows($pdo, 'SELECT id, name, type, occasionName, discountPct, startDate, endDate, category FROM promotions ORDER BY id', ['id', 'discountPct']);
+        $promotions = $this->numericRows($pdo, 'SELECT id, name, type, occasionName, discountPct, startDate, endDate, category FROM promotions ORDER BY id DESC', ['id', 'discountPct']);
         $index = [];
 
         foreach ($promotions as $key => $promotion) {

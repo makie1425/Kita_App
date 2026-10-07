@@ -145,6 +145,12 @@ function kpi(label, value, sub, color, tooltip){
     tooltip?React.createElement("div",{key:"tip",className:"kpi-note"},tooltip):null,
   ]);
 }
+// Match word beginnings: "b" finds "Bread" and "Whole Bread", never "Cabbage".
+function searchMatches(value,query){
+  const words=String(value??'').toLocaleLowerCase().match(/[\p{L}\p{N}]+/gu)||[];
+  const terms=String(query??'').trim().toLocaleLowerCase().match(/[\p{L}\p{N}]+/gu)||[];
+  return terms.every(term=>words.some(word=>word.startsWith(term)));
+}
 function recordText(node){
   if(node==null||typeof node==="boolean")return "";
   if(typeof node==="string"||typeof node==="number")return String(node);
@@ -209,7 +215,7 @@ class Component extends DCLogic {
   setTableView=(key,patch)=>this.setState(s=>({tableViews:{...s.tableViews,[key]:{...s.tableViews[key],...patch}}}));
   recordTable(key,headers,rows){
     const h=React.createElement,view=this.state.tableViews[key]||{},query=view.query||"",size=Number(view.size)||20;
-    const filtered=query.trim()?rows.filter(row=>recordText(row).toLowerCase().includes(query.trim().toLowerCase())):rows;
+    const filtered=query.trim()?rows.filter(row=>searchMatches(recordText(row),query)):rows;
     const pages=Math.max(1,Math.ceil(filtered.length/size)),page=Math.min(Math.max(1,view.page||1),pages),start=(page-1)*size;
     const searchId="records-"+key;
     return h("section",{className:"record-list","aria-label":"Records"},[
@@ -1011,7 +1017,7 @@ class Component extends DCLogic {
     const categoryOf=p=>String(p.category||"").trim()||"Uncategorized";
     const categories=[...new Set(catalog.map(categoryOf))].sort((a,b)=>a.localeCompare(b));
     const q=manualSearch.trim().toLowerCase();
-    const results=catalog.filter(p=>(!manualCategory||categoryOf(p)===manualCategory)&&(!this.state.manualSubcategoryId||String(p.subcategoryId)===String(this.state.manualSubcategoryId))&&([p.name,(data.BRANDS||[]).find(b=>String(b.id)===String(p.brandId))?.name,p.size,p.sizeUnit,p.barcode,categoryOf(p)].join(" ").toLowerCase().includes(q)));
+    const results=catalog.filter(p=>(!manualCategory||categoryOf(p)===manualCategory)&&(!this.state.manualSubcategoryId||String(p.subcategoryId)===String(this.state.manualSubcategoryId))&&(searchMatches([p.name,(data.BRANDS||[]).find(b=>String(b.id)===String(p.brandId))?.name,p.size,p.sizeUnit,p.barcode,categoryOf(p)].join(" "),q)));
     return h("div",{key:"mlm",style:{position:"fixed",inset:0,background:"rgba(15,31,74,0.38)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:50,padding:16}},
       h("div",{role:"dialog","aria-modal":true,"aria-label":"Manual Product Lookup",style:{width:520,maxWidth:"100%",maxHeight:"80vh",background:"#fff",borderRadius:14,display:"flex",flexDirection:"column",overflow:"hidden"}},[
         h("div",{key:"body",style:{minHeight:0,overflowY:"auto",padding:20}},[
@@ -1384,7 +1390,7 @@ class Component extends DCLogic {
       (!this.state.itemPickerSubcategoryId||String(p.subcategoryId)===String(this.state.itemPickerSubcategoryId)) &&
       (!itemPickerFilterSupplier||String(p.supplierId)===String(itemPickerFilterSupplier)) &&
       (!itemPickerLowStockOnly||isLow(p)) &&
-      (!q||(this.productLabel(p)+" "+p.barcode).toLowerCase().includes(q)));
+      (!q||searchMatches(this.productLabel(p)+" "+p.barcode,q)));
     items = [...items].sort((a,b)=>(isLow(b)?1:0)-(isLow(a)?1:0));
     const count=Object.values(itemPickerChecked).filter(Boolean).length;
     return React.createElement("div",{style:{position:"fixed",inset:0,background:"rgba(15,31,74,0.38)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:50,padding:20}},
@@ -1499,7 +1505,7 @@ class Component extends DCLogic {
     }
     return React.createElement("div",null,[
       React.createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:10}},[
-        sectionTitle("Inventory","Adjustments, disposal, recall, reconciliation, near-expiry, and stock table"),
+        sectionTitle("Inventory","Stock rotation: FEFO (earliest expiry first), then FIFO (oldest receipt first) for equal or missing expiry dates. Lists show newest records first."),
         React.createElement("div",{key:"actions",style:{display:"flex",gap:8}},[btn("Inventory / Cost History",()=>{this.setState({inventoryHistoryOpen:true});this.loadInventoryHistory();}),btn("+ Add Item",this.goScreen("mgrRegistration"),"primary"),btn("+ Add Category",this.openCategoryModal),btn("âš  Add Damage",this.openAddDamage,"danger")]),
       ]),
       React.createElement("div",{style:{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap"}},tabs.map(([k,l])=>React.createElement("button",{key:k,onClick:this.setInvTab(k),style:{padding:"8px 14px",borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer",background:invTab===k?COLORS.brand:"#fff",color:invTab===k?"#fff":COLORS.text,border:"1px solid "+(invTab===k?COLORS.brand:COLORS.border)}},l))),
@@ -1528,7 +1534,7 @@ class Component extends DCLogic {
     const q=Math.max(1,parseInt(addDamageForm.qty,10)||1);
     const exceeds = selected && q>selected.stock;
     const search=damagePickerSearch.toLowerCase();
-    const filtered=eligible.filter(p=>p.name.toLowerCase().includes(search)||p.category.toLowerCase().includes(search));
+    const filtered=eligible.filter(p=>searchMatches(p.name+" "+p.category,search));
     return React.createElement("div",{style:{position:"fixed",inset:0,background:"rgba(15,31,74,0.38)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:50,padding:20}},
       React.createElement("div",{style:{width:480,maxWidth:"92vw",background:"#fff",borderRadius:16,padding:28,boxShadow:"0 20px 60px rgba(6,25,20,0.25)"}},[
         React.createElement("div",{key:"h",style:{display:"flex",alignItems:"center",gap:12,marginBottom:6}},[
@@ -1741,7 +1747,7 @@ class Component extends DCLogic {
     return h("div",{className:"registration-page"},[
       sectionTitle(s.regEditing?"Edit Product":"Product Registration","Product information is separate from stock. New products start at zero; receiving adds stock."),
       h("div",{key:"actions",className:"page-toolbar"},[btn("New Product",()=>this.setState({regEditing:null,regStockId:"",regProductName:"",regScannedBarcode:"",regSaved:false,regBrandId:"",regSubcategoryId:"",regSize:"",regSizeUnit:"",regEditReason:""})),btn("+ Add Category",this.openCategoryModal),s.regSaved?h("span",{role:"status",className:"saved-indicator"},"Product saved. Stock ID: "+s.regSku):null]),
-      h("datalist",{key:"names",id:"reg-product-options"},[...new Set(products.map(p=>p.name))].sort().map(name=>h("option",{key:name,value:name}))),
+      h("datalist",{key:"names",id:"reg-product-options"},[...new Set(products.map(p=>p.name))].filter(name=>searchMatches(name,s.regProductName)).map(name=>h("option",{key:name,value:name}))),
       group("01","Product details","Identify the item and choose its category and supplier.",[
         field("regProductName","Product name",{required:true}),s.regEditing?field("regStockId","Stock ID",{type:"number",step:1,readOnly:true}):null,
         field("regScannedBarcode","Scanned barcode",{required:true,placeholder:"Scan or enter the item barcode"}),
@@ -1778,7 +1784,7 @@ class Component extends DCLogic {
   buildMgrCashiers(){ return this.buildAdmManagers(); }
   buildPromoPickerModal(){
     const {data,promoPickerSearch,promoPickerChecked}=this.state; const q=promoPickerSearch.toLowerCase();
-    const items=data.PRODUCTS.filter(p=>p.name.toLowerCase().includes(q));
+    const items=data.PRODUCTS.filter(p=>searchMatches(p.name,q));
     const count=Object.values(promoPickerChecked).filter(Boolean).length;
     return React.createElement("div",{style:{position:"fixed",inset:0,background:"rgba(15,31,74,0.38)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:50,padding:20}},
       React.createElement("div",{style:{width:520,maxWidth:"92vw",maxHeight:"78vh",background:"#fff",borderRadius:14,padding:20,display:"flex",flexDirection:"column",boxSizing:"border-box"}},[
@@ -1798,7 +1804,7 @@ class Component extends DCLogic {
   }
   buildMgrSupplierProductPicker(){
     const {productsLocal,supMgrProductSearch,supMgrProductChecked}=this.state; const q=supMgrProductSearch.toLowerCase();
-    const items=(productsLocal||[]).filter(p=>p.status!=="Inactive"&&p.name.toLowerCase().includes(q));
+    const items=(productsLocal||[]).filter(p=>p.status!=="Inactive"&&searchMatches(p.name,q));
     const count=Object.values(supMgrProductChecked).filter(Boolean).length;
     return React.createElement("div",{style:{position:"fixed",inset:0,background:"rgba(15,31,74,0.38)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:50,padding:20}},
       React.createElement("div",{style:{width:480,maxWidth:"92vw",maxHeight:"78vh",background:"#fff",borderRadius:14,padding:20,display:"flex",flexDirection:"column",boxSizing:"border-box"}},[
@@ -1881,7 +1887,7 @@ class Component extends DCLogic {
       ]);
     }
     const q=supMgrSearch.toLowerCase();
-    const list=suppliersLocal.filter(sp=>sp.status==="Active"&&sp.name.toLowerCase().includes(q));
+    const list=suppliersLocal.filter(sp=>sp.status==="Active"&&searchMatches(sp.name,q));
     const selCount=Object.values(supMgrSelected).filter(Boolean).length;
     return React.createElement("div",null,[
       React.createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}},[sectionTitle("Supplier","Manager-facing supplier directory used when building requests"),btn("+ Add Supplier",this.openSupMgrModal(null),"primary")]),

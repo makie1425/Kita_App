@@ -22,7 +22,7 @@ class AccountController extends Controller
         $lastOtpLogins = DB::table('login_otps')->whereNotNull('used_at')
             ->selectRaw('LOWER(email) as address, MAX(used_at) as last_login')
             ->groupByRaw('LOWER(email)')->pluck('last_login', 'address');
-        $accounts = User::query()->orderBy('role')->orderBy('id')->get()
+        $accounts = User::query()->orderByDesc('created_at')->orderByDesc('id')->get()
             ->filter(fn (User $user) => in_array($user->normalizedRole(), $roles, true))
             ->map(fn (User $user) => $this->account($user) + ['lastOtpLogin' => $lastOtpLogins[Str::lower((string) $user->email)] ?? null])->values();
 

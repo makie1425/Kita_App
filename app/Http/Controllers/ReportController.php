@@ -79,13 +79,19 @@ class ReportController extends Controller
             if ($request->filled('to')) {
                 $query->whereDate($dateColumn, '<=', $filters['to']);
             }
-            $query->orderBy($dateColumn);
+            $query->orderByDesc($dateColumn);
+            $query->orderByDesc(match ($type) {
+                'sales' => 'line.id', 'receipts' => 'b.id', default => 'm.id',
+            });
         }
         if ($request->boolean('lowStock')) {
             $query->whereColumn('p.stock', '<=', 'p.minStock');
             $note .= ' Restricted to products currently at or below their reorder level.';
         }
-        $rows = $query->orderBy('p.id')->get($select);
+        if ($type === 'inventory') {
+            $query->orderByDesc('p.created_at');
+        }
+        $rows = $query->orderByDesc('p.id')->get($select);
         foreach ($rows as $row) {
             if (in_array($type, ['sales', 'movements'])) {
                 $row->transactionId = $row->reference;

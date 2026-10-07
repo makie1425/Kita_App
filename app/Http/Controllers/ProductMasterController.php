@@ -120,7 +120,7 @@ class ProductMasterController extends Controller
 
         return response()->json([
             'batches' => $query->orderByDesc('b.receivedDate')->orderByDesc('b.id')->get(['b.*', 'p.name', 'p.category', 'p.size', 'p.sizeUnit', 'p.stockUnit', 'brand.name as brand', 'sub.name as subcategory', 'supplier.name as supplier']),
-            'products' => $products->orderBy('p.name')->get(['p.*']),
+            'products' => $products->orderByDesc('p.created_at')->orderByDesc('p.id')->get(['p.*']),
             'movements' => $movements->orderByDesc('m.id')->limit(500)->get(['m.*', 'p.name']),
         ])->header('Cache-Control', 'no-store');
     }

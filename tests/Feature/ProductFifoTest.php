@@ -67,6 +67,39 @@ class ProductFifoTest extends TestCase
         $this->getJson('/api/inventory-history?brandId='.$this->input['brandId'])->assertOk()->assertJsonCount(2, 'batches');
     }
 
+    public function test_fefo_uses_earliest_expiry_then_fifo_and_restores_original_batches(): void
+    {
+        DB::transaction(function () {
+            FifoInventory::receive($this->product, 3, 10, '2026-01-01', batch: 'Undated oldest');
+            FifoInventory::receive($this->product, 3, 20, '2026-01-02', batch: 'Later expiry', expiry: '2027-03-01');
+            FifoInventory::receive($this->product, 3, 30, '2026-01-03', batch: 'First expiry older', expiry: '2027-02-01');
+            FifoInventory::receive($this->product, 3, 40, '2026-01-04', batch: 'First expiry newer', expiry: '2027-02-01');
+            FifoInventory::receive($this->product, 3, 50, '2026-01-05', batch: 'Undated newest');
+            FifoInventory::consume($this->product, 11, 'checkout', 'FEFO-SALE');
+        });
+        $this->assertSame([30, 40, 20, 10], DB::table('inventory_allocations')->orderBy('id')->pluck('unitCost')->map(fn ($cost) => (int) $cost)->all());
+        $this->assertDatabaseHas('inventory_batches', ['batchNumber' => 'Undated oldest', 'quantityRemaining' => 1]);
+        $this->assertDatabaseHas('inventory_batches', ['batchNumber' => 'Undated newest', 'quantityRemaining' => 3]);
+        DB::transaction(fn () => FifoInventory::returnStock($this->product, 4, 'FEFO-SALE'));
+        $this->assertDatabaseHas('inventory_batches', ['batchNumber' => 'First expiry older', 'quantityRemaining' => 3]);
+        $this->assertDatabaseHas('inventory_batches', ['batchNumber' => 'First expiry newer', 'quantityRemaining' => 1]);
+    }
+
+    public function test_new_catalog_entries_sort_before_older_entries_even_with_lower_stock_ids(): void
+    {
+        $this->travel(1)->seconds();
+        $this->postJson('/api/categories', ['name' => 'Z New category', 'classification' => 'Non-Perishable'])->assertCreated();
+        $new = array_replace($this->input, ['id' => 900, 'name' => 'Older high ID', 'barcode' => 'OLDER-ID']);
+        $this->postJson('/api/products', $new)->assertCreated();
+        $this->travel(1)->seconds();
+        $new = array_replace($this->input, ['id' => 800, 'name' => 'Latest low ID', 'barcode' => 'LATEST-ID']);
+        $this->postJson('/api/products', $new)->assertCreated();
+        $this->getJson('/api/kita-data')->assertOk()
+            ->assertJsonPath('CATEGORIES.0.name', 'Z New category')
+            ->assertJsonPath('PRODUCTS.0.id', 800);
+        $this->getJson('/api/inventory-history')->assertOk()->assertJsonPath('products.0.id', 800);
+    }
+
     public function test_registration_and_manual_adjustments_cannot_add_stock(): void
     {
         $this->postJson('/api/products', array_replace($this->input, ['barcode' => 'OTHER', 'stock' => 10]))->assertUnprocessable();

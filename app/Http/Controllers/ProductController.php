@@ -30,7 +30,7 @@ class ProductController extends Controller
                     throw ValidationException::withMessages(['id' => 'Stock ID already exists.']);
                 }
                 $product = $this->productValues($validated) + [
-                    'id' => $id, 'parentId' => null, 'variantLabel' => '',
+                    'created_at' => now()->format('Y-m-d H:i:s.u'), 'id' => $id, 'parentId' => null, 'variantLabel' => '',
                     'barcodeStatus' => 'Scanned', 'archivedAt' => null, 'archivedBy' => null,
                 ];
                 $product['registrationQuantity'] = 0;

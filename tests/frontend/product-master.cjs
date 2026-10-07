@@ -90,3 +90,15 @@ assert(nodes(inline).some(n=>n.props?.className==='action-group'),'Legacy table 
 const existingFlex=ctx.React.createElement('div',{style:{display:'flex',gap:4}},[ctx.React.createElement('button',null,'One'),ctx.React.createElement('button',null,'Two')]);
 assert(!nodes(existingFlex).some(n=>n.props?.className==='action-group'),'Existing flex layouts are not nested in extra action rows');
 console.log('Shared action grouping and direct PDF download controls verified.');
+
+// Word-prefix searches exclude letters inside words across rendered lists and suggestions.
+assert(vm.runInContext("searchMatches('Bread', 'b')",ctx));
+assert(vm.runInContext("searchMatches('Whole Bread', 'b')",ctx));
+assert(!vm.runInContext("searchMatches('Cabbage', 'b')",ctx));
+assert(vm.runInContext("searchMatches('Bottled Water', '  BO wa ')",ctx));
+assert(!vm.runInContext("searchMatches('Bottled Water', 'ott')",ctx));
+Object.assign(app.state,{regProductName:'ris'});
+assert(!nodes(nodes(app.buildMgrRegistration()).find(n=>n.type==='datalist')).some(n=>n.type==='option'&&n.props.value==='Crisps'));
+Object.assign(app.state,{regProductName:'cri'});
+assert(nodes(nodes(app.buildMgrRegistration()).find(n=>n.type==='datalist')).some(n=>n.type==='option'&&n.props.value==='Crisps'));
+console.log('Word-prefix search and product suggestions verified.');

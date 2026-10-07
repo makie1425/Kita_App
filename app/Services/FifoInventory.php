@@ -25,6 +25,8 @@ class FifoInventory
     public static function consume(int $id, int $qty, string $type, string $reference): void
     {
         $batches = DB::table('inventory_batches')->where('productId', $id)->where('quantityRemaining', '>', 0)
+            // FEFO for dated batches; FIFO for equal expiries and undated stock.
+            ->orderByRaw('CASE WHEN expiryDate IS NULL THEN 1 ELSE 0 END')->orderBy('expiryDate')
             ->orderBy('receivedDate')->orderBy('id')->lockForUpdate()->get();
         if ($batches->sum('quantityRemaining') < $qty) {
             throw ValidationException::withMessages(['stock' => 'Batch balances do not match stock. Reconcile inventory before continuing.']);
