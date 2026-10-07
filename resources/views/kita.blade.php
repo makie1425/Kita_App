@@ -105,7 +105,7 @@
             </button>
             <sc-if value="{{ mgrNotifOpen }}" hint-placeholder-val="{{ false }}">
               <div class="notif-menu" id="notification-panel" role="region" aria-label="Your notifications">
-                <div class="notif-toolbar"><strong>Notifications</strong><button type="button" onClick="{{ closeNotifications }}" aria-label="Close notifications">&#215;</button></div>
+                <div class="notif-toolbar"><strong>Notifications</strong></div>
                 <div class="notif-toolbar"><button type="button" onClick="{{ markAllNotifications }}">Mark all as read</button><button type="button" onClick="{{ retryNotifications }}">Refresh</button></div>
                 <sc-if value="{{ notificationLoading }}"><div class="empty-state loading-status" role="status"><span class="loading-spinner" aria-hidden="true"></span>Loading notifications...</div></sc-if>
                 <sc-if value="{{ notificationError }}"><div class="alert" role="alert">{{ notificationError }}</div></sc-if>

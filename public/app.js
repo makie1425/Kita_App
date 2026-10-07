@@ -1021,8 +1021,7 @@ class Component extends DCLogic {
     return h("div",{key:"mlm",style:{position:"fixed",inset:0,background:"rgba(15,31,74,0.38)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:50,padding:16}},
       h("div",{className:"manual-lookup-dialog",role:"dialog","aria-modal":true,"aria-label":"Manual Product Lookup",onKeyDown:e=>{if(e.key==="Escape"){e.stopPropagation();this.closeManualLookup();}},style:{width:520,maxWidth:"100%",maxHeight:"80vh",background:"#fff",borderRadius:14,display:"flex",flexDirection:"column",overflow:"hidden"}},[
         h("div",{key:"header",className:"manual-lookup-header"},[
-          h("h2",{style:{fontSize:18,margin:0}},"Manual Product Lookup"),
-          h("button",{type:"button",className:"kita-button","aria-label":"Close product lookup",onClick:this.closeManualLookup},"Close")
+          h("h2",{style:{fontSize:18,margin:0}},"Manual Product Lookup")
         ]),
         h("div",{key:"body",className:"dialog-scroll manual-lookup-body",tabIndex:0,"aria-label":"Product lookup results and filters",style:{minHeight:0,overflowY:"auto",padding:20}},[
         h("label",{key:"label",htmlFor:"manual-category",style:{display:"block",fontSize:12,fontWeight:700,marginBottom:6}},"Category"),
