@@ -1062,3 +1062,27 @@ label.field-group { display:flex; flex-direction:column; gap:8px; font-size:13px
   .table-scroll td .action-group { min-width:125px; }
 }
 @media print { .action-group { display:none !important; } }
+
+/* Keep lookup controls reachable while its long product list scrolls. */
+.kita-modal-overlay > .manual-lookup-dialog {
+  height: min(720px, calc(100dvh - 32px));
+  max-height: calc(100dvh - 32px);
+  overflow: hidden;
+  padding: 0 !important;
+}
+.manual-lookup-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+.kita-modal-overlay > .manual-lookup-dialog > .manual-lookup-body {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}

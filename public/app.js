@@ -1019,9 +1019,12 @@ class Component extends DCLogic {
     const q=manualSearch.trim().toLowerCase();
     const results=catalog.filter(p=>(!manualCategory||categoryOf(p)===manualCategory)&&(!this.state.manualSubcategoryId||String(p.subcategoryId)===String(this.state.manualSubcategoryId))&&(searchMatches([p.name,(data.BRANDS||[]).find(b=>String(b.id)===String(p.brandId))?.name,p.size,p.sizeUnit,p.barcode,categoryOf(p)].join(" "),q)));
     return h("div",{key:"mlm",style:{position:"fixed",inset:0,background:"rgba(15,31,74,0.38)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:50,padding:16}},
-      h("div",{role:"dialog","aria-modal":true,"aria-label":"Manual Product Lookup",style:{width:520,maxWidth:"100%",maxHeight:"80vh",background:"#fff",borderRadius:14,display:"flex",flexDirection:"column",overflow:"hidden"}},[
-        h("div",{key:"body",style:{minHeight:0,overflowY:"auto",padding:20}},[
-        h("div",{key:"title",style:{fontWeight:800,marginBottom:14}},"Manual Product Lookup"),
+      h("div",{className:"manual-lookup-dialog",role:"dialog","aria-modal":true,"aria-label":"Manual Product Lookup",onKeyDown:e=>{if(e.key==="Escape"){e.stopPropagation();this.closeManualLookup();}},style:{width:520,maxWidth:"100%",maxHeight:"80vh",background:"#fff",borderRadius:14,display:"flex",flexDirection:"column",overflow:"hidden"}},[
+        h("div",{key:"header",className:"manual-lookup-header"},[
+          h("h2",{style:{fontSize:18,margin:0}},"Manual Product Lookup"),
+          h("button",{type:"button",className:"kita-button","aria-label":"Close product lookup",onClick:this.closeManualLookup},"Close")
+        ]),
+        h("div",{key:"body",className:"dialog-scroll manual-lookup-body",tabIndex:0,"aria-label":"Product lookup results and filters",style:{minHeight:0,overflowY:"auto",padding:20}},[
         h("label",{key:"label",htmlFor:"manual-category",style:{display:"block",fontSize:12,fontWeight:700,marginBottom:6}},"Category"),
         h("select",{key:"category",id:"manual-category",value:manualCategory,onChange:e=>this.setState({manualCategory:e.target.value,manualSubcategoryId:""}),style:{width:"100%",padding:10,border:"1px solid "+COLORS.border,borderRadius:8,marginBottom:10}},[
           h("option",{key:"all",value:""},"All categories"),
