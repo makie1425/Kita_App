@@ -61,6 +61,9 @@ class FifoInventory
                 continue;
             }
             if ($restock) {
+                if (DB::table('inventory_batches')->where('id', $a->batchId)->value('recalled')) {
+                    throw ValidationException::withMessages(['stock' => 'Recalled stock cannot be returned to sellable inventory. Process the refund without restocking.']);
+                }
                 DB::table('inventory_batches')->where('id', $a->batchId)->increment('quantityRemaining', $take);
             }
             DB::table('inventory_allocations')->where('id', $a->id)->increment('returnedQuantity', $take);

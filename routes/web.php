@@ -88,3 +88,11 @@ Route::middleware('role:manager,admin,super_admin')->group(function () {
     Route::patch('/api/product-master/{kind}/{id}', [ProductMasterController::class, 'save'])->whereIn('kind', ['brands', 'subcategories'])->whereNumber('id');
     Route::get('/api/inventory-history', [ProductMasterController::class, 'inventory']);
 });
+
+Route::middleware('role:manager,admin,super_admin')->prefix('api/inventory/workflows')->group(function () {
+    Route::post('/archive', [\App\Http\Controllers\InventoryWorkflowController::class, 'archive']);
+    Route::get('/', [\App\Http\Controllers\InventoryWorkflowController::class, 'index']);
+    Route::post('/events', [\App\Http\Controllers\InventoryWorkflowController::class, 'event']);
+    Route::post('/counts', [\App\Http\Controllers\InventoryWorkflowController::class, 'start']);
+    Route::post('/counts/{id}', [\App\Http\Controllers\InventoryWorkflowController::class, 'close'])->whereNumber('id');
+});

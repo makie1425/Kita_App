@@ -1,0 +1,16 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+const ctx=vm.createContext({React:{createElement:(type,props,...children)=>({type,props,children})},DCLogic:class{setState(p){Object.assign(this.state,typeof p==='function'?p(this.state):p)}},window:{confirm:()=>true},crypto:{randomUUID:()=> 'key'}});
+vm.runInContext(fs.readFileSync('public/app.js','utf8')+';globalThis.App=Component;',ctx);
+const app=new ctx.App();
+app.state.data={CATEGORIES:[{name:'Test'}]};
+app.state.inventoryWorkflows={today:'2026-10-07',batches:[{id:1,name:'Water',batchNumber:'B1',quantityRemaining:4,expiryDate:'2026-10-09',stockUnit:'Piece'},{id:2,name:'Later',quantityRemaining:3,expiryDate:'2027-10-09'}],events:[{id:1,type:'Recall',name:'Recalled item',quantity:5}],counts:[{id:1,mode:'Blind',status:'Open',lines:[{id:1,productId:1,name:'Water'}]}]};
+const text=n=>n==null?'':typeof n==='string'||typeof n==='number'?String(n):Array.isArray(n)?n.map(text).join(' '):text(n.children);
+const nodes=n=>n==null||typeof n!=='object'?[]:Array.isArray(n)?n.flatMap(nodes):[n,...nodes(n.children)];
+let calls=[];app.saveInventoryWorkflow=(...args)=>calls.push(args);
+let tree=app.buildInventoryWorkflows('expiry');assert(text(tree).includes('Water'));assert(!text(tree).includes('Later'));
+tree=app.buildInventoryWorkflows('recall');assert(text(tree).includes('Recalled item'));assert(!text(app.buildInventoryWorkflows('writeoffs')).includes('Recalled item'));
+tree=app.buildInventoryWorkflows('reconciliation');assert(!text(tree).includes('Expected'));assert(!text(tree).includes('Personal Care'));
+const complete=nodes(tree).find(n=>n.type==='button'&&text(n)==='Complete and reconcile');complete.props.onClick();assert.strictEqual(calls.length,0);
+const input=nodes(tree).find(n=>n.props?.['aria-label']==='Count Water');input.props.onChange({target:{value:'0'}});app.setState({countReason:'Verified empty shelf'});
+tree=app.buildInventoryWorkflows('reconciliation');nodes(tree).find(n=>n.type==='button'&&text(n)==='Complete and reconcile').props.onClick();assert.strictEqual(calls[0][1].lines[0].counted,0);
+console.log('Live expiry, recall/history filters, blind counts and zero-count submission passed.');

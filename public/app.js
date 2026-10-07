@@ -637,7 +637,7 @@ class Component extends DCLogic {
   };
 
   // ---- Manager/Admin generic ----
-  setInvTab=tab=>()=>this.setState({invTab:tab});
+  setInvTab=tab=>()=>{this.setState({invTab:tab});if(['writeoffs','recall','reconciliation','expiry'].includes(tab))this.loadInventoryWorkflows();};
   openSupplierDetail=id=>()=>this.setState({supplierDetailId:id});
   closeSupplierDetail=()=>this.setState({supplierDetailId:null});
   approveAdjustment=id=>()=>{ this.authPost(`/api/inventory/adjustments/${encodeURIComponent(id)}`,{status:"Approved"},"PATCH").then(()=>{ this.setState(s=>({adjustmentsLocal:s.adjustmentsLocal.map(a=>a.id===id?{...a,status:"Approved"}:a)})); this.reloadCatalog().catch(()=>{}); this.pushMgrNotification("Adjustment Approved",`Inventory Adjustment ${id} was Approved by Admin`,"Standard",null); }).catch(error=>this.toast("Adjustment approval could not be saved: "+error.message,"error")); };
@@ -742,14 +742,12 @@ class Component extends DCLogic {
   toggleInvSelect=id=>()=>this.setState(s=>({invSelected:{...s.invSelected,[id]:!s.invSelected[id]}}));
   moveInvSelectedToArchive=()=>{ const ids=Object.keys(this.state.invSelected).filter(k=>this.state.invSelected[k]);
     if(!ids.length){ this.toast("Select at least one item.","error"); return; }
-    this.setState(s=>({productsLocal:s.productsLocal.map(p=>ids.includes(String(p.id))?{...p,status:"Inactive",archivedAt:"2026-07-29",archivedBy:this.currentUser().name}:p),invSelected:{}}));
-    this.toast(`${ids.length} item(s) moved to Archive.`);
+    this.authPost('/api/inventory/workflows/archive',{kind:'products',ids}).then(r=>{this.setState({invSelected:{}});this.toast(r.message);return this.reloadCatalog();}).catch(e=>this.toast(e.message,'error'));
   };
   toggleCatSelect=name=>()=>this.setState(s=>({catSelected:{...s.catSelected,[name]:!s.catSelected[name]}}));
   moveCatSelectedToArchive=()=>{ const names=Object.keys(this.state.catSelected).filter(k=>this.state.catSelected[k]);
     if(!names.length){ this.toast("Select at least one category.","error"); return; }
-    this.setState(s=>({categoriesLocal:s.categoriesLocal.map(c=>names.includes(c.name)?{...c,status:"Inactive",archivedAt:"2026-07-29",archivedBy:this.currentUser().name}:c),catSelected:{}}));
-    this.toast(`${names.length} categor${names.length===1?"y":"ies"} moved to Archive.`);
+    this.authPost('/api/inventory/workflows/archive',{kind:'categories',ids:names}).then(r=>{this.setState({catSelected:{}});this.toast(r.message);return this.reloadCatalog();}).catch(e=>this.toast(e.message,'error'));
   };
   // ---- Manager Supplier module ----
   goSupMgrList=()=>this.setState({supMgrScreen:"list",supMgrDetailId:null});
@@ -1232,7 +1230,7 @@ class Component extends DCLogic {
         React.createElement("div",{key:"m",style:{fontSize:11,color:COLORS.textMuted}},`Batch ${x.p.batch} Â· Lot ${x.p.lot} Â· Qty ${x.p.stock}`),
         React.createElement("span",{key:"d",style:{fontSize:11,fontWeight:700,color:x.days<=1?COLORS.red:x.days<=7?COLORS.amber:COLORS.textSoft}},x.days+" day(s) left"),
       ])),
-      withLink?React.createElement("a",{key:"link",onClick:()=>{ this.setState({screen:"mgrInventory",invTab:"expiry"}); },style:{display:"block",marginTop:10,fontSize:12,fontWeight:700,cursor:"pointer"}},"View Near-Expiry Monitoring â†’"):null,
+      withLink?React.createElement("a",{key:"link",onClick:()=>{ this.setState({screen:"mgrInventory",invTab:"expiry"});this.loadInventoryWorkflows(); },style:{display:"block",marginTop:10,fontSize:12,fontWeight:700,cursor:"pointer"}},"View Near-Expiry Monitoring â†’"):null,
     ]);
   }
   reloadPurchasing=async()=>{
@@ -1440,6 +1438,40 @@ class Component extends DCLogic {
       ]));
   }
   buildMgrPO(){ return this.buildPurchaseReceiving(); }
+  loadInventoryWorkflows=async()=>{
+    this.setState({workflowLoading:true,workflowError:''});
+    try{const r=await fetch('/api/inventory/workflows',{headers:{Accept:'application/json'}});const body=await r.json();if(!r.ok)throw new Error(body.message||'Could not load inventory workflows');this.setState({inventoryWorkflows:body});}
+    catch(e){this.setState({workflowError:e.message});}finally{this.setState({workflowLoading:false});}
+  };
+  saveInventoryWorkflow=async(path,payload)=>{
+    if(this.workflowBusy)return;
+    this.workflowBusy=true;this.setState({workflowSaving:true,workflowError:''});
+    try{const r=await this.authPost('/api/inventory/workflows/'+path,payload);this.toast(r.message);this.setState({workflowForm:{},workflowKey:null,countValues:{},countReason:''});await Promise.all([this.loadInventoryWorkflows(),this.reloadCatalog()]);}
+    catch(e){this.setState({workflowError:e.message});}finally{this.workflowBusy=false;this.setState({workflowSaving:false});}
+  };
+  buildInventoryWorkflows(tab){
+    const h=React.createElement,s=this.state,d=s.inventoryWorkflows,f=s.workflowForm||{};
+    const set=(key,value)=>this.setState({workflowForm:{...f,[key]:value},workflowKey:null});
+    const field=(key,label,type='text')=>h('label',{className:'field-group'},[label,h('input',{type,value:f[key]||'',min:1,onChange:e=>set(key,e.target.value)})]);
+    const select=(key,label,options)=>h('label',{className:'field-group'},[label,h('select',{value:f[key]||'',onChange:e=>set(key,e.target.value)},[h('option',{value:''},'Select'),...options.map(([value,text])=>h('option',{value,key:value},text))])]);
+    const action=(label,fn)=>h('button',{className:'kita-button',disabled:!!s.workflowSaving,onClick:fn},label);
+    const common=[h('div',{className:'page-toolbar'},[btn('Refresh records',this.loadInventoryWorkflows)]),s.workflowError?h('p',{role:'alert'},s.workflowError):null];
+    if(s.workflowLoading)return h('div',null,[...common,loadingStatus('Loading inventory records...')]);
+    if(!d)return h('div',null,[...common,h('p',null,'Load inventory records to continue.')]);
+    if(tab==='expiry'){
+      const days=Number(s.expiryDays??30),batches=d.batches.filter(b=>b.expiryDate&&Math.ceil((new Date(b.expiryDate)-new Date(d.today))/86400000)<=days).sort((a,b)=>a.expiryDate.localeCompare(b.expiryDate));
+      return h('div',null,[...common,h('label',null,['Show expiry within days (including expired stock)',h('input',{type:'number',min:0,max:3650,value:days,onChange:e=>this.setState({expiryDays:Math.max(0,Number(e.target.value)||0)})})]),this.recordTable('live-expiry',['Product','Batch','Expiry','Days left','Remaining','Unit'],batches.map(b=>tr([td(b.name),td(b.batchNumber||'No batch label'),td(b.expiryDate),td(Math.ceil((new Date(b.expiryDate)-new Date(d.today))/86400000)),td(b.quantityRemaining),td(b.stockUnit)],b.id)))]);
+    }
+    if(tab==='reconciliation'){
+      return h('div',null,[...common,h('p',null,'Count sellable stock only. Pause physical movements during counting. If stock moves, cancel and restart the count. Surplus stock uses the current estimated cost; shortages use FEFO/FIFO.'),
+        h('div',{className:'purchase-filters'},[select('mode','Count type',[['Cycle','Cycle'],['Blind','Blind (expected counts hidden)'],['Full','Full inventory']]),select('category','Category (blank = all)',(s.data.CATEGORIES||[]).map(c=>[c.name,c.name])),action('Start count',()=>this.saveInventoryWorkflow('counts',{mode:f.mode||'Cycle',category:f.category||null}))]),
+        ...d.counts.map(c=>card([h('h3',null,'Count #'+c.id+' ? '+c.mode+' ? '+c.status),h('p',null,c.created_at+' | '+c.actor),this.recordTable('count-'+c.id,['Product',...(c.mode==='Blind'&&c.status==='Open'?[]:['Expected']),'Physical count',...(c.status==='Completed'?['Variance']:[])],c.lines.map(l=>tr([td(l.name),...(c.mode==='Blind'&&c.status==='Open'?[]:[td(l.expected)]),td(c.status==='Open'?h('input',{'aria-label':'Count '+l.name,type:'number',min:0,step:1,value:s.countValues?.[l.id]??'',onChange:e=>this.setState({countValues:{...this.state.countValues,[l.id]:e.target.value}})}):l.counted??'-'),...(c.status==='Completed'?[td(l.counted-l.expected)]:[])],l.id))),c.status==='Open'?h('div',null,[h('label',null,['Reason / investigation notes',h('textarea',{value:s.countReason||'',onChange:e=>this.setState({countReason:e.target.value})})]),action('Complete and reconcile',()=>{if(c.lines.some(l=>String(s.countValues?.[l.id]??'').trim()==='')){this.setState({workflowError:'Count every item, including zero quantities.'});return;}if(window.confirm('Apply this physical count to inventory?'))this.saveInventoryWorkflow('counts/'+c.id,{action:'Complete',reason:s.countReason||'',lines:c.lines.map(l=>({productId:l.productId,counted:Number(s.countValues[l.id])}))});}),action('Cancel count',()=>this.saveInventoryWorkflow('counts/'+c.id,{action:'Cancel',reason:s.countReason||'Count cancelled'}))]):h('p',null,c.reason)]))]);
+    }
+    const recall=tab==='recall';
+    return h('div',null,[...common,h('p',null,recall?'Recall removes the entire remaining batch quantity from sellable inventory. Keep recalled items separate for supplier return or disposal.':'Write-offs and disposal remove stock. Transfers record stock leaving this store for the named destination; they do not add stock to another store.'),
+      h('div',{className:'purchase-filters'},[recall?null:select('type','Action',[['Write-off','Write-off'],['Disposal','Disposal'],['Transfer','Transfer out']]),select('batchId','Product / batch',d.batches.map(b=>[b.id,b.name+' / '+(b.batchNumber||'Batch #'+b.id)+' / available '+b.quantityRemaining])),field('quantity','Quantity','number'),!recall?field('destination','Destination (required for transfer)'):null,field('reason','Reason'),action(recall?'Recall batch stock':'Record stock action',()=>{if(!window.confirm('Remove this quantity from sellable inventory?'))return;const key=this.state.workflowKey||crypto.randomUUID();this.setState({workflowKey:key});this.saveInventoryWorkflow('events',{requestKey:key,type:recall?'Recall':f.type,batchId:Number(f.batchId),quantity:Number(f.quantity),reason:f.reason||'',destination:f.destination||null});})]),
+      this.recordTable('inventory-events-'+tab,['Reference','Date','Product','Batch','Type','Quantity removed','Destination','Reason','Recorded by'],d.events.filter(e=>recall?e.type==='Recall':e.type!=='Recall').map(e=>tr([td('INV-'+e.id),td(e.created_at),td(e.name),td(e.batchNumber||'Batch #'+e.batchId),td(e.type),td(e.quantity),td(e.destination||'-'),td(e.reason),td(e.actor)],e.id)))]);
+  }
   buildMgrInventory(){
     if(this.state.inventoryHistoryOpen)return this.buildInventoryHistory();
     const {data,invTab,adjustmentsLocal}=this.state; if(!data) return null;
@@ -1466,23 +1498,8 @@ class Component extends DCLogic {
         this.recordTable("adjustments",["Ref","Product","Qty Î”","Reason","Remarks","Evidence","Status"],adjustmentsLocal.map((a,i)=>{ const p=data.PRODUCTS.find(pp=>pp.id===a.productId);
           return tr([td(a.id,{fontFamily:"'JetBrains Mono',monospace"}),td(p?p.name:"â€”"),td(a.qtyChange,{color:COLORS.red,fontWeight:700}),td(a.reason),td(a.remarks,{fontSize:12,color:COLORS.textSoft}),td(a.photo?"ðŸ“· attached":"â€”"),td(badge(a.status))],i); })),
       ]);
-    } else if(invTab==="writeoffs"){
-      body=table(["Product","Type","Qty","Date"],[
-        tr([td("Frozen Siomai 500g"),td(badge("Damaged")),td(-38),td("2026-07-18")],1),
-        tr([td("Frozen Siomai 500g"),td("Transfer: Quarantine"),td(-38),td("2026-07-16")],2),
-      ]);
-    } else if(invTab==="recall"){
-      body=card([React.createElement("div",{key:"t",style:{fontWeight:800,marginBottom:8}},`Batch ${data.BATCH_RECALL.batch} Â· Lot ${data.BATCH_RECALL.lot} Â· ${data.BATCH_RECALL.product}`),
-        table(["Location","Qty Affected"],data.BATCH_RECALL.affected.map((a,i)=>tr([td(a.location+(a.note?" â€” "+a.note:"")),td(a.qty)],i))),
-        React.createElement("button",{key:"b",style:{marginTop:12,padding:"10px 16px",background:COLORS.red,color:"#fff",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer"}},"Flag All as Non-Sellable")]);
-    } else if(invTab==="reconciliation"){
-      body=React.createElement("div",null,[React.createElement("div",{style:{display:"flex",gap:10,marginBottom:12}},["Cycle","Blind","Full"].map(t=>React.createElement("span",{key:t,style:{padding:"6px 12px",border:"1px solid "+COLORS.border,borderRadius:20,fontSize:12,fontWeight:700}},t))),
-        card([React.createElement("div",{key:"t",style:{fontWeight:800,marginBottom:8}},"Count in Progress: Personal Care Aisle (locked)"),
-          React.createElement("div",{key:"v",style:{background:COLORS.amberBg,color:COLORS.amber,padding:"10px 12px",borderRadius:8,fontSize:13,fontWeight:700}},"Variance of 8 units above threshold â€” flagged for recount/investigation."),
-          React.createElement("div",{key:"n",style:{marginTop:10,fontSize:12,color:COLORS.textSoft}},"Sales during active count are logged separately and auto-reconciled at close.")])]);
-    } else if(invTab==="expiry"){
-      const soon=data.PRODUCTS.filter(p=>p.expiry);
-      body=this.recordTable("expiry",["Product","Expiry Date","Days Left"],soon.map((p,i)=>{ const days=Math.round((new Date(p.expiry)-new Date("2026-07-24"))/86400000); return tr([td(p.name),td(p.expiry),td(days<=1?React.createElement("span",{style:{color:COLORS.red,fontWeight:700}},days+" day(s)"):days<=7?React.createElement("span",{style:{color:COLORS.amber,fontWeight:700}},days+" days"):days+" days")],i); }));
+    } else if(['writeoffs','recall','reconciliation','expiry'].includes(invTab)){
+      body=this.buildInventoryWorkflows(invTab);
     } else if(invTab==="categories"){
       const {catSelected,categoriesLocal}=this.state; const catCount=Object.values(catSelected).filter(Boolean).length;
       const list = categoriesLocal.filter(c=>c.status==="Active");
