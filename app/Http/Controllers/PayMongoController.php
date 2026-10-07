@@ -16,7 +16,7 @@ class PayMongoController extends Controller
 {
     public function createCheckout(Request $request): JsonResponse
     {
-        $data = $request->validate(SaleCheckout::rules('stockItems') + ['provider' => ['required', 'in:GCash,Maya,GrabPay,QR Ph']]);
+        $data = $request->validate(SaleCheckout::rules('stockItems') + ['provider' => ['required', 'in:GCash,QR Ph']]);
         $transaction = DB::transaction(function () use ($request, $data) {
             $sale = SaleCheckout::prepare($request, $data, 'stockItems');
             if ($sale['total'] <= 0) {
@@ -32,7 +32,7 @@ class PayMongoController extends Controller
                 'reference_number' => $data['uuid'],
                 'line_items' => [['currency' => 'PHP', 'amount' => SaleCheckout::cents($transaction['total']), 'name' => 'KITA purchase', 'quantity' => 1]],
                 'payment_method_types' => [match ($data['provider']) {
-                    'GCash' => 'gcash', 'Maya' => 'paymaya', 'QR Ph' => 'qrph', default => 'grab_pay'
+                    'GCash' => 'gcash', 'QR Ph' => 'qrph'
                 }],
                 'description' => 'KITA checkout '.$data['uuid'], 'send_email_receipt' => false, 'show_description' => true, 'show_line_items' => true,
                 'success_url' => url('/payment/success?uuid='.urlencode($data['uuid'])),

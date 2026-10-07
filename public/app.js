@@ -509,7 +509,7 @@ class Component extends DCLogic {
     this.checkoutInFlight=true;
     this.setState({paymentState:"processing"});
     const uuid=this.checkoutUuid||(this.checkoutUuid="TXN-"+crypto.randomUUID().replace(/-/g,"").slice(0,26));
-    const refCodes={GCash:"GC-",Maya:"MY-",GrabPay:"GP-"};
+    const refCodes={GCash:"GC-","QR Ph":"QR-"};
     const result={ uuid,date:new Date().toISOString().slice(0,10),cashier:this.currentUser().name,cart:[...this.state.cart],totals,
       paymentMode: this.state.paymentMethod==="cash"?"Cash":this.state.ewalletProvider,
       tendered, paid:totals.grandTotal, change:Math.max(0,tendered-totals.grandTotal),
@@ -987,7 +987,7 @@ class Component extends DCLogic {
           paymentMethod==="cash"?React.createElement("div",{key:"cash"},[
             React.createElement("input",{key:"i",value:tendered,onChange:this.setTendered,placeholder:"Tendered amount",type:"number",style:{width:"100%",padding:"9px 10px",border:"1px solid "+COLORS.border,borderRadius:8,fontSize:13,marginBottom:6}}),
             tendered?React.createElement("div",{key:"c",style:{fontSize:12,color:COLORS.textSoft}},`Change: ${peso(Math.max(0,(parseFloat(tendered)||0)-totals.grandTotal))}`):null,
-          ]):React.createElement("select",{key:"ew",value:ewalletProvider,onChange:this.setEwalletProvider,style:{width:"100%",padding:"9px 10px",border:"1px solid "+COLORS.border,borderRadius:8,marginBottom:6}},["GCash","Maya","GrabPay","QR Ph"].map(p=>React.createElement("option",{key:p,value:p},p))),
+          ]):React.createElement("select",{key:"ew",value:ewalletProvider,onChange:this.setEwalletProvider,style:{width:"100%",padding:"9px 10px",border:"1px solid "+COLORS.border,borderRadius:8,marginBottom:6}},["GCash","QR Ph"].map(p=>React.createElement("option",{key:p,value:p},p))),
           paymentMethod==="ewallet" && ewalletProvider==="QR Ph"?React.createElement("div",{key:"qr-help",style:{fontSize:12,color:COLORS.textSoft,marginBottom:8}},"Open checkout to display a QR for "+peso(totals.grandTotal)+". Scan with GCash or a QR Ph-compatible banking app. Payment is confirmed automatically."):null,
           paymentState==="pending"?React.createElement("div",{key:"pend",style:{background:COLORS.amberBg,color:COLORS.amber,padding:"10px",borderRadius:8,fontSize:12,fontWeight:700,marginBottom:8,display:"flex",justifyContent:"space-between"}},[React.createElement("span",{key:"l"},"ðŸ”’ Stock reserved â€” Pending"),React.createElement("span",{key:"t",style:{fontFamily:"'JetBrains Mono',monospace"}},reservationSeconds+"s")]):null,
           paymentState==="processing"?React.createElement("div",{key:"proc",style:{background:COLORS.blueBg,color:COLORS.blue,padding:"10px",borderRadius:8,fontSize:12,fontWeight:700,marginBottom:8}},loadingStatus("Processing payment...")):null,

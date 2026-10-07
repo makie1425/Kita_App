@@ -23,10 +23,23 @@ class PayMongoTest extends TestCase
         DB::table('products')->insert(['id' => 1, 'name' => 'Mask', 'stock' => 5, 'status' => 'Active', 'price' => 100, 'category' => 'Medical']);
     }
 
+    public function test_removed_wallets_are_rejected_without_reserving_stock(): void
+    {
+        foreach (['Maya', 'GrabPay'] as $provider) {
+            $this->postJson('/api/payments/paymongo/checkout', [
+                'uuid' => 'TXN-removed', 'provider' => $provider,
+                'stockItems' => [['productId' => 1, 'qty' => 1]],
+            ])->assertUnprocessable()->assertJsonValidationErrors('provider');
+        }
+        $this->assertDatabaseCount('transactions', 0);
+        $this->assertDatabaseHas('products', ['id' => 1, 'stock' => 5]);
+        Http::assertNothingSent();
+    }
+
     private function checkout(): TestResponse
     {
         return $this->postJson('/api/payments/paymongo/checkout', [
-            'uuid' => 'TXN-paymongo', 'provider' => 'Maya', 'stockItems' => [['productId' => 1, 'qty' => 1]],
+            'uuid' => 'TXN-paymongo', 'provider' => 'GCash', 'stockItems' => [['productId' => 1, 'qty' => 1]],
         ]);
     }
 
@@ -45,7 +58,7 @@ class PayMongoTest extends TestCase
         $this->checkout()->assertStatus(502)->assertJsonPath('retryable', true);
         $this->assertDatabaseHas('transactions', ['uuid' => 'TXN-paymongo', 'status' => 'Payment Failed']);
         $this->assertDatabaseHas('products', ['id' => 1, 'stock' => 5]);
-        Http::assertSent(fn ($r) => $r['data']['attributes']['payment_method_types'] === ['paymaya']
+        Http::assertSent(fn ($r) => $r['data']['attributes']['payment_method_types'] === ['gcash']
             && $r['data']['attributes']['reference_number'] === 'TXN-paymongo'
             && $r['data']['attributes']['line_items'][0]['amount'] === 10000);
         $this->postJson('/api/payments/paymongo/checkout', [
