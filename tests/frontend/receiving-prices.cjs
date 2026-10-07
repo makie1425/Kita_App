@@ -2,7 +2,7 @@ const fs=require('fs'),vm=require('vm'),assert=require('assert');
 const ctx=vm.createContext({React:{createElement:(type,props,...children)=>({type,props,children})},DCLogic:class{setState(p){Object.assign(this.state,typeof p==='function'?p(this.state):p)}},window:{confirm:()=>true},crypto:{randomUUID:()=> 'receipt-key'}});
 vm.runInContext(fs.readFileSync('public/app.js','utf8')+';globalThis.App=Component;',ctx);
 const app=new ctx.App();
-const line={id:1,productId:1,name:'Water',category:'Drinks',unit:'Piece',orderedQty:10,deliveredQty:0};
+const line={id:1,productId:1,name:'Water',category:'Drinks',unit:'Piece',unitCost:10.5,orderedQty:10,deliveredQty:0};
 const order={id:'PO-1',receivingVersion:0,status:'Approved',lines:[line]};
 Object.assign(app.state,{data:{BUSINESS_DATE:'2026-10-07',PRODUCTS:[{id:1,price:0}]},purchaseData:{orders:[order]},purchaseLoading:false});
 app.purchasingState=()=>null;app.purchaseSupplier=()=> 'Supplier';
@@ -11,6 +11,9 @@ const nodes=n=>n==null||typeof n!=='object'?[]:Array.isArray(n)?n.flatMap(nodes)
 const controls=nodes(app.buildPurchaseReceiving()).filter(n=>n.type==='input');
 const input=label=>controls.find(n=>n.props['aria-label']===label);
 for(const label of ['Retail price','Batch number','Expiry date'])assert(input(label+' for Water'),label);
+assert.strictEqual(input('Cost price for Water').props.value,'10.50');
+assert.strictEqual(input('Cost price for Water').props.readOnly,true);
+assert.strictEqual(input('Cost price for Water').props.onChange,undefined);
 assert(!input('Selling price for Water'),'No duplicate selling price field');
 assert.strictEqual(controls.filter(n=>n.props.type==='number').length,2,'Only quantity and retail price are numeric inputs');
 let payload;app.authPost=async(url,p)=>{payload=p;return {message:'Saved'}};
