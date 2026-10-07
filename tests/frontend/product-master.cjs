@@ -9,10 +9,14 @@ const text=node=>node==null?'':typeof node==='string'?node:Array.isArray(node)?n
 const inputs=node=>node==null||typeof node!=='object'?[]:Array.isArray(node)?node.flatMap(inputs):[...(node.type==='input'?[node.props.id]:[]),...inputs(node.children)];
 const reg=app.buildMgrRegistration();assert(!inputs(reg).includes('registration-regQuantity'));assert(inputs(reg).includes('registration-regSize'));assert(inputs(reg).includes('registration-regReorderLevel'));
 assert(!inputs(reg).includes('registration-regStockId'),'Stock ID is generated automatically when adding');
+assert(!inputs(reg).includes('registration-regUnitPrice'),'Purchase cost is not shown in new registration');
+assert(!inputs(reg).includes('registration-regRetailPrice'),'Retail price is not shown in new registration');
+assert(!text(reg).includes('Product Master'),'Product table is not shown in registration');
 assert(!text(app.buildPurchaseRequests()).includes('Add New Product'));
 for(const method of ['buildMgrCategories','buildInventoryHistory','buildManualLookupModal','buildItemPickerModal'])assert(app[method](),method);
 app.state.invTab='stock';assert(app.buildMgrInventory());
 app.editProductMaster(product);assert(text(app.buildMgrRegistration()).includes('Edit Product'));
+assert(inputs(app.buildMgrRegistration()).includes('registration-regRetailPrice'),'Existing products can still be priced from inventory editing');
 console.log('Product master, purchasing, inventory, history and lookup screens rendered; no initial stock control, size/reorder fields and editing verified.');
 
 // Exercise the rendered controls across modules with unrelated and inactive subcategories.
@@ -102,3 +106,14 @@ assert(!nodes(nodes(app.buildMgrRegistration()).find(n=>n.type==='datalist')).so
 Object.assign(app.state,{regProductName:'cri'});
 assert(nodes(nodes(app.buildMgrRegistration()).find(n=>n.type==='datalist')).some(n=>n.type==='option'&&n.props.value==='Crisps'));
 console.log('Word-prefix search and product suggestions verified.');
+
+// Hidden pricing cannot inherit values from a previously edited product.
+let registrationPayload;
+app.authPost=(url,payload)=>{registrationPayload=payload;return Promise.resolve({product:{...payload,id:99}})};
+app.reloadCatalog=()=>Promise.resolve();app.toast=()=>{};
+Object.assign(app.state,{regEditing:null,regProductName:'New item',regCategory:'Beverages',regScannedBarcode:'NEW-ITEM',regConversionFactor:'1',regUnitPrice:'55',regRetailPrice:'80'});
+app.saveRegistration();
+assert(registrationPayload,'New registration saves without pricing inputs');
+assert.strictEqual(registrationPayload.unitPrice,0);
+assert.strictEqual(registrationPayload.price,0);
+console.log('Registration saves with zero initial prices and ignores stale edit values.');

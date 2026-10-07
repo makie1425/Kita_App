@@ -828,9 +828,11 @@ class Component extends DCLogic {
     if(!name||!regCategory){ this.toast("Product name and category are required.","error"); return; }
     if(!regScannedBarcode.trim()){ this.toast("Scan the item barcode before saving registration.","error"); return; }
     const qty=this.state.regEditing?(productsLocal||data.PRODUCTS).find(p=>p.id===this.state.regEditing).stock:0;
-    const price=parseFloat(regRetailPrice||regUnitPrice);
-    if(!this.validAmount(regRetailPrice||regUnitPrice)){ this.toast("Enter a valid retail price or unit price.","error"); return; }
-    if(!this.validAmount(regUnitPrice)){this.toast("Enter a valid unit price with at most two decimal places.","error");return;}
+    const unitPrice=this.state.regEditing?regUnitPrice:"0";
+    const retailPrice=this.state.regEditing?(regRetailPrice||regUnitPrice):"0";
+    const price=Number(retailPrice);
+    if(!this.validAmount(retailPrice)){ this.toast("Enter a valid retail price or unit price.","error"); return; }
+    if(!this.validAmount(unitPrice)){this.toast("Enter a valid unit price with at most two decimal places.","error");return;}
     const calculatedCost="0";
     if(calculatedCost===""){ this.toast("Enter a valid unit price to calculate cost price.","error"); return; }
     const cost=Number(calculatedCost);
@@ -842,9 +844,9 @@ class Component extends DCLogic {
     const barcode=regScannedBarcode.trim();
     const nextId=Math.max(0,...catalog.map(p=>Number(p.id)||0))+1;
     const supplier=(data.SUPPLIERS||[]).find(s=>s.name===regSupplier);
-    const product={id:nextId,name,category:regCategory,vatClass:"VAT-Exempt",price,cost,stock:qty,minStock:0,unit:regStockUnit||"Piece",status:regStatus||"Active",batch:regBatch||"",lot:regLot||"",expiry:regExpiry||"",barcode,supplierId:supplier?supplier.id:regSupplier,parentId:null,variantLabel:"",purchaseUnit:regPurchaseUnit||"Piece",stockUnit:regStockUnit||"Piece",conversionFactor,barcodeStatus:"Scanned",archivedAt:null,archivedBy:null,unitPrice:Number(regUnitPrice)};
+    const product={id:nextId,name,category:regCategory,vatClass:"VAT-Exempt",price,cost,stock:qty,minStock:0,unit:regStockUnit||"Piece",status:regStatus||"Active",batch:regBatch||"",lot:regLot||"",expiry:regExpiry||"",barcode,supplierId:supplier?supplier.id:regSupplier,parentId:null,variantLabel:"",purchaseUnit:regPurchaseUnit||"Piece",stockUnit:regStockUnit||"Piece",conversionFactor,barcodeStatus:"Scanned",archivedAt:null,archivedBy:null,unitPrice:Number(unitPrice)};
     this.registrationBusy=true;this.setState({registrationSaving:true});
-    this.authPost("/api/products"+(this.state.regEditing?"/"+this.state.regEditing:""),{reason:this.state.regEditReason||null,unitPrice:Number(regUnitPrice),brandId:this.state.regBrandId||null,subcategoryId:this.state.regSubcategoryId||null,size:this.state.regSize||null,sizeUnit:this.state.regSizeUnit||null,minStock:Number(this.state.regReorderLevel||0),name,category:regCategory,vatClass:"VAT-Exempt",price,cost,stock:qty,barcode,supplierId:supplier?supplier.id:null,batch:regBatch,lot:regLot,expiry:regExpiry,purchaseUnit:regPurchaseUnit,stockUnit:regStockUnit,conversionFactor,status:regStatus},this.state.regEditing?"PATCH":"POST").then(response=>{
+    this.authPost("/api/products"+(this.state.regEditing?"/"+this.state.regEditing:""),{reason:this.state.regEditReason||null,unitPrice:Number(unitPrice),brandId:this.state.regBrandId||null,subcategoryId:this.state.regSubcategoryId||null,size:this.state.regSize||null,sizeUnit:this.state.regSizeUnit||null,minStock:Number(this.state.regReorderLevel||0),name,category:regCategory,vatClass:"VAT-Exempt",price,cost,stock:qty,barcode,supplierId:supplier?supplier.id:null,batch:regBatch,lot:regLot,expiry:regExpiry,purchaseUnit:regPurchaseUnit,stockUnit:regStockUnit,conversionFactor,status:regStatus},this.state.regEditing?"PATCH":"POST").then(response=>{
       const savedProduct={...product,...response.product};
       this.setState({productsLocal:[...catalog.filter(p=>p.id!==savedProduct.id),savedProduct],regSaved:true,regSku:String(response.product.id),regBarcode:barcode,regRegisteredQty:qty});
       this.reloadCatalog().then(()=>this.toast(`"${name}" registered and saved to the product catalog.`)).catch(()=>this.toast(`"${name}" saved, but the catalog could not refresh. Reload the page.` ,"warn"));
@@ -1763,11 +1765,11 @@ class Component extends DCLogic {
         select("regPurchaseUnit","Purchase unit",units,true),select("regStockUnit","Stock unit",units,true),
         field("regConversionFactor","Conversion factor",{type:"number",required:true,help:"Number of stock units in one purchase unit."}),
       ]),
-      group("03","Pricing","Purchase cost and selling price are recorded separately.",[
+      s.regEditing?group("03","Pricing","Purchase cost and selling price are recorded separately.",[
         field("regUnitPrice","Estimated purchase cost (\u20B1)",{type:"number",required:true}),
 
         field("regRetailPrice","Retail price (\u20B1)",{type:"number",help:"If blank, the unit price is used."}),
-      ]),
+      ]):null,
       s.regEditing?field("regEditReason","Reason for price change"):null,
       h("div",{key:"save",className:"form-actions"},[
         h("span",{className:"form-action-note"},"Choose an active supplier before requesting a purchase."),
@@ -1777,7 +1779,6 @@ class Component extends DCLogic {
         h("h2",{className:"panel-title"},"Registration complete"),h("p",null,`Stock ID: ${s.regSku} | Barcode: ${s.regBarcode} | Available stock: ${s.regRegisteredQty}`),
         h("label",{className:"record-page-size"},["Label quantity",h("input",{type:"number",min:1,value:s.regPrintQty,onChange:this.setRegPrintQty})]),btn("Print labels",this.printLabels),
       ]):null,
-      card([h('h2',null,'Product Master'),this.recordTable('product-master',['Product / Brand / Size','Category','Barcode','Unit','Available','Status','Action'],products.map(p=>tr([td(this.productLabel(p)),td(p.category),td(p.barcode),td(p.stockUnit||p.unit),td(p.stock),td(badge(p.status)),td(btn('Edit Product',()=>this.editProductMaster(p)))],p.id)))]),
       s.categoryModalOpen?this.buildCategoryModal():null,
     ]);
   }
