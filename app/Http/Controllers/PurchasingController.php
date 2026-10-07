@@ -53,6 +53,7 @@ class PurchasingController extends Controller
             'lines.*.productId' => ['required', 'integer', 'distinct'],
             'lines.*.qty' => ['required', 'integer', 'between:1,1000000'],
             'lines.*.unitCost' => ['sometimes', ...InventoryRules::moneyRules()],
+            'lines.*.sellingPrice' => ['sometimes', ...InventoryRules::moneyRules()],
             'lines.*.batchNumber' => ['nullable', 'string', 'max:80'],
             'lines.*.expiryDate' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:receivedDate'],
         ]);
@@ -111,7 +112,13 @@ class PurchasingController extends Controller
                 $receivedCents += (int) round(InventoryRules::lineTotal($line['qty'], $cost) * 100);
                 FifoInventory::opening($product->id, (int) $product->stock);
                 FifoInventory::receive($product->id, $line['qty'], $cost, $data['receivedDate'], $receiptId, $order->supplierId, 'purchase_receiving', $line['batchNumber'] ?? null, $line['expiryDate'] ?? null);
-                DB::table('products')->where('id', $product->id)->update(['stock' => $after]);
+                $sellingPrice = (float) ($line['sellingPrice'] ?? $product->price);
+                DB::table('products')->where('id', $product->id)->update(['stock' => $after, 'unitPrice' => $cost, 'price' => $sellingPrice]);
+                if ((float) $product->price !== $sellingPrice || (float) $product->unitPrice !== $cost) {
+                    InventoryRules::audit($request->user()->name, 'Prices set on receipt', (string) $product->id,
+                        json_encode(['price' => $product->price, 'unitPrice' => $product->unitPrice]),
+                        json_encode(['price' => $sellingPrice, 'unitPrice' => $cost, 'receiptId' => $receiptId]));
+                }
                 StockMovement::record($product->id, $product->stock, $after, 'purchase_receiving', $receiptId, $request->user());
                 DB::table('purchase_order_lines')->where('id', $ordered->id)->update(['deliveredQty' => $received]);
                 $ordered->deliveredQty = $received;

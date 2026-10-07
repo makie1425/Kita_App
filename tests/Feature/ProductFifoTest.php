@@ -100,6 +100,27 @@ class ProductFifoTest extends TestCase
         $this->getJson('/api/inventory-history')->assertOk()->assertJsonPath('products.0.id', 800);
     }
 
+    public function test_receiving_saves_prices_atomically_and_retry_does_not_reprice(): void
+    {
+        $this->receive(2, 55);
+        $id = $this->postJson('/api/purchase-requests', ['category' => 'Beverages', 'lines' => [['productId' => $this->product, 'qty' => 3]]])->assertCreated()->json('id');
+        $this->actingAs($this->admin)->patchJson('/api/purchase-requests/'.$id, ['action' => 'approved', 'revision' => 0])->assertOk();
+        $this->actingAs($this->manager);
+        $payload = ['version' => 0, 'idempotencyKey' => (string) Str::uuid(), 'receivedDate' => now()->toDateString(),
+            'lines' => [['productId' => $this->product, 'qty' => 3, 'unitCost' => 60, 'sellingPrice' => -1]]];
+        $this->postJson('/api/purchase-orders/'.$id.'/receive', $payload)->assertUnprocessable();
+        $this->assertDatabaseHas('products', ['id' => $this->product, 'stock' => 2, 'unitPrice' => 55]);
+        $payload['lines'][0]['sellingPrice'] = 85;
+        $this->postJson('/api/purchase-orders/'.$id.'/receive', $payload)->assertCreated();
+        $this->assertDatabaseHas('products', ['id' => $this->product, 'stock' => 5, 'unitPrice' => 60, 'price' => 85]);
+        $this->assertDatabaseHas('inventory_batches', ['productId' => $this->product, 'unitCost' => 55, 'quantityRemaining' => 2]);
+        $this->assertDatabaseHas('inventory_batches', ['productId' => $this->product, 'unitCost' => 60, 'quantityRemaining' => 3]);
+        $this->assertDatabaseHas('audit_logs', ['action' => 'Prices set on receipt', 'record' => (string) $this->product]);
+        DB::table('products')->where('id', $this->product)->update(['price' => 90]);
+        $this->postJson('/api/purchase-orders/'.$id.'/receive', $payload)->assertOk();
+        $this->assertDatabaseHas('products', ['id' => $this->product, 'stock' => 5, 'price' => 90]);
+    }
+
     public function test_registration_and_manual_adjustments_cannot_add_stock(): void
     {
         $this->postJson('/api/products', array_replace($this->input, ['barcode' => 'OTHER', 'stock' => 10]))->assertUnprocessable();

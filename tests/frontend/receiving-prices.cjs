@@ -1,0 +1,28 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+const ctx=vm.createContext({React:{createElement:(type,props,...children)=>({type,props,children})},DCLogic:class{setState(p){Object.assign(this.state,typeof p==='function'?p(this.state):p)}},window:{confirm:()=>true},crypto:{randomUUID:()=> 'receipt-key'}});
+vm.runInContext(fs.readFileSync('public/app.js','utf8')+';globalThis.App=Component;',ctx);
+const app=new ctx.App();
+const line={id:1,productId:1,name:'Water',category:'Drinks',unit:'Piece',orderedQty:10,deliveredQty:0};
+const order={id:'PO-1',receivingVersion:0,status:'Approved',lines:[line]};
+Object.assign(app.state,{data:{BUSINESS_DATE:'2026-10-07',PRODUCTS:[{id:1,price:0}]},purchaseData:{orders:[order]},purchaseLoading:false});
+app.purchasingState=()=>null;app.purchaseSupplier=()=> 'Supplier';
+app.openPurchaseReceiving(order);
+const nodes=n=>n==null||typeof n!=='object'?[]:Array.isArray(n)?n.flatMap(nodes):[n,...nodes(n.children)];
+const controls=nodes(app.buildPurchaseReceiving()).filter(n=>n.type==='input');
+const input=label=>controls.find(n=>n.props['aria-label']===label);
+for(const label of ['Actual unit cost','Selling price','Batch number','Expiry date'])assert(input(label+' for Water'),label);
+let payload;app.authPost=async(url,p)=>{payload=p;return {message:'Saved'}};
+app.toast=()=>{};app.reloadPurchasing=app.reloadCatalog=async()=>{};
+(async()=>{
+  input('Receive Water').props.onChange({target:{value:'2'}});
+  await app.confirmPurchaseReceiving();assert(!payload,'Blank prices must block submission');
+  input('Actual unit cost for Water').props.onChange({target:{value:'10.50'}});
+  input('Selling price for Water').props.onChange({target:{value:'15.00'}});
+  input('Batch number for Water').props.onChange({target:{value:'B-1'}});
+  input('Expiry date for Water').props.onChange({target:{value:'2027-01-01'}});
+  await app.confirmPurchaseReceiving();
+  assert.strictEqual(payload.lines[0].unitCost,'10.50');assert.strictEqual(payload.lines[0].sellingPrice,'15.00');
+  assert.strictEqual(payload.lines[0].batchNumber,'B-1');assert.strictEqual(payload.lines[0].expiryDate,'2027-01-01');
+  app.openPurchaseReceiving(order);assert.strictEqual(app.receivingPrice(1),'','New receipt clears unsaved pricing');
+  console.log('Receiving inputs, required prices, batch/expiry payload and draft reset passed.');
+})().catch(e=>{console.error(e);process.exitCode=1});
