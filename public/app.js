@@ -50,7 +50,15 @@ React.createElement = (type, props, ...children) => {
     if(style.position==="fixed" && style.inset===0 && style.background) classes.push("kita-modal-overlay");
     cleanProps={...cleanProps,className:classes.filter(Boolean).join(" ")};
   }
-  return originalCreateElement(type, cleanProps, ...children.map(cleanMojibake));
+  // Give legacy screens a shared action row without changing their handlers.
+  let presentationChildren=children.map(cleanMojibake);
+  if(['div','section','form','td'].includes(type)&&!['flex','grid'].includes(cleanProps?.style?.display)&&!/(action|toolbar|pagination|grid)/.test(cleanProps?.className||'')){
+    const items=presentationChildren.flat(Infinity),grouped=[];let actions=[];
+    const flush=()=>{if(actions.length>1)grouped.push(originalCreateElement('div',{key:'actions-'+grouped.length,className:'action-group'},...actions));else grouped.push(...actions);actions=[];};
+    for(const item of items){if(item&&(item.type==='button'||(item.type==='a'&&item.props?.className?.includes('kita-button'))))actions.push(item);else{flush();grouped.push(item);}}
+    flush();presentationChildren=grouped;
+  }
+  return originalCreateElement(type, cleanProps, ...presentationChildren);
 };
 function auditFields(value, products = []) {
   const fields = new Map();
@@ -804,7 +812,6 @@ class Component extends DCLogic {
   saveRegistration=()=>{
     if(this.registrationBusy)return;
     const {data,productsLocal,regProductName,regCategory,regSupplier,regScannedBarcode,regQuantity,regCostPrice,regUnitPrice,regRetailPrice,regBatch,regLot,regExpiry,regPurchaseUnit,regStockUnit,regConversionFactor,regStatus,regVatClass}=this.state;
-    if(this.state.regStockId && (!Number.isInteger(Number(this.state.regStockId))||Number(this.state.regStockId)<1)){this.toast("Stock ID must be a positive whole number.","error");return;}
     const name = regProductName.trim();
     if(!name||!regCategory){ this.toast("Product name and category are required.","error"); return; }
     if(!regScannedBarcode.trim()){ this.toast("Scan the item barcode before saving registration.","error"); return; }
@@ -825,7 +832,7 @@ class Component extends DCLogic {
     const supplier=(data.SUPPLIERS||[]).find(s=>s.name===regSupplier);
     const product={id:nextId,name,category:regCategory,vatClass:"VAT-Exempt",price,cost,stock:qty,minStock:0,unit:regStockUnit||"Piece",status:regStatus||"Active",batch:regBatch||"",lot:regLot||"",expiry:regExpiry||"",barcode,supplierId:supplier?supplier.id:regSupplier,parentId:null,variantLabel:"",purchaseUnit:regPurchaseUnit||"Piece",stockUnit:regStockUnit||"Piece",conversionFactor,barcodeStatus:"Scanned",archivedAt:null,archivedBy:null,unitPrice:Number(regUnitPrice)};
     this.registrationBusy=true;this.setState({registrationSaving:true});
-    this.authPost("/api/products"+(this.state.regEditing?"/"+this.state.regEditing:""),{reason:this.state.regEditReason||null,id:this.state.regStockId?Number(this.state.regStockId):undefined,unitPrice:Number(regUnitPrice),brandId:this.state.regBrandId||null,subcategoryId:this.state.regSubcategoryId||null,size:this.state.regSize||null,sizeUnit:this.state.regSizeUnit||null,minStock:Number(this.state.regReorderLevel||0),name,category:regCategory,vatClass:"VAT-Exempt",price,cost,stock:qty,barcode,supplierId:supplier?supplier.id:null,batch:regBatch,lot:regLot,expiry:regExpiry,purchaseUnit:regPurchaseUnit,stockUnit:regStockUnit,conversionFactor,status:regStatus},this.state.regEditing?"PATCH":"POST").then(response=>{
+    this.authPost("/api/products"+(this.state.regEditing?"/"+this.state.regEditing:""),{reason:this.state.regEditReason||null,unitPrice:Number(regUnitPrice),brandId:this.state.regBrandId||null,subcategoryId:this.state.regSubcategoryId||null,size:this.state.regSize||null,sizeUnit:this.state.regSizeUnit||null,minStock:Number(this.state.regReorderLevel||0),name,category:regCategory,vatClass:"VAT-Exempt",price,cost,stock:qty,barcode,supplierId:supplier?supplier.id:null,batch:regBatch,lot:regLot,expiry:regExpiry,purchaseUnit:regPurchaseUnit,stockUnit:regStockUnit,conversionFactor,status:regStatus},this.state.regEditing?"PATCH":"POST").then(response=>{
       const savedProduct={...product,...response.product};
       this.setState({productsLocal:[...catalog.filter(p=>p.id!==savedProduct.id),savedProduct],regSaved:true,regSku:String(response.product.id),regBarcode:barcode,regRegisteredQty:qty});
       this.reloadCatalog().then(()=>this.toast(`"${name}" registered and saved to the product catalog.`)).catch(()=>this.toast(`"${name}" saved, but the catalog could not refresh. Reload the page.` ,"warn"));
@@ -1728,7 +1735,7 @@ class Component extends DCLogic {
       h("div",{key:"actions",className:"page-toolbar"},[btn("New Product",()=>this.setState({regEditing:null,regStockId:"",regProductName:"",regScannedBarcode:"",regSaved:false,regBrandId:"",regSubcategoryId:"",regSize:"",regSizeUnit:"",regEditReason:""})),btn("+ Add Category",this.openCategoryModal),s.regSaved?h("span",{role:"status",className:"saved-indicator"},"Product saved. Stock ID: "+s.regSku):null]),
       h("datalist",{key:"names",id:"reg-product-options"},[...new Set(products.map(p=>p.name))].sort().map(name=>h("option",{key:name,value:name}))),
       group("01","Product details","Identify the item and choose its category and supplier.",[
-        field("regProductName","Product name",{required:true}),field("regStockId","Stock ID",{type:"number",step:1,readOnly:!!s.regEditing,placeholder:"Created automatically",help:"Optional. Leave blank to generate a unique ID."}),
+        field("regProductName","Product name",{required:true}),s.regEditing?field("regStockId","Stock ID",{type:"number",step:1,readOnly:true}):null,
         field("regScannedBarcode","Scanned barcode",{required:true,placeholder:"Scan or enter the item barcode"}),
         select("regCategory","Category",data.CATEGORIES.filter(c=>c.status==="Active").map(c=>c.name),true),
         h("label",{className:"field-group"},["Brand",h("select",{value:s.regBrandId||"",onChange:this.setRegField("regBrandId")},[h("option",{value:""},"Unbranded / not applicable"),...(data.BRANDS||[]).filter(b=>b.status==="Active").map(b=>h("option",{value:b.id,key:b.id},b.name))])]),
@@ -2117,11 +2124,11 @@ class Component extends DCLogic {
         field('brandId','Brand',(d.BRANDS||[]).map(b=>[b.id,b.name])),field('supplierId','Supplier',d.SUPPLIERS.map(p=>[p.id,p.name])),
         field('productId','Product',products.map(p=>[p.id,this.productLabel(p)+' #'+p.id])),field('lowStock','Stock filter',[['1','Currently low stock']])
       ]),f.type==='inventory'?h('p',null,'Current stock snapshot: dates do not apply. Use Stock movements for a date range.'):null,
-      btn(s.reportLoading?'Generating...':'Generate report',this.generateReport,'primary'),btn('Reset filters',()=>{this.reportRequestId=(this.reportRequestId||0)+1;this.setState({reportFilters:{type:'sales'},reportResult:null,reportError:'',reportLoading:false});})]),
+      h('div',{className:'action-group form-action-bar'},[btn(s.reportLoading?'Generating...':'Generate report',this.generateReport,'primary'),btn('Reset filters',()=>{this.reportRequestId=(this.reportRequestId||0)+1;this.setState({reportFilters:{type:'sales'},reportResult:null,reportError:'',reportLoading:false});})])]),
       s.reportError?h('p',{role:'alert'},s.reportError):null,
       r?h('section',null,[h('h2',null,r.title),h('p',null,'Generated: '+r.generated+' | '+r.rows.length+' records'),h('p',null,Object.entries(r.labels).map(([key,value])=>key+': '+value).join(' | ')),h('p',null,r.note),
         h('div',{className:'report-summary'},Object.entries(r.summary||{}).map(([label,value])=>h('div',{key:label,className:'report-metric'},[h('span',null,label),h('strong',null,value)]))),
-        h('div',{className:'page-toolbar'},[h('a',{className:'kita-button',href:url('print'),target:'_blank',rel:'noopener'},'Print / Save PDF'),h('a',{className:'kita-button',href:url('csv')},'Export CSV')]),
+        h('div',{className:'action-group form-action-bar'},[h('a',{className:'kita-button',href:url('pdf'),download:true},'Download PDF'),h('a',{className:'kita-button',href:url('csv'),download:true},'Export CSV'),h('a',{className:'kita-button',href:url('print'),target:'_blank',rel:'noopener'},'Print report')]),
         h('p',null,'Exports use the displayed report filters. After changing filters, generate the report again.'),
         r.rows.length?this.recordTable('generated-report',Object.keys(r.columns),r.rows.map((row,i)=>tr(Object.values(r.columns).map(key=>td(row[key]==null?'-':(r.moneyKeys||[]).includes(key)?Number(row[key]).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}):row[key],(r.numericKeys||[]).includes(key)?{textAlign:'right',fontVariantNumeric:'tabular-nums'}:key==='reference'?{fontFamily:'monospace'}:{})),i))):h('p',null,'No records match these filters.')
       ]):null

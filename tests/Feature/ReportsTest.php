@@ -81,8 +81,19 @@ class ReportsTest extends TestCase
         $this->getJson('/reports/data?type=sales&from=2026-10-07&to=2026-10-01')->assertUnprocessable();
         $this->getJson('/reports/data?type=unknown')->assertUnprocessable();
         $this->actingAs(User::factory()->create(['role' => 'cashier', 'status' => 'Active']));
-        foreach (['json', 'csv', 'print'] as $format) {
+        foreach (['json', 'csv', 'print', 'pdf'] as $format) {
             $this->getJson('/reports/data?type=inventory&format='.$format)->assertForbidden();
+        }
+    }
+
+    public function test_pdf_download_is_a_real_attachment_for_every_report_type(): void
+    {
+        foreach (['sales', 'inventory', 'receipts', 'movements'] as $type) {
+            $response = $this->get('/reports/data?type='.$type.'&format=pdf&from=2026-10-06&to=2026-10-06');
+            $response->assertOk()->assertHeader('Content-Type', 'application/pdf');
+            $this->assertStringContainsString('attachment;', $response->headers->get('Content-Disposition'));
+            $this->assertStringStartsWith('%PDF-', $response->getContent());
+            $this->assertStringContainsString('%%EOF', $response->getContent());
         }
     }
 }

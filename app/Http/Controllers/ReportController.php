@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Services\InventoryRules;
 use App\Services\TransactionNumber;
+use Dompdf\Dompdf;
+use Dompdf\Options;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -15,7 +17,7 @@ class ReportController extends Controller
         InventoryRules::authorize($request, ['manager', 'admin']);
         $filters = $request->validate([
             'type' => ['required', Rule::in(['inventory', 'sales', 'receipts', 'movements'])],
-            'format' => ['nullable', Rule::in(['json', 'print', 'csv'])],
+            'format' => ['nullable', Rule::in(['json', 'print', 'csv', 'pdf'])],
             'from' => ['nullable', 'date_format:Y-m-d'],
             'to' => ['nullable', 'date_format:Y-m-d', ...($request->filled('from') ? ['after_or_equal:from'] : [])],
             'category' => ['nullable', 'string', 'max:100'],
@@ -135,6 +137,26 @@ class ReportController extends Controller
             }, 'kita-'.$type.'-'.now()->format('Y-m-d').'.csv', ['Content-Type' => 'text/csv; charset=UTF-8', 'Cache-Control' => 'no-store']);
         }
         $data = compact('title', 'columns', 'rows', 'note', 'generated', 'labels', 'summary', 'moneyKeys', 'numericKeys', 'preparedBy');
+        if ($request->input('format') === 'pdf') {
+            $options = new Options;
+            $options->set('isRemoteEnabled', false);
+            $options->set('isPhpEnabled', false);
+            $options->set('isJavascriptEnabled', false);
+            $options->set('defaultFont', 'DejaVu Sans');
+            $options->set('fontCache', storage_path('framework/cache'));
+            $options->set('tempDir', storage_path('framework/cache'));
+            $pdf = new Dompdf($options);
+            $pdf->loadHtml(view('reports.pdf', $data)->render());
+            $pdf->setPaper('A4', 'landscape');
+            $pdf->render();
+            $pdf->getCanvas()->page_text(715, 565, 'Page {PAGE_NUM} of {PAGE_COUNT}', $pdf->getFontMetrics()->getFont('DejaVu Sans'), 8, [0.35, 0.4, 0.45]);
+
+            return response($pdf->output(), 200, [
+                'Content-Type' => 'application/pdf',
+                'Content-Disposition' => 'attachment; filename="kita-'.$type.'-'.now()->timezone('Asia/Manila')->format('Y-m-d').'.pdf"',
+                'Cache-Control' => 'private, no-store',
+            ]);
+        }
         if ($request->input('format') === 'print') {
             return response()->view('reports.print', $data)->header('Cache-Control', 'no-store');
         }
