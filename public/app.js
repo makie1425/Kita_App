@@ -1583,10 +1583,11 @@ class Component extends DCLogic {
         btn("Register New Product",this.goScreen("mgrRegistration")),
         btn("Request Purchase",this.goScreen("mgrRequest")),
       ]),
-      this.recordTable("categories",["Category","Classification","Products","Action"],categories.map(c=>tr([
+      this.recordTable("categories",["Category","Classification","Products","Status","Actions"],categories.map(c=>tr([
         td(c.name),td(c.classification||"Not classified"),
         td((this.state.productsLocal||[]).filter(p=>p.category===c.name).length),
-        td([btn("Edit",this.editCategory(c)),btn(c.status==="Active"?"Deactivate":"Activate",()=>this.authPost("/api/categories/"+encodeURIComponent(c.name),{status:c.status==="Active"?"Inactive":"Active"},"PATCH").then(()=>this.reloadCatalog()).catch(e=>this.toast(e.message,"error"))),badge(c.status)]),
+        td(badge(c.status)),
+        td([btn("Edit",this.editCategory(c)),btn(c.status==="Active"?"Deactivate":"Activate",()=>this.authPost("/api/categories/"+encodeURIComponent(c.name),{status:c.status==="Active"?"Inactive":"Active"},"PATCH").then(()=>this.reloadCatalog()).catch(e=>this.toast(e.message,"error")))]),
       ],c.name))),
       this.buildMasterLists(),
       this.state.categoryModalOpen?this.buildCategoryModal():null,
