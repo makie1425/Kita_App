@@ -237,6 +237,7 @@ class Component extends DCLogic {
     ]);
   }
   componentDidUpdate(prevProps, prevState) {
+    if(this.state.screen==='admReports' && prevState.screen!=='admReports') this.generateReport();
     if(this.state.discountManagerPin && (prevState.cart!==this.state.cart || prevState.seniorApplied!==this.state.seniorApplied || prevState.employeeDiscount!==this.state.employeeDiscount || prevState.role!==this.state.role)){
       this.setState({discountManagerPin:""});
     }
@@ -2144,38 +2145,64 @@ class Component extends DCLogic {
     return React.createElement("div",null,[sectionTitle("Supplier Records","Contact info, address, category, status (Active/Inactive only)"),
       this.recordTable("supplier-records",["Supplier","Category","Status","Details"],data.SUPPLIERS.map(s=>tr([td(s.name,{fontWeight:600}),td(s.category),td(badge(s.status)),td(React.createElement("button",{onClick:this.openSupplierDetail(s.id),style:{color:COLORS.brand,background:"none",border:"none",fontWeight:700,cursor:"pointer"}},"View â†’"))],s.id)))]);
   }
-  setReportFilter=(key,value)=>this.setState(s=>({reportFilters:{...(s.reportFilters||{type:'sales'}),[key]:value,...(key==='category'?{subcategoryId:'',productId:''}:['brandId','subcategoryId','supplierId'].includes(key)?{productId:''}:{}),...(key==='type'&&value==='inventory'?{from:'',to:''}:{})}}));
+  setReportFilter=(key,value)=>this.setState(s=>({reportFilters:{...(s.reportFilters||{type:'sales'}),[key]:value,...(key==='category'?{subcategoryId:'',productId:''}:['brandId','subcategoryId','supplierId','type'].includes(key)?{productId:''}:{}),...(key==='type'&&value==='inventory'?{from:'',to:''}:{})},reportFilterOpen:['from','to'].includes(key)?s.reportFilterOpen:null}),this.generateReport);
+  resetReportFilters=()=>this.setState({reportFilters:{type:this.state.reportFilters?.type||'sales'},reportFilterOpen:null},this.generateReport);
   generateReport=async()=>{
     const filters={...(this.state.reportFilters||{type:'sales'})};
     const requestId=(this.reportRequestId||0)+1;this.reportRequestId=requestId;
+    if(filters.from&&filters.to&&filters.from>filters.to){this.setState({reportLoading:false,reportError:'Choose an end date on or after the start date.'});return;}
     this.setState({reportLoading:true,reportError:''});
     try{
       const response=await fetch('/reports/data?'+new URLSearchParams(Object.entries(filters).filter(([,v])=>v)),{headers:{Accept:'application/json'}});
-      const body=await response.json();if(!response.ok)throw new Error(body.message||'Could not generate report.');
-      if(this.reportRequestId===requestId)this.setState({reportResult:body,reportAppliedFilters:filters});
-    }catch(error){if(this.reportRequestId===requestId)this.setState({reportError:error.message,reportResult:null});}
+      const body=await response.json();if(!response.ok)throw new Error(body.message||'Could not load report.');
+      if(this.reportRequestId===requestId)this.setState(s=>({reportResult:body,reportAppliedFilters:filters,tableViews:{...s.tableViews,'generated-report':{...s.tableViews?.['generated-report'],page:1}}}));
+    }catch(error){if(this.reportRequestId===requestId)this.setState({reportError:error.message});}
     finally{if(this.reportRequestId===requestId)this.setState({reportLoading:false});}
   };
   buildAdmReports(){
     const h=React.createElement,s=this.state,d=s.data,f=s.reportFilters||{type:'sales'},r=s.reportResult;
-    const field=(key,label,options)=>h('label',{key,className:'field-group'},[label,h(options?'select':'input',{value:f[key]||'',type:options?undefined:'date',disabled:!options&&f.type==='inventory',onChange:e=>this.setReportFilter(key,e.target.value)},options?[...(key==='type'?[]:[h('option',{key:'all',value:''},'All')]),...options.map(([value,text])=>h('option',{key:value,value},text))]:null)]);
+    const types=[['sales','Sales lines'],['inventory','Current inventory'],['receipts','Received stock'],['movements','Stock movements']];
     const products=d.PRODUCTS.filter(p=>(!f.category||p.category===f.category)&&(!f.subcategoryId||String(p.subcategoryId)===String(f.subcategoryId))&&(!f.brandId||String(p.brandId)===String(f.brandId))&&(f.type==='receipts'||!f.supplierId||String(p.supplierId)===String(f.supplierId)));
+    const facets=[['category','Category',d.CATEGORIES.map(c=>[c.name,c.name])],['subcategoryId','Subcategory',this.subcategoriesFor(f.category,true).map(c=>[c.id,c.name])],['brandId','Brand',(d.BRANDS||[]).map(b=>[b.id,b.name])],['supplierId','Supplier',d.SUPPLIERS.map(p=>[p.id,p.name])],['productId','Product',products.map(p=>[p.id,this.productLabel(p)+' #'+p.id])]];
+    const selected=facets.filter(([key])=>f[key]);
+    const activeCount=selected.length+(f.lowStock?1:0)+(f.from||f.to?1:0);
+    const open=s.reportFilterOpen,facet=facets.find(([key])=>key===open);
+    const labelFor=(options,value)=>options.find(([id])=>String(id)===String(value))?.[1]||value;
     const url=format=>'/reports/data?'+new URLSearchParams({...Object.fromEntries(Object.entries(s.reportAppliedFilters||{}).filter(([,v])=>v)),format});
-    return h('div',null,[sectionTitle('Reports','Filter and generate a report, then print, save as PDF or export all matching rows to CSV.'),
-      card([h('div',{className:'form-grid'},[
-        field('type','Report type',[['sales','Sales lines'],['inventory','Current inventory'],['receipts','Received stock'],['movements','Stock movements']]),
-        field('from','From date'),field('to','To date'),field('category','Category',d.CATEGORIES.map(c=>[c.name,c.name])),
-        this.buildSubcategorySelect(f.category,f.subcategoryId,e=>this.setReportFilter('subcategoryId',e.target.value),{includeInactive:true}),
-        field('brandId','Brand',(d.BRANDS||[]).map(b=>[b.id,b.name])),field('supplierId','Supplier',d.SUPPLIERS.map(p=>[p.id,p.name])),
-        field('productId','Product',products.map(p=>[p.id,this.productLabel(p)+' #'+p.id])),field('lowStock','Stock filter',[['1','Currently low stock']])
-      ]),f.type==='inventory'?h('p',null,'Current stock snapshot: dates do not apply. Use Stock movements for a date range.'):null,
-      h('div',{className:'action-group form-action-bar'},[btn(s.reportLoading?'Generating...':'Generate report',this.generateReport,'primary'),btn('Reset filters',()=>{this.reportRequestId=(this.reportRequestId||0)+1;this.setState({reportFilters:{type:'sales'},reportResult:null,reportError:'',reportLoading:false});})])]),
-      s.reportError?h('p',{role:'alert'},s.reportError):null,
-      r?h('section',null,[h('h2',null,r.title),h('p',null,'Generated: '+r.generated+' | '+r.rows.length+' records'),h('p',null,Object.entries(r.labels).map(([key,value])=>key+': '+value).join(' | ')),h('p',null,r.note),
+    const filterButton=(key,label,active,disabled=false)=>h('button',{key,type:'button',className:'report-filter-button'+(active?' is-selected':''),'aria-expanded':open===key,'aria-controls':'report-filter-options',disabled,onClick:()=>this.setState({reportFilterOpen:open===key?null:key}),title:disabled?'Choose a category first':undefined},[label,h('span',{'aria-hidden':true},open===key?'\u25b4':'\u25be')]);
+    return h('div',{className:'reports-page'},[sectionTitle('Reports','Choose a report and filter the records below. Results update automatically.'),
+      h('div',{className:'report-type-actions',role:'group','aria-label':'Report type'},types.map(([value,label])=>h('button',{key:value,type:'button','aria-pressed':f.type===value,className:'report-type-button'+(f.type===value?' is-selected':''),onClick:()=>this.setReportFilter('type',value)},label))),
+      h('section',{className:'report-filter-bar','aria-label':'Report filters'},[
+        h('div',{className:'report-filter-actions'},[h('strong',null,'Filters'+(activeCount?' ('+activeCount+')':'')),
+          f.type!=='inventory'?filterButton('date','Date range',f.from||f.to):null,
+          ...facets.map(([key,label])=>filterButton(key,label,!!f[key],key==='subcategoryId'&&!f.category)),
+          h('label',{className:'report-stock-toggle'},[h('input',{type:'checkbox',checked:!!f.lowStock,onChange:e=>this.setReportFilter('lowStock',e.target.checked?'1':'')}),'Low stock only']),
+          activeCount?h('button',{type:'button',className:'report-clear',onClick:this.resetReportFilters},'Clear all'):null
+        ]),
+        open?h('div',{id:'report-filter-options',className:'report-filter-options',onKeyDown:e=>{if(e.key==='Escape'){this.setState({reportFilterOpen:null});e.currentTarget.parentElement.querySelector('[aria-expanded="true"]')?.focus();}}},[
+          open==='date'?h('div',{className:'report-date-options'},[
+            h('label',null,['From',h('input',{type:'date',value:f.from||'',max:f.to||undefined,onChange:e=>this.setReportFilter('from',e.target.value)})]),
+            h('label',null,['To',h('input',{type:'date',value:f.to||'',min:f.from||undefined,onChange:e=>this.setReportFilter('to',e.target.value)})]),
+            h('button',{type:'button',className:'report-clear',onClick:()=>this.setState({reportFilters:{...f,from:'',to:''},reportFilterOpen:null},this.generateReport)},'All dates')
+          ]):facet?h('fieldset',{className:'report-facet'},[h('legend',null,facet[1]),h('div',{className:'report-facet-options'},[['','All '+facet[1].toLowerCase()+' options'],...facet[2]].map(([value,label])=>h('label',{key:value,className:'report-facet-choice'},[h('input',{type:'radio',name:'report-'+open,value,checked:String(f[open]||'')===String(value),onChange:()=>this.setReportFilter(open,String(value))}),label])))]):null
+        ]):null,
+        activeCount?h('div',{className:'report-active-actions','aria-label':'Selected filters'},[
+          ...selected.map(([key,label,options])=>h('button',{key,type:'button',className:'report-filter-chip','aria-label':'Remove '+label+' filter',onClick:()=>this.setReportFilter(key,'')},label+': '+labelFor(options,f[key])+' \u00d7')),
+          f.from||f.to?h('button',{type:'button',className:'report-filter-chip',onClick:()=>this.setState({reportFilters:{...f,from:'',to:''}},this.generateReport)},'Dates: '+(f.from||'Any')+' to '+(f.to||'Any')+' \u00d7'):null,
+          f.lowStock?h('button',{type:'button',className:'report-filter-chip',onClick:()=>this.setReportFilter('lowStock','')},'Low stock only \u00d7'):null
+        ]):null,
+        f.type==='inventory'?h('p',{className:'report-filter-hint'},'Current stock snapshot. Use Stock movements to filter by date.'):null
+      ]),
+      h('p',{role:'status','aria-live':'polite',className:'report-filter-hint'},s.reportLoading?'Updating results below...':s.reportError?'Results could not be updated.':r?r.rows.length+' matching records':'Loading report...'),
+      s.reportError?h('div',{role:'alert'},[s.reportError,btn('Retry',this.generateReport)]):null,
+      r?h('section',{'aria-label':'Report results','aria-busy':!!s.reportLoading},[
+        h('div',{className:'report-results-header'},[h('h2',null,r.title),h('div',{className:'action-group'},[h('a',{className:'kita-button',href:url('pdf'),download:true},'Download PDF'),h('a',{className:'kita-button',href:url('csv'),download:true},'Export CSV'),h('a',{className:'kita-button',href:url('print'),target:'_blank',rel:'noopener'},'Print report')])]),
+        h('p',{className:'report-filter-hint'},(s.reportLoading||s.reportError?'Showing the last loaded report. ':'')+'Exports include all filtered records, before table search or pagination. Generated: '+r.generated),
+        h('p',{className:'report-filter-hint'},Object.entries(r.labels||{}).map(([key,value])=>key+': '+value).join(' | ')),
+        this.recordTable('generated-report',Object.keys(r.columns),r.rows.map((row,i)=>tr(Object.values(r.columns).map(key=>td(row[key]==null?'-':(r.moneyKeys||[]).includes(key)?Number(row[key]).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}):row[key],(r.numericKeys||[]).includes(key)?{textAlign:'right',fontVariantNumeric:'tabular-nums'}:key==='reference'?{fontFamily:'monospace'}:{})),i))),
+        !r.rows.length?h('p',{role:'status'},'No records match these filters. Remove a filter or clear all to see more records.'):null,
         h('div',{className:'report-summary'},Object.entries(r.summary||{}).map(([label,value])=>h('div',{key:label,className:'report-metric'},[h('span',null,label),h('strong',null,value)]))),
-        h('div',{className:'action-group form-action-bar'},[h('a',{className:'kita-button',href:url('pdf'),download:true},'Download PDF'),h('a',{className:'kita-button',href:url('csv'),download:true},'Export CSV'),h('a',{className:'kita-button',href:url('print'),target:'_blank',rel:'noopener'},'Print report')]),
-        h('p',null,'Exports use the displayed report filters. After changing filters, generate the report again.'),
-        r.rows.length?this.recordTable('generated-report',Object.keys(r.columns),r.rows.map((row,i)=>tr(Object.values(r.columns).map(key=>td(row[key]==null?'-':(r.moneyKeys||[]).includes(key)?Number(row[key]).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}):row[key],(r.numericKeys||[]).includes(key)?{textAlign:'right',fontVariantNumeric:'tabular-nums'}:key==='reference'?{fontFamily:'monospace'}:{})),i))):h('p',null,'No records match these filters.')
+        h('p',{className:'report-filter-hint'},r.note)
       ]):null
     ]);
   }
