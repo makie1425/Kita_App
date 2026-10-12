@@ -49,7 +49,24 @@ class ProductFifoTest extends TestCase
         $this->assertDatabaseCount('products', 2);
     }
 
-    private function receive(int $qty, float $cost): string
+    public function test_repeat_delivery_combines_stock_and_reprices_old_and_new_units(): void
+    {
+        $this->receive(10, 6, 10);
+        $this->assertDatabaseHas('products', ['id' => $this->product, 'stock' => 10, 'price' => 10]);
+        $this->receive(5, 7, 12);
+        $this->assertDatabaseCount('products', 1);
+        $this->assertDatabaseHas('products', ['id' => $this->product, 'stock' => 15, 'price' => 12]);
+        $this->getJson('/api/inventory-history')->assertOk()->assertJsonCount(1, 'products');
+        // This sale spans both deliveries: all 12 units use the new retail price.
+        $this->postJson('/api/transactions', ['uuid' => 'COKE-NEW-PRICE', 'items' => [['productId' => $this->product, 'qty' => 12]], 'paymentMode' => 'Cash', 'tendered' => 144])->assertCreated();
+        $this->assertDatabaseHas('transaction_lines', ['transaction_uuid' => 'COKE-NEW-PRICE', 'productId' => $this->product, 'qty' => 12, 'unitPrice' => 12, 'lineTotal' => 144]);
+        $this->assertDatabaseHas('products', ['id' => $this->product, 'stock' => 3, 'price' => 12]);
+        // Delivery costs stay historical even though retail price changes globally.
+        $this->assertDatabaseHas('inventory_batches', ['productId' => $this->product, 'unitCost' => 6, 'quantityRemaining' => 0]);
+        $this->assertDatabaseHas('inventory_batches', ['productId' => $this->product, 'unitCost' => 7, 'quantityRemaining' => 3]);
+    }
+
+    private function receive(int $qty, float $cost, ?float $retail = null): string
     {
         $this->actingAs($this->manager);
         $id = $this->postJson('/api/purchase-requests', ['category' => 'Beverages', 'lines' => [['productId' => $this->product, 'qty' => $qty]]])->assertCreated()->json('id');
@@ -57,7 +74,7 @@ class ProductFifoTest extends TestCase
         $this->actingAs($this->admin)->patchJson('/api/purchase-requests/'.$id, ['action' => 'approved', 'revision' => 0])->assertOk();
         $this->assertEquals($before, DB::table('products')->where('id', $this->product)->value('stock'));
         $this->actingAs($this->manager)->postJson('/api/purchase-orders/'.$id.'/receive', ['version' => 0, 'idempotencyKey' => (string) Str::uuid(),
-            'receivedDate' => now()->toDateString(), 'lines' => [['productId' => $this->product, 'qty' => $qty, 'unitCost' => $cost, 'batchNumber' => 'DELIVERY-'.$qty]]])->assertCreated();
+            'receivedDate' => now()->toDateString(), 'lines' => [['productId' => $this->product, 'qty' => $qty, 'unitCost' => $cost, 'batchNumber' => 'DELIVERY-'.$qty, ...($retail !== null ? ['sellingPrice' => $retail] : [])]]])->assertCreated();
 
         return $id;
     }
