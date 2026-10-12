@@ -236,7 +236,11 @@ class Component extends DCLogic {
       ]),
     ]);
   }
-  componentDidUpdate(prevProps, prevState) {
+  componentDidUpdate() {
+    // The custom logic runtime supplies no previous state. Keep our own snapshot
+    // before triggering updates so entering Reports loads once, without a loop.
+    const prevState=this.previousAppState||{};
+    this.previousAppState=this.state;
     if(this.state.screen==='admReports' && prevState.screen!=='admReports') this.generateReport();
     if(this.state.discountManagerPin && (prevState.cart!==this.state.cart || prevState.seniorApplied!==this.state.seniorApplied || prevState.employeeDiscount!==this.state.employeeDiscount || prevState.role!==this.state.role)){
       this.setState({discountManagerPin:""});
@@ -247,6 +251,7 @@ class Component extends DCLogic {
     this.setState({compactNavigation:compact,...(!compact?{sidebarOpen:false}:{})});
   };
   componentDidMount() {
+    this.previousAppState=this.state;
     this.syncNavigationViewport();
     window.addEventListener("resize",this.syncNavigationViewport);
     if(window.KITA_AUTH?.loginError)this.setState({loginError:window.KITA_AUTH.loginError});
