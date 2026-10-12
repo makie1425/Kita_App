@@ -1,0 +1,28 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
+const context=vm.createContext({React:{createElement:(type,props,...children)=>({type,props:{...props,children}})},DCLogic:class{setState(p){Object.assign(this.state,typeof p==='function'?p(this.state):p);}},window:{confirm:()=>true}});
+vm.runInContext(fs.readFileSync('public/app.js','utf8')+';globalThis.app=new Component();',context);
+const app=context.app;
+app.state.productsLocal=[{id:1,name:'Sample  Drink',brandId:2,size:1,sizeUnit:'Liter',stockUnit:'Bottle',price:0}];
+Object.assign(app.state,{regProductName:' sample drink ',regBrandId:'2',regSize:'1.000',regSizeUnit:'Liter',regStockUnit:'Bottle'});
+assert.equal(app.registrationDuplicate().id,1);
+app.saveRegistration();
+assert.match(app.state.registrationError,/already exists/);
+app.state.regSize='2';assert.equal(app.registrationDuplicate(),undefined);
+app.state.purchaseData={orders:[{id:'PO-TEST',lines:[{productId:1,name:'Drink',unitCost:12.50}]}]};
+Object.assign(app.state,{purchaseReceivingId:'PO-TEST',receiveQty:{1:'2'},receiveCosts:{},receivePrices:{}});
+assert.equal(app.receivingCost(1),12.50);
+assert.equal(app.receivingPrice(1),0);
+const cells=app.buildReceivingFields({productId:1,name:'Drink'});
+const cost=cells[0].props.children[0],retail=cells[1].props.children[0];
+assert.ok(!cost.props.readOnly&&!retail.props.readOnly);
+cost.props.onChange({target:{value:'14.25'}});retail.props.onChange({target:{value:'22.50'}});
+let posted;
+app.authPost=async(url,payload)=>{posted=payload;return {message:'Saved'};};
+app.toast=()=>{};app.reloadPurchasing=async()=>{};app.reloadCatalog=async()=>{};
+(async()=>{
+  await app.confirmPurchaseReceiving();
+  assert.equal(posted.lines[0].unitCost,'14.25');assert.equal(posted.lines[0].sellingPrice,'22.50');
+  app.state.purchaseReceivingId='PO-TEST';app.state.receiveCosts[1]='-1';posted=null;
+  await app.confirmPurchaseReceiving();assert.equal(posted,null);assert.match(app.state.receiveError,/cost price/);
+  console.log('Editable receiving prices, submitted prices, invalid cost and duplicate product checks passed.');
+})().catch(e=>{console.error(e);process.exitCode=1;});

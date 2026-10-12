@@ -37,6 +37,18 @@ class ProductFifoTest extends TestCase
         $this->product = $this->postJson('/api/products', $this->input)->assertCreated()->assertJsonPath('product.stock', 0)->json('product.id');
     }
 
+    public function test_existing_product_is_rejected_even_with_a_different_barcode(): void
+    {
+        $this->postJson('/api/products', array_replace($this->input, ['name' => '  cOkE  ', 'barcode' => 'DUPLICATE']))
+            ->assertUnprocessable()->assertJsonValidationErrors('name');
+        $this->assertDatabaseCount('products', 1);
+        DB::table('products')->where('id', $this->product)->update(['status' => 'Inactive']);
+        $this->postJson('/api/products', array_replace($this->input, ['barcode' => 'ARCHIVED-DUPLICATE']))
+            ->assertUnprocessable()->assertJsonValidationErrors('name');
+        $this->postJson('/api/products', array_replace($this->input, ['size' => 2, 'barcode' => 'COKE-2L']))->assertCreated();
+        $this->assertDatabaseCount('products', 2);
+    }
+
     private function receive(int $qty, float $cost): string
     {
         $this->actingAs($this->manager);

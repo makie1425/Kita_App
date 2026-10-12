@@ -21,6 +21,7 @@ class ProductController extends Controller
                 InventoryRules::lockActor($request);
                 // Both automatic and manual registrations serialize on this existing row.
                 $sequence = DB::table('inventory_sequences')->where('name', 'products')->lockForUpdate()->first();
+                $this->rejectExistingProduct($validated);
                 $latest = max((int) $sequence->lastValue, (int) DB::table('products')->max('id'));
                 $id = isset($validated['id']) ? (int) $validated['id'] : $latest + 1;
                 if ($id > 2147483647) {
@@ -98,6 +99,20 @@ class ProductController extends Controller
         }
 
         return response()->json(['message' => 'Product updated.', 'product' => $product]);
+    }
+
+    private function rejectExistingProduct(array $values): void
+    {
+        $normalize = fn ($value) => mb_strtolower(preg_replace('/\s+/u', ' ', trim((string) $value)));
+        $candidates = DB::table('products')->where('brandId', $values['brandId'] ?? null)
+            ->where('size', $values['size'] ?? null)->get(['id', 'name', 'sizeUnit', 'stockUnit', 'status']);
+        foreach ($candidates as $product) {
+            if ($normalize($product->name) === $normalize($values['name'])
+                && $normalize($product->sizeUnit) === $normalize($values['sizeUnit'] ?? '')
+                && $normalize($product->stockUnit) === $normalize($values['stockUnit'])) {
+                throw ValidationException::withMessages(['name' => 'This product already exists in inventory (Stock ID '.$product->id.'). Use the existing product to receive stock or edit its details.']);
+            }
+        }
     }
 
     private function validateProduct(Request $request, ?int $id = null): array

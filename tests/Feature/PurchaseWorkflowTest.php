@@ -32,6 +32,22 @@ class PurchaseWorkflowTest extends TestCase
         ])->assertCreated()->json('product.id');
     }
 
+    public function test_receiving_saves_edited_cost_and_retail_prices_without_changing_po_cost(): void
+    {
+        $id = $this->requestOrder();
+        $this->approve($id);
+        $body = $this->delivery();
+        $body['lines'][0]['unitCost'] = 3.75;
+        $body['lines'][0]['sellingPrice'] = 8.50;
+        $this->actingAs($this->manager)->postJson('/api/purchase-orders/'.$id.'/receive', $body)->assertCreated();
+        $this->assertDatabaseHas('products', ['id' => $this->product, 'unitPrice' => 3.75, 'price' => 8.50, 'stock' => 4]);
+        $this->assertDatabaseHas('inventory_batches', ['productId' => $this->product, 'unitCost' => 3.75]);
+        $this->assertDatabaseHas('receiving_record_lines', ['productId' => $this->product, 'unitCost' => 3.75]);
+        $this->assertDatabaseHas('purchase_order_lines', ['poId' => $id, 'unitCost' => 2.50]);
+        $this->postJson('/api/purchase-orders/'.$id.'/receive', $body)->assertOk();
+        $this->assertDatabaseHas('products', ['id' => $this->product, 'stock' => 4]);
+    }
+
     private function requestOrder(int $qty = 10): string
     {
         return $this->actingAs($this->manager)->postJson('/api/purchase-requests', ['category' => 'Supplies', 'notes' => 'For replenishment',
