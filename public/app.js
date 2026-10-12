@@ -121,9 +121,9 @@ function peso(n){ n=Number(n)||0; return "â‚±"+n.toLocaleString("en-PH",{min
 function badge(status){ const c=statusStyle(status); return React.createElement("span",{className:"status-badge",style:{background:c.bg,color:c.fg,fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:20,display:"inline-block",whiteSpace:"nowrap"}},status); }
 function card(children, style){ return React.createElement("div",{className:"kita-card",style:Object.assign({background:COLORS.surface,border:"1px solid "+COLORS.border,borderRadius:12,padding:18},style||{})},children); }
 function sectionTitle(t, sub){ return React.createElement("div",{className:"section-heading",style:{marginBottom:16}},[React.createElement("h1",{key:"t",style:{fontSize:24,fontWeight:800,margin:0,letterSpacing:-0.7}},t), sub?React.createElement("div",{key:"s",style:{fontSize:13,color:COLORS.textSoft,marginTop:2}},sub):null]); }
-function table(headers, rows){ return React.createElement("div",{className:"table-scroll",tabIndex:0,role:"region","aria-label":headers.filter(h=>typeof h==="string"&&h).join(", "),style:{"--table-min-width":Math.max(540,headers.length*110)+"px",overflowX:"auto",border:"1px solid "+COLORS.border,borderRadius:10}}, React.createElement("table",{style:{width:"100%",borderCollapse:"collapse",fontSize:13}},[
+function table(headers, rows, emptyMessage="No records yet."){ return React.createElement("div",{className:"table-scroll",tabIndex:0,role:"region","aria-label":headers.filter(h=>typeof h==="string"&&h).join(", "),style:{"--table-min-width":Math.max(540,headers.length*110)+"px",overflowX:"auto",border:"1px solid "+COLORS.border,borderRadius:10}}, React.createElement("table",{style:{width:"100%",borderCollapse:"collapse",fontSize:13}},[
   React.createElement("thead",{key:"h"},React.createElement("tr",null, headers.map((hd,i)=>React.createElement("th",{key:i,style:{position:"sticky",top:0,background:"#f8faff",textAlign:"left",padding:"10px 14px",fontSize:11,fontWeight:700,color:COLORS.textMuted,letterSpacing:0.4,borderBottom:"1px solid "+COLORS.border}},hd)))),
-  React.createElement("tbody",{key:"b"},rows.length?rows:React.createElement("tr",null,React.createElement("td",{colSpan:headers.length,style:{padding:20,textAlign:"center",color:COLORS.textMuted,fontSize:13}},"No records yet."))),
+  React.createElement("tbody",{key:"b"},rows.length?rows:React.createElement("tr",null,React.createElement("td",{colSpan:headers.length,style:{padding:20,textAlign:"center",color:COLORS.textMuted,fontSize:13}},emptyMessage))),
 ])); }
 function td(children, style){ return React.createElement("td",{style:Object.assign({padding:"10px 14px",borderBottom:"1px solid #eef1f6"},style||{})},children); }
 function tr(children,key){ return React.createElement("tr",{key},children); }
@@ -213,7 +213,7 @@ class Component extends DCLogic {
   };
 
   setTableView=(key,patch)=>this.setState(s=>({tableViews:{...s.tableViews,[key]:{...s.tableViews[key],...patch}}}));
-  recordTable(key,headers,rows){
+  recordTable(key,headers,rows,{emptyMessage}={}){
     const h=React.createElement,view=this.state.tableViews[key]||{},query=view.query||"",size=Number(view.size)||20;
     const filtered=query.trim()?rows.filter(row=>searchMatches(recordText(row),query)):rows;
     const pages=Math.max(1,Math.ceil(filtered.length/size)),page=Math.min(Math.max(1,view.page||1),pages),start=(page-1)*size;
@@ -224,8 +224,8 @@ class Component extends DCLogic {
         query?h("button",{key:"clear",type:"button",className:"kita-button",onClick:()=>this.setTableView(key,{query:"",page:1})},"Clear search"):null,
         h("label",{key:"size",className:"record-page-size"},["Rows per page",h("select",{value:size,onChange:e=>this.setTableView(key,{size:Number(e.target.value),page:1})},[10,20,50,100].map(n=>h("option",{key:n,value:n},n)))])
       ]),
-      table(headers,filtered.slice(start,start+size)),
-      !filtered.length?h("p",{key:"empty",className:"record-empty",role:"status"},query?"No matching records. Try another search or clear your filters.":"Records will appear here when available."):null,
+      table(headers,filtered.slice(start,start+size),query?"No records match your table search.":emptyMessage),
+      !filtered.length&&!emptyMessage?h("p",{key:"empty",className:"record-empty",role:"status"},query?"No matching records. Try another search or clear your filters.":"Records will appear here when available."):null,
       h("div",{key:"pagination",className:"record-pagination"},[
         h("span",{key:"count",role:"status","aria-live":"polite"},`${filtered.length?start+1:0}-${Math.min(start+size,filtered.length)} of ${filtered.length} records${query?" ("+rows.length+" total)":""}`),
         h("div",{key:"buttons",className:"pagination-actions"},[
@@ -2155,17 +2155,23 @@ class Component extends DCLogic {
   generateReport=async()=>{
     const filters={...(this.state.reportFilters||{type:'sales'})};
     const requestId=(this.reportRequestId||0)+1;this.reportRequestId=requestId;
+    this.reportController?.abort();
     if(filters.from&&filters.to&&filters.from>filters.to){this.setState({reportLoading:false,reportError:'Choose an end date on or after the start date.'});return;}
+    const controller=new AbortController();this.reportController=controller;
+    const timeout=setTimeout(()=>controller.abort(),30000);
     this.setState({reportLoading:true,reportError:''});
     try{
-      const response=await fetch('/reports/data?'+new URLSearchParams(Object.entries(filters).filter(([,v])=>v)),{headers:{Accept:'application/json'}});
+      const response=await fetch('/reports/data?'+new URLSearchParams(Object.entries(filters).filter(([,v])=>v)),{headers:{Accept:'application/json'},signal:controller.signal,cache:'no-store'});
       const body=await response.json();if(!response.ok)throw new Error(body.message||'Could not load report.');
-      if(this.reportRequestId===requestId)this.setState(s=>({reportResult:body,reportAppliedFilters:filters,tableViews:{...s.tableViews,'generated-report':{...s.tableViews?.['generated-report'],page:1}}}));
-    }catch(error){if(this.reportRequestId===requestId)this.setState({reportError:error.message});}
-    finally{if(this.reportRequestId===requestId)this.setState({reportLoading:false});}
+      if(!Array.isArray(body.rows)||!body.columns||typeof body.columns!=='object')throw new Error('The report response was incomplete. Please retry.');
+      if(this.reportRequestId===requestId)this.setState(s=>({reportLoading:false,reportResult:body,reportAppliedFilters:filters,tableViews:{...s.tableViews,'generated-report':{...s.tableViews?.['generated-report'],page:1,query:''}}}));
+    }catch(error){if(this.reportRequestId===requestId)this.setState({reportLoading:false,reportError:error.name==='AbortError'?'The report request timed out. Retry to load the latest records.':error.message});}
+    finally{clearTimeout(timeout);if(this.reportRequestId===requestId)this.reportController=null;}
   };
   buildAdmReports(){
     const h=React.createElement,s=this.state,d=s.data,f=s.reportFilters||{type:'sales'},r=s.reportResult;
+    const appliedLabels=Object.entries(r?.labels||{}).filter(([key])=>key!=='Type').map(([key,value])=>key+': '+value).join(', ');
+    const emptyMessage='No '+(s.reportAppliedFilters?.type==='inventory'?'inventory products':'records')+' match '+(appliedLabels||'this report')+'.';
     const types=[['sales','Sales lines'],['inventory','Current inventory'],['receipts','Received stock'],['movements','Stock movements']];
     const products=d.PRODUCTS.filter(p=>(!f.category||p.category===f.category)&&(!f.subcategoryId||String(p.subcategoryId)===String(f.subcategoryId))&&(!f.brandId||String(p.brandId)===String(f.brandId))&&(f.type==='receipts'||!f.supplierId||String(p.supplierId)===String(f.supplierId)));
     const facets=[['category','Category',d.CATEGORIES.map(c=>[c.name,c.name])],['subcategoryId','Subcategory',this.subcategoriesFor(f.category,true).map(c=>[c.id,c.name])],['brandId','Brand',(d.BRANDS||[]).map(b=>[b.id,b.name])],['supplierId','Supplier',d.SUPPLIERS.map(p=>[p.id,p.name])],['productId','Product',products.map(p=>[p.id,this.productLabel(p)+' #'+p.id])]];
@@ -2202,10 +2208,10 @@ class Component extends DCLogic {
       s.reportError?h('div',{role:'alert'},[s.reportError,btn('Retry',this.generateReport)]):null,
       r?h('section',{'aria-label':'Report results','aria-busy':!!s.reportLoading},[
         h('div',{className:'report-results-header'},[h('h2',null,r.title),h('div',{className:'action-group'},[h('a',{className:'kita-button',href:url('pdf'),download:true},'Download PDF'),h('a',{className:'kita-button',href:url('csv'),download:true},'Export CSV'),h('a',{className:'kita-button',href:url('print'),target:'_blank',rel:'noopener'},'Print report')])]),
-        h('p',{className:'report-filter-hint'},(s.reportLoading||s.reportError?'Showing the last loaded report. ':'')+'Exports include all filtered records, before table search or pagination. Generated: '+r.generated),
+        h('p',{className:'report-filter-hint'},(s.reportLoading||s.reportError?'Showing the last successfully loaded results. ':'')+'Exports include all filtered records, before table search or pagination. Generated: '+r.generated),
         h('p',{className:'report-filter-hint'},Object.entries(r.labels||{}).map(([key,value])=>key+': '+value).join(' | ')),
-        this.recordTable('generated-report',Object.keys(r.columns),r.rows.map((row,i)=>tr(Object.values(r.columns).map(key=>td(row[key]==null?'-':(r.moneyKeys||[]).includes(key)?Number(row[key]).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}):row[key],(r.numericKeys||[]).includes(key)?{textAlign:'right',fontVariantNumeric:'tabular-nums'}:key==='reference'?{fontFamily:'monospace'}:{})),i))),
-        !r.rows.length?h('p',{role:'status'},'No records match these filters. Remove a filter or clear all to see more records.'):null,
+        this.recordTable('generated-report',Object.keys(r.columns),r.rows.map((row,i)=>tr(Object.values(r.columns).map(key=>td(row[key]==null?'-':(r.moneyKeys||[]).includes(key)?Number(row[key]).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}):row[key],(r.numericKeys||[]).includes(key)?{textAlign:'right',fontVariantNumeric:'tabular-nums'}:key==='reference'?{fontFamily:'monospace'}:{})),i)),{emptyMessage}),
+        !r.rows.length&&activeCount?h('div',{className:'action-group'},[h('span',null,'Try removing a filter to see more records.'),btn('Clear all filters',this.resetReportFilters)]):null,
         h('div',{className:'report-summary'},Object.entries(r.summary||{}).map(([label,value])=>h('div',{key:label,className:'report-metric'},[h('span',null,label),h('strong',null,value)]))),
         h('p',{className:'report-filter-hint'},r.note)
       ]):null
