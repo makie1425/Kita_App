@@ -1057,6 +1057,13 @@ button[data-action-tone]:disabled { opacity: .55; cursor: not-allowed; }
 .report-filter-hint { color:#667085; font-size:12px; line-height:1.5; margin:10px 0; }
 .report-results-header { justify-content:space-between; margin-top:12px; }
 .report-results-header h2 { margin:0; font-size:18px; }
+/* Keep long reports in a stable viewport with headers above the scrolling rows. */
+@media screen {
+  .reports-page .table-scroll { max-height: min(60dvh, 560px); overflow: auto; isolation: isolate; overflow-anchor: none; }
+  .reports-page .table-scroll table { border-collapse: separate !important; border-spacing: 0; }
+  .reports-page .table-scroll th { position: sticky; top: 0; z-index: 2; }
+  .reports-page .table-scroll td { background: #fff; }
+}
 .reports-page button:focus-visible,.report-facet-choice:focus-within { outline:2px solid #1747e8; outline-offset:3px; }
 .reports-page .report-filter-button:disabled { opacity:.45; cursor:not-allowed; }
 @media(max-width:600px) { .report-type-actions { display:grid; grid-template-columns:1fr 1fr; } .report-filter-actions { gap:6px; } .report-filter-actions > strong { flex-basis:100%; } .report-facet-options { grid-template-columns:1fr; max-height:132px; } }
