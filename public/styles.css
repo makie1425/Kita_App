@@ -1058,8 +1058,9 @@ button[data-action-tone]:disabled { opacity: .55; cursor: not-allowed; }
 .report-results-header { justify-content:space-between; margin-top:12px; }
 .report-results-header h2 { margin:0; font-size:18px; }
 /* Keep long reports in a stable viewport with headers above the scrolling rows. */
+.report-table-message { min-height: 160px; display: flex; align-items: center; justify-content: center; padding: 24px; color: #526579; font-size: 14px; line-height: 1.6; }
 @media screen {
-  .reports-page .table-scroll { max-height: min(60dvh, 560px); overflow: auto; isolation: isolate; overflow-anchor: none; }
+  .reports-page .table-scroll { min-height: 240px; max-height: min(60dvh, 560px); overflow: auto; isolation: isolate; overflow-anchor: none; }
   .reports-page .table-scroll table { border-collapse: separate !important; border-spacing: 0; }
   .reports-page .table-scroll th { position: sticky; top: 0; z-index: 2; }
   .reports-page .table-scroll td { background: #fff; }

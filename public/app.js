@@ -2169,9 +2169,17 @@ class Component extends DCLogic {
     finally{clearTimeout(timeout);if(this.reportRequestId===requestId)this.reportController=null;}
   };
   buildAdmReports(){
-    const h=React.createElement,s=this.state,d=s.data,f=s.reportFilters||{type:'sales'},r=s.reportResult;
+    const h=React.createElement,s=this.state,d=s.data,f=s.reportFilters||{type:'sales'},loaded=s.reportResult;
+    const common={'Product':'product','Category':'category','Brand':'brand','Subcategory':'subcategory'};
+    const schemas={
+      sales:{'Transaction No.':'reference','Sale date':'date',...common,'Status':'status','Quantity':'quantity','Line total (PHP)':'amount','Refunded (PHP)':'refunded'},
+      inventory:{...common,'Stock ID':'id','Barcode':'barcode','Unit':'unit','Stock':'stock','Reorder level':'minimum','Retail price (PHP)':'price','Status':'status'},
+      receipts:{...common,'Received date':'date','Receipt':'reference','Supplier':'supplier','Quantity received':'quantity','Remaining now':'remaining','Unit cost (PHP)':'cost','Batch':'batch'},
+      movements:{...common,'Recorded at':'date','Type':'movement','Reference':'reference','Change':'change','Before':'before','After':'after'}
+    };
+    const r=loaded||{title:'Report results',columns:schemas[f.type]||schemas.sales,rows:[],labels:{},summary:{}};
     const appliedLabels=Object.entries(r?.labels||{}).filter(([key])=>key!=='Type').map(([key,value])=>key+': '+value).join(', ');
-    const emptyMessage='No '+(s.reportAppliedFilters?.type==='inventory'?'inventory products':'records')+' match '+(appliedLabels||'this report')+'.';
+    const emptyMessage=h('div',{className:'report-table-message',role:s.reportError?'alert':'status','aria-live':'polite'},s.reportLoading?'Loading report records. Please wait...':s.reportError?'Unable to update the report. '+s.reportError:!loaded?'Preparing your report...':'No results found'+(appliedLabels?' for '+appliedLabels:'')+'. Change or clear the filters and try again.');
     const types=[['sales','Sales lines'],['inventory','Current inventory'],['receipts','Received stock'],['movements','Stock movements']];
     const products=d.PRODUCTS.filter(p=>(!f.category||p.category===f.category)&&(!f.subcategoryId||String(p.subcategoryId)===String(f.subcategoryId))&&(!f.brandId||String(p.brandId)===String(f.brandId))&&(f.type==='receipts'||!f.supplierId||String(p.supplierId)===String(f.supplierId)));
     const facets=[['category','Category',d.CATEGORIES.map(c=>[c.name,c.name])],['subcategoryId','Subcategory',this.subcategoriesFor(f.category,true).map(c=>[c.id,c.name])],['brandId','Brand',(d.BRANDS||[]).map(b=>[b.id,b.name])],['supplierId','Supplier',d.SUPPLIERS.map(p=>[p.id,p.name])],['productId','Product',products.map(p=>[p.id,this.productLabel(p)+' #'+p.id])]];
@@ -2206,15 +2214,15 @@ class Component extends DCLogic {
       ]),
       h('p',{role:'status','aria-live':'polite',className:'report-filter-hint'},s.reportLoading?'Updating results below...':s.reportError?'Results could not be updated.':r?r.rows.length+' matching records':'Loading report...'),
       s.reportError?h('div',{role:'alert'},[s.reportError,btn('Retry',this.generateReport)]):null,
-      r?h('section',{'aria-label':'Report results','aria-busy':!!s.reportLoading},[
-        h('div',{className:'report-results-header'},[h('h2',null,r.title),h('div',{className:'action-group'},[h('a',{className:'kita-button',href:url('pdf'),download:true},'Download PDF'),h('a',{className:'kita-button',href:url('csv'),download:true},'Export CSV'),h('a',{className:'kita-button',href:url('print'),target:'_blank',rel:'noopener'},'Print report')])]),
-        h('p',{className:'report-filter-hint'},(s.reportLoading||s.reportError?'Showing the last successfully loaded results. ':'')+'Exports include all filtered records, before table search or pagination. Generated: '+r.generated),
+      h('section',{key:'report-results',className:'report-results','aria-label':'Report results','aria-busy':!!s.reportLoading},[
+        h('div',{className:'report-results-header'},[h('h2',null,r.title),loaded?h('div',{className:'action-group'},[h('a',{className:'kita-button',href:url('pdf'),download:true},'Download PDF'),h('a',{className:'kita-button',href:url('csv'),download:true},'Export CSV'),h('a',{className:'kita-button',href:url('print'),target:'_blank',rel:'noopener'},'Print report')]):null]),
+        loaded?h('p',{className:'report-filter-hint'},(s.reportLoading||s.reportError?'Showing the last successfully loaded results. ':'')+'Exports include all filtered records, before table search or pagination. Generated: '+r.generated):null,
         h('p',{className:'report-filter-hint'},Object.entries(r.labels||{}).map(([key,value])=>key+': '+value).join(' | ')),
         this.recordTable('generated-report',Object.keys(r.columns),r.rows.map((row,i)=>tr(Object.values(r.columns).map(key=>td(row[key]==null?'-':(r.moneyKeys||[]).includes(key)?Number(row[key]).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}):row[key],(r.numericKeys||[]).includes(key)?{textAlign:'right',fontVariantNumeric:'tabular-nums'}:key==='reference'?{fontFamily:'monospace'}:{})),i)),{emptyMessage}),
         !r.rows.length&&activeCount?h('div',{className:'action-group'},[h('span',null,'Try removing a filter to see more records.'),btn('Clear all filters',this.resetReportFilters)]):null,
         h('div',{className:'report-summary'},Object.entries(r.summary||{}).map(([label,value])=>h('div',{key:label,className:'report-metric'},[h('span',null,label),h('strong',null,value)]))),
         h('p',{className:'report-filter-hint'},r.note)
-      ]):null
+      ])
     ]);
   }
   buildAdmManagers(){
