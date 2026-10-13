@@ -1450,8 +1450,13 @@ class Component extends DCLogic {
   }
   purchaseRequestDetails(){
     const h=React.createElement,r=this.state.purchaseData?.requests.find(r=>r.id===this.state.purchaseRequestDetail);if(!r)return null;
-    return h('section',{className:'sa-panel'},[h('h2',null,r.id),h('p',null,`${r.supplierName||this.purchaseSupplier(r.lines[0]?.supplierId)} | ${r.status} | Requested by ${r.requestedBy}`),
-      table(['Item','Category','Requested','Reviewed quantity','Unit'],r.lines.map(l=>tr([td(l.name),td(l.category),td(l.qty),td(l.confirmedQty??l.qty),td(this.purchaseUnit(l))],l.id))),h('p',null,r.notes||''),h('p',null,r.disapprovalReason||r.adminNote||''),btn('Close details',()=>this.setState({purchaseRequestDetail:null})),r.poId?this.purchaseReportLink(r.poId):null]);
+    const close=()=>this.setState({purchaseRequestDetail:null});
+    return h('dialog',{className:'purchase-details-dialog','aria-labelledby':'purchase-details-title',
+      ref:node=>{if(node&&!node.open)node.showModal();},
+      onCancel:e=>{e.preventDefault();close();},
+      onClick:e=>{if(e.target===e.currentTarget){const rect=e.currentTarget.getBoundingClientRect();if(e.clientX<rect.left||e.clientX>rect.right||e.clientY<rect.top||e.clientY>rect.bottom)close();}}
+    },[h('h2',{id:'purchase-details-title'},r.id),h('p',null,`${r.supplierName||this.purchaseSupplier(r.lines[0]?.supplierId)} | ${r.status} | Requested by ${r.requestedBy}`),
+      h('div',{className:'purchase-details-table'},table(['Item','Category','Requested','Reviewed quantity','Unit'],r.lines.map(l=>tr([td(l.name),td(l.category),td(l.qty),td(l.confirmedQty??l.qty),td(this.purchaseUnit(l))],l.id)))),h('p',null,r.notes||''),h('p',null,r.disapprovalReason||r.adminNote||''),h('div',{className:'dialog-actions'},[h('button',{type:'button',className:'kita-button kita-button--primary',autoFocus:true,onClick:close},'Close details'),r.poId?this.purchaseReportLink(r.poId):null])]);
   }
   reviewPurchase=async(record,action)=>{
     if(this.reviewBusy)return;
