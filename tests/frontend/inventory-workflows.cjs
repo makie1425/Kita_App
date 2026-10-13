@@ -14,3 +14,18 @@ const complete=nodes(tree).find(n=>n.type==='button'&&text(n)==='Complete and re
 const input=nodes(tree).find(n=>n.props?.['aria-label']==='Count Water');input.props.onChange({target:{value:'0'}});app.setState({countReason:'Verified empty shelf'});
 tree=app.buildInventoryWorkflows('reconciliation');nodes(tree).find(n=>n.type==='button'&&text(n)==='Complete and reconcile').props.onClick();assert.strictEqual(calls[0][1].lines[0].counted,0);
 console.log('Live expiry, recall/history filters, blind counts and zero-count submission passed.');
+// Polling must retain the mounted form and tables, including during failures.
+app.state.workflowLoading=true;
+app.state.workflowForm={batchId:1,reason:'Keep this draft'};
+for(const tab of ['recall','writeoffs','expiry','reconciliation']){
+  const refreshing=app.buildInventoryWorkflows(tab);
+  assert(!text(refreshing).includes('Loading inventory records...'));
+  assert(nodes(refreshing).some(n=>n.type==='table'));
+}
+app.state.workflowError='Network unavailable';
+assert(text(app.buildInventoryWorkflows('recall')).includes('Recalled item'));
+assert(text(app.buildInventoryWorkflows('recall')).includes('Network unavailable'));
+assert.strictEqual(app.state.workflowForm.reason,'Keep this draft');
+app.state.inventoryWorkflows=null;
+assert(text(app.buildInventoryWorkflows('recall')).includes('Loading inventory records...'));
+console.log('Inventory polling retains forms and tables; initial load still shows its spinner.');
