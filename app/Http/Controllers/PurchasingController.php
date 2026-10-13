@@ -56,6 +56,7 @@ class PurchasingController extends Controller
             'lines.*.sellingPrice' => ['sometimes', ...InventoryRules::moneyRules()],
             'lines.*.batchNumber' => ['nullable', 'string', 'max:80'],
             'lines.*.expiryDate' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:receivedDate'],
+            'lines.*.manufacturedDate' => ['nullable', 'date_format:Y-m-d', 'before_or_equal:receivedDate'],
         ]);
         // Generated from the PO and receiving version; ignore client-supplied references.
         $data['deliveryReference'] = $id.'-R'.str_pad((string) ($data['version'] + 1), 3, '0', STR_PAD_LEFT);
@@ -111,7 +112,7 @@ class PurchasingController extends Controller
                 $cost = (float) ($line['unitCost'] ?? $ordered->unitCost);
                 $receivedCents += (int) round(InventoryRules::lineTotal($line['qty'], $cost) * 100);
                 FifoInventory::opening($product->id, (int) $product->stock);
-                FifoInventory::receive($product->id, $line['qty'], $cost, $data['receivedDate'], $receiptId, $order->supplierId, 'purchase_receiving', $line['batchNumber'] ?? null, $line['expiryDate'] ?? null);
+                FifoInventory::receive($product->id, $line['qty'], $cost, $data['receivedDate'], $receiptId, $order->supplierId, 'purchase_receiving', $line['batchNumber'] ?? null, $line['expiryDate'] ?? null, $line['manufacturedDate'] ?? null);
                 $sellingPrice = (float) ($line['sellingPrice'] ?? $product->price);
                 DB::table('products')->where('id', $product->id)->update(['stock' => $after, 'unitPrice' => $cost, 'price' => $sellingPrice]);
                 if ((float) $product->price !== $sellingPrice || (float) $product->unitPrice !== $cost) {
@@ -127,6 +128,7 @@ class PurchasingController extends Controller
                     'deliveredQty' => $line['qty'], 'name' => $ordered->name, 'category' => $ordered->category ?? $product->category,
                     'unit' => $ordered->unit ?? ($product->stockUnit ?: $product->unit), 'conditionText' => 'Accepted',
                     'unitCost' => $cost, 'batchNumber' => $line['batchNumber'] ?? null, 'expiryDate' => $line['expiryDate'] ?? null,
+                    'manufacturedDate' => $line['manufacturedDate'] ?? null,
                 ]);
             }
             $matches = $orderLines->every(fn ($line) => (int) $line->deliveredQty === (int) $line->orderedQty);

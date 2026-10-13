@@ -17,7 +17,7 @@ class StockMovement
         if ($after < $before) {
             FifoInventory::consume($productId, $before - $after, $type, $referenceId);
         } elseif ($after > $before && in_array($type, ['refund', 'void', 'exchange', 'payment_release'], true)) {
-            FifoInventory::returnStock($productId, $after - $before, $referenceId);
+            FifoInventory::returnStock($productId, $after - $before, $referenceId, reservationRelease: $type === 'payment_release');
         } elseif ($after > $before && ! in_array($type, ['purchase_receiving', 'reconciliation'], true)) {
             throw ValidationException::withMessages(['stock' => 'New stock must be recorded through purchase receiving.']);
         }

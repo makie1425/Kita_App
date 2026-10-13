@@ -48,9 +48,7 @@ class SaleCheckout
                 || ! DB::table('categories')->where('name', $product->category)->where('status', 'Active')->whereNull('archivedAt')->exists()) {
                 throw ValidationException::withMessages([$itemsKey => 'A cart product is unavailable for sale.']);
             }
-            if ((int) $product->stock < $item['qty']) {
-                throw ValidationException::withMessages([$itemsKey => "Insufficient stock. Only {$product->stock} units of {$product->name} are available."]);
-            }
+            InventoryAvailability::assertSellable($product, (int) $item['qty'], $itemsKey);
             if ($product->price === null || ! is_numeric($product->price)) {
                 throw ValidationException::withMessages([$itemsKey => 'A cart product has an invalid selling price.']);
             }
@@ -89,7 +87,7 @@ class SaleCheckout
             'discount' => $subtotal - $total, 'discountType' => $discountType, 'approval' => $approval];
     }
 
-    public static function save(Request $request, array $data, array $sale, string $status, string $paymentMode, int $tendered = 0): array
+    public static function save(Request $request, array $data, array $sale, string $status, string $paymentMode, int $tendered = 0, ?string $exchangeOriginal = null, int $exchangeCredit = 0): array
     {
         $paid = $status === 'Unused' ? $sale['total'] : 0;
         $record = [
@@ -100,6 +98,7 @@ class SaleCheckout
             'discountType' => $sale['discountType'], 'total' => $sale['total'] / 100,
             'paymentMode' => $paymentMode, 'tendered' => $tendered / 100, 'paid' => $paid / 100,
             'changeAmount' => ($status === 'Unused' ? $tendered - $paid : 0) / 100, 'referenceNo' => null,
+            'exchangeOriginalUuid' => $exchangeOriginal, 'exchangeCredit' => $exchangeCredit / 100,
         ];
         DB::table('transactions')->insert($record);
         $record['transactionNumber'] = TransactionNumber::assign($data['uuid'], $record['date']);
@@ -111,7 +110,7 @@ class SaleCheckout
                 throw ValidationException::withMessages(['items' => 'Stock changed. Please refresh the cart and try again.']);
             }
             DB::table('transaction_lines')->insert($line + ['transaction_uuid' => $data['uuid'], 'created_at' => now(), 'updated_at' => now()]);
-            StockMovement::record($line['productId'], $before, $before - $line['qty'], $status === 'Unused' ? 'checkout' : 'payment_reservation', $data['uuid'], $request->user());
+            StockMovement::record($line['productId'], $before, $before - $line['qty'], $exchangeOriginal ? 'exchange_replacement' : ($status === 'Unused' ? 'checkout' : 'payment_reservation'), $data['uuid'], $request->user());
         }
         DiscountApproval::record($data['uuid'], $sale['approval']);
         if ($status === 'Unused') {

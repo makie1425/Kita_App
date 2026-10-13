@@ -13,6 +13,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class TransactionController extends Controller
@@ -68,6 +69,7 @@ class TransactionController extends Controller
             'request_key' => ['nullable', 'string', 'max:80', 'regex:/^[A-Za-z0-9_-]+$/'],
             'provider_refund_id' => ['nullable', 'string', 'max:80', 'regex:/^ref_[A-Za-z0-9]+$/'],
             'replacement_product_id' => ['required_if:action,exchange', 'nullable', 'integer', 'min:1'],
+            'exchange_tendered' => ['sometimes', 'required', 'numeric', 'min:0', 'max:99999999.99', 'decimal:0,2'],
         ]);
         $manager = ManagerApproval::verify($request, $data['manager_id'], $data['manager_pin']);
 
@@ -75,6 +77,9 @@ class TransactionController extends Controller
             $transaction = DB::table('transactions')->where('uuid', $uuid)->lockForUpdate()->first();
             abort_unless($transaction, 404, 'Transaction was not found.');
             $action = $data['action'];
+            if ($action === 'exchange' && $transaction->paymentMode !== 'Cash') {
+                throw ValidationException::withMessages(['action' => 'Wallet purchases require a verified refund and a new sale.']);
+            }
             if ($transaction->status === 'Closed' && $action === 'void'
                 && DB::table('transaction_approvals')->where('transaction_uuid', $uuid)->where('action', 'void')->exists()) {
                 abort(409, 'This transaction has already been voided.');
@@ -135,6 +140,8 @@ class TransactionController extends Controller
             }
             $products = DB::table('products')->whereIn('id', $productIds)->orderBy('id')->lockForUpdate()->get()->keyBy('id');
             $replacement = null;
+            $replacementCents = $difference = $exchangeTendered = 0;
+            $replacementSale = null;
             if ($action === 'exchange') {
                 $replacement = $products->get($data['replacement_product_id']);
                 if (! $replacement || $replacement->status !== 'Active' || $replacement->archivedAt !== null || $replacement->stock < 1
@@ -142,8 +149,15 @@ class TransactionController extends Controller
                     throw ValidationException::withMessages(['replacement_product_id' => 'The replacement is unavailable.']);
                 }
                 if ($replacement->price === null || ! is_numeric($replacement->price) || (float) $replacement->price < 0
-                    || SaleCheckout::cents($replacement->price) !== $refundCents) {
-                    throw ValidationException::withMessages(['replacement_product_id' => 'The replacement price must equal the original total. Use a refund and a new sale for a different amount.']);
+                    || SaleCheckout::cents($replacement->price) < $refundCents || SaleCheckout::cents($replacement->price) > 9999999999) {
+                    throw ValidationException::withMessages(['replacement_product_id' => 'Choose a replacement of equal or higher value. Use a refund for a lower-value purchase.']);
+                }
+                $replacementCents = SaleCheckout::cents($replacement->price);
+                \App\Services\InventoryAvailability::assertSellable($replacement, 1, 'replacement_product_id');
+                $difference = $replacementCents - $refundCents;
+                $exchangeTendered = SaleCheckout::cents($data['exchange_tendered'] ?? 0);
+                if ($exchangeTendered < $difference) {
+                    throw ValidationException::withMessages(['exchange_tendered' => 'Collect the cash price difference before approving the exchange.']);
                 }
             }
             $restock = $action === 'void' || ($data['restock'] ?? true);
@@ -186,21 +200,27 @@ class TransactionController extends Controller
                     'productId' => $line->productId, 'qty' => -$return['qty'], 'amount' => -$return['amount'] / 100]);
             }
             if ($replacement) {
-                $before = (int) $replacement->stock;
-                DB::table('products')->where('id', $replacement->id)->decrement('stock');
-                StockMovement::record($replacement->id, $before, $before - 1, 'exchange_replacement', $uuid, $request->user());
-                DB::table('sales_log')->insert(['date' => now()->toDateString(), 'hour' => (int) now()->format('G'),
-                    'productId' => $replacement->id, 'qty' => 1, 'amount' => $refundCents / 100]);
+                $replacementSale = SaleCheckout::save($request, ['uuid' => 'EX-'.Str::ulid()], [
+                    'subtotal' => $replacementCents, 'total' => $replacementCents, 'discount' => 0, 'discountType' => 'none', 'approval' => null,
+                    'lines' => [['productId' => $replacement->id, 'name' => $replacement->name, 'stockId' => (string) $replacement->id,
+                        'unit' => $replacement->stockUnit ?? $replacement->unit, 'qty' => 1, 'unitPrice' => $replacementCents / 100,
+                        'discountAmount' => 0, 'lineTotal' => $replacementCents / 100, 'stockBefore' => (int) $replacement->stock]],
+                ], 'Unused', 'Cash', $exchangeTendered + $refundCents, $uuid, $refundCents);
             }
             $fullyReturned = ! DB::table('transaction_lines')->where('transaction_uuid', $uuid)->whereColumn('refundedQty', '<', 'qty')->exists();
             $status = $action === 'refund' ? ($fullyReturned ? 'Refunded' : 'Partially Refunded') : 'Closed';
-            $refunded = $action === 'exchange' ? 0 : SaleCheckout::cents($transaction->refundedAmount) + $refundCents;
+            $refunded = SaleCheckout::cents($transaction->refundedAmount) + $refundCents;
             DB::table('transactions')->where('uuid', $uuid)->update(['status' => $status, 'refundedAmount' => $refunded / 100, 'refundDate' => now()->toDateString()]);
             SaleCheckout::audit($request->user()->name, ucfirst($action).' approved by '.$manager->name, $uuid, $transaction->status, $status.'; '.$data['reason']);
             WorkflowNotifications::send([$request->user(), $manager], $request->user(), ucfirst($action).' approved',
                 'Transaction '.$uuid.': '.$action.' approved by '.$manager->name.'.', 'activity', $uuid);
 
-            return response()->json(['message' => ucfirst($action).' approved by '.$manager->name.'.', 'status' => $status,
+            $message = ucfirst($action).' approved by '.$manager->name.'.';
+            if ($replacementSale) {
+                $message .= ' Replacement transaction: '.$replacementSale['uuid'].'. Cash difference: PHP '.number_format($difference / 100, 2).'. Change: PHP '.number_format(($exchangeTendered - $difference) / 100, 2).'.';
+            }
+            return response()->json(['message' => $message, 'status' => $status, 'replacementTransaction' => $replacementSale,
+                'exchangeDifference' => $difference / 100, 'exchangeChange' => ($exchangeTendered - $difference) / 100,
                 'refundDate' => now()->toDateString(), 'approved_by' => $manager->name, 'amount' => $refundCents / 100,
                 'refundedAmount' => $refunded / 100, 'lines' => DB::table('transaction_lines')->where('transaction_uuid', $uuid)->get()]);
         });

@@ -19,6 +19,7 @@ class KitaDataController extends Controller
                 'BUSINESS_DATE' => now()->toDateString(),
                 'CATEGORIES' => $this->rows($pdo, 'SELECT name, status, classification, archivedAt, archivedBy FROM categories ORDER BY created_at DESC, name'),
                 'PRODUCTS' => $this->products($pdo),
+                'EXPIRING_BATCHES' => \App\Services\ExpiryMonitoring::batches(),
                 'BRANDS' => DB::table('brands')->orderByDesc('id')->get(),
                 'SUBCATEGORIES' => DB::table('subcategories')->orderByDesc('id')->get(),
                 'SUPPLIERS' => $this->suppliers($pdo),
@@ -81,11 +82,11 @@ class KitaDataController extends Controller
 
     private function products(PDO $pdo): array
     {
-        return $this->numericRows(
+        return \App\Services\InventoryAvailability::products($this->numericRows(
             $pdo,
             'SELECT brandId, subcategoryId, size, sizeUnit, id, name, category, vatClass, price, cost, unitPrice, registrationQuantity, stock, minStock, unit, status, batch, lot, expiry, barcode, supplierId, parentId, variantLabel, purchaseUnit, stockUnit, conversionFactor, barcodeStatus, archivedAt, archivedBy FROM products ORDER BY created_at DESC, id DESC',
             ['id', 'price', 'cost', 'unitPrice', 'registrationQuantity', 'stock', 'minStock', 'supplierId', 'parentId', 'conversionFactor']
-        );
+        ));
     }
 
     private function suppliers(PDO $pdo): array

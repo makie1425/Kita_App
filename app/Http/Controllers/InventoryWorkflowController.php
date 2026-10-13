@@ -25,7 +25,7 @@ class InventoryWorkflowController extends Controller
         }
 
         return response()->json([
-            'batches' => DB::table('inventory_batches as b')->join('products as p', 'p.id', '=', 'b.productId')->where('quantityRemaining', '>', 0)->orderByDesc('b.id')->get(['b.*', 'p.name', 'p.category', 'p.stockUnit']),
+            'batches' => \App\Services\InventoryAvailability::batches(DB::table('inventory_batches as b')->join('products as p', 'p.id', '=', 'b.productId')->orderByDesc('b.id')->get(['b.*', 'p.name', 'p.category', 'p.stockUnit', 'p.status as productStatus', 'p.archivedAt as productArchivedAt'])),
             'events' => DB::table('inventory_events as e')->join('products as p', 'p.id', '=', 'e.productId')->join('inventory_batches as b', 'b.id', '=', 'e.batchId')->orderByDesc('e.id')->get(['e.*', 'p.name', 'b.batchNumber']),
             'counts' => $counts, 'today' => now()->toDateString(),
         ])->header('Cache-Control', 'no-store');
@@ -35,7 +35,7 @@ class InventoryWorkflowController extends Controller
     {
         InventoryRules::authorize($r);
         $d = $r->validate(['requestKey' => ['required', 'uuid'], 'batchId' => ['required', 'integer', 'exists:inventory_batches,id'],
-            'type' => ['required', Rule::in(['Write-off', 'Disposal', 'Transfer', 'Recall'])], 'quantity' => ['required', 'integer', 'min:1', 'max:1000000'],
+            'type' => ['required', Rule::in(['Write-off', 'Disposal', 'Transfer', 'Recall', 'Release recall'])], 'quantity' => ['required', 'integer', 'min:0', 'max:1000000'],
             'destination' => ['required_if:type,Transfer', 'nullable', 'string', 'max:255'], 'reason' => ['required', 'string', 'max:2000']]);
 
         return DB::transaction(function () use ($r, $d) {
@@ -53,10 +53,19 @@ class InventoryWorkflowController extends Controller
             }
             $b = DB::table('inventory_batches')->where('id', $d['batchId'])->lockForUpdate()->first();
             abort_if($d['quantity'] > $b->quantityRemaining || $d['quantity'] > $p->stock, 422, 'Quantity exceeds the available batch stock.');
-            if ($d['type'] === 'Recall') {
+            if (in_array($d['type'], ['Recall', 'Release recall'], true)) {
                 abort_unless((int) $d['quantity'] === (int) $b->quantityRemaining, 422, 'Recall the entire remaining batch quantity.');
-                DB::table('inventory_batches')->where('id', $b->id)->update(['recalled' => true]);
+                $recalled = $d['type'] === 'Recall';
+                abort_if((bool) $b->recalled === $recalled, 409, $recalled ? 'This batch is already recalled.' : 'This batch is not recalled.');
+                DB::table('inventory_batches')->where('id', $b->id)->update(['recalled' => $recalled]);
+                $id = DB::table('inventory_events')->insertGetId($d + ['productId' => $p->id, 'actor' => $r->user()->name, 'created_at' => now()]);
+                // Quarantine changes eligibility, never the physical quantity.
+                DB::table('stock_movements')->insert(['productId' => $p->id, 'quantityChange' => 0, 'quantityBefore' => $p->stock, 'quantityAfter' => $p->stock, 'referenceType' => $recalled ? 'recall' : 'recall_release', 'referenceId' => 'INV-'.$id, 'userId' => $r->user()->id, 'userRole' => $r->user()->role, 'created_at' => now()]);
+                InventoryRules::audit($r->user()->name, 'Inventory '.$d['type'], 'INV-'.$id, null, json_encode($d));
+
+                return response()->json(['message' => $recalled ? 'Batch recalled. Stock on hand is unchanged; this batch is blocked from sale.' : 'Recall released. Expiry and other eligibility checks still apply.'], 201);
             }
+            abort_if($d['quantity'] < 1, 422, 'Enter a positive quantity to remove.');
             $id = DB::table('inventory_events')->insertGetId($d + ['productId' => $p->id, 'actor' => $r->user()->name, 'created_at' => now()]);
             DB::table('inventory_batches')->where('id', $b->id)->decrement('quantityRemaining', $d['quantity']);
             DB::table('products')->where('id', $p->id)->decrement('stock', $d['quantity']);
@@ -99,6 +108,7 @@ class InventoryWorkflowController extends Controller
             }
             $products = $query->orderBy('id')->lockForUpdate()->get();
             abort_if($products->isEmpty(), 422, 'No active products to count.');
+            abort_if(DB::table('inventory_allocations as a')->join('transactions as t', 't.uuid', '=', 'a.referenceId')->where('a.referenceType', 'payment_reservation')->where('t.status', 'Pending Payment')->whereIn('a.productId', $products->pluck('id'))->exists(), 409, 'Resolve pending payment reservations before counting these products.');
             abort_if(DB::table('inventory_count_lines as l')->join('inventory_counts as c', 'c.id', '=', 'l.countId')->where('c.status', 'Open')->whereIn('l.productId', $products->pluck('id'))->exists(), 409, 'An open count already includes these products. Complete or cancel it first.');
             $id = DB::table('inventory_counts')->insertGetId(['mode' => $d['mode'], 'category' => $d['mode'] === 'Full' ? null : ($d['category'] ?? null), 'actor' => $r->user()->name, 'created_at' => now(), 'status' => 'Open']);
             foreach ($products as $p) {

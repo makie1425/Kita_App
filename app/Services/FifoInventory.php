@@ -11,25 +11,27 @@ class FifoInventory
     {
         // Legacy/imported products without a batch need an explicit opening balance.
         if ($before > 0 && ! DB::table('inventory_batches')->where('productId', $productId)->exists()) {
-            self::receive($productId, $before, max(0, (float) DB::table('products')->where('id', $productId)->value('unitPrice')), '1970-01-01', null, null, 'legacy_opening');
+            $product = DB::table('products')->where('id', $productId)->first();
+            self::receive($productId, $before, max(0, (float) $product->unitPrice), '1970-01-01', null, null, 'legacy_opening', expiry: $product->expiry);
         }
     }
 
-    public static function receive(int $id, int $qty, float $cost, string $date, ?string $receipt = null, ?int $supplier = null, string $source = 'purchase_receiving', ?string $batch = null, ?string $expiry = null): void
+    public static function receive(int $id, int $qty, float $cost, string $date, ?string $receipt = null, ?int $supplier = null, string $source = 'purchase_receiving', ?string $batch = null, ?string $expiry = null, ?string $manufactured = null): void
     {
         DB::table('inventory_batches')->insert(['productId' => $id, 'quantityReceived' => $qty, 'quantityRemaining' => $qty,
             'unitCost' => $cost, 'receivedDate' => $date, 'receiptId' => $receipt, 'supplierId' => $supplier, 'source' => $source,
-            'batchNumber' => $batch, 'expiryDate' => $expiry, 'created_at' => now()]);
+            'batchNumber' => $batch, 'expiryDate' => $expiry, 'manufacturedDate' => $manufactured, 'created_at' => now()]);
     }
 
     public static function consume(int $id, int $qty, string $type, string $reference): void
     {
-        $batches = DB::table('inventory_batches')->where('productId', $id)->where('quantityRemaining', '>', 0)
-            // FEFO for dated batches; FIFO for equal expiries and undated stock.
-            ->orderByRaw('CASE WHEN expiryDate IS NULL THEN 1 ELSE 0 END')->orderBy('expiryDate')
-            ->orderBy('receivedDate')->orderBy('id')->lockForUpdate()->get();
+        $query = DB::table('inventory_batches')->where('productId', $id)->where('quantityRemaining', '>', 0);
+        if (in_array($type, ['checkout', 'payment_reservation', 'exchange_replacement'], true)) {
+            $query->where('recalled', false)->where(fn ($q) => $q->whereNull('expiryDate')->orWhere('expiryDate', '>', now()->toDateString()));
+        }
+        $batches = $query->orderBy('receivedDate')->orderBy('id')->lockForUpdate()->get();
         if ($batches->sum('quantityRemaining') < $qty) {
-            throw ValidationException::withMessages(['stock' => 'Batch balances do not match stock. Reconcile inventory before continuing.']);
+            throw ValidationException::withMessages(['stock' => 'Insufficient eligible batch stock. Expired or recalled stock cannot be sold. Refresh inventory before continuing.']);
         }
         foreach ($batches as $batch) {
             if ($qty === 0) {
@@ -43,14 +45,18 @@ class FifoInventory
         }
     }
 
-    public static function returnStock(int $id, int $qty, string $reference, bool $restock = true): void
+    public static function returnStock(int $id, int $qty, string $reference, bool $restock = true, bool $reservationRelease = false): void
     {
         $allocations = DB::table('inventory_allocations')->where('productId', $id)->where('referenceId', $reference)
-            ->whereIn('referenceType', ['checkout', 'payment_reservation'])->orderBy('id')->lockForUpdate()->get();
+            ->whereIn('referenceType', ['checkout', 'payment_reservation', 'exchange_replacement'])->orderBy('id')->lockForUpdate()->get();
         if ($allocations->isEmpty()) {
             // Sales made before migration have no recoverable original batch allocation.
             if ($restock) {
-                self::receive($id, $qty, max(0, (float) DB::table('products')->where('id', $id)->value('unitPrice')), now()->toDateString(), null, null, 'legacy_return');
+                $product = DB::table('products')->where('id', $id)->first();
+                if (! $reservationRelease) {
+                    throw ValidationException::withMessages(['stock' => 'The original batch is unknown. Refund without restocking, then reconcile the returned goods by batch.']);
+                }
+                self::receive($id, $qty, max(0, (float) $product->unitPrice), now()->toDateString(), null, null, 'legacy_return', expiry: $product->expiry);
             }
 
             return;
@@ -61,9 +67,8 @@ class FifoInventory
                 continue;
             }
             if ($restock) {
-                if (DB::table('inventory_batches')->where('id', $a->batchId)->value('recalled')) {
-                    throw ValidationException::withMessages(['stock' => 'Recalled stock cannot be returned to sellable inventory. Process the refund without restocking.']);
-                }
+                // Returned goods remain in their original cost/expiry/recall layer.
+                // Physical receipt does not make an expired or recalled batch sellable.
                 DB::table('inventory_batches')->where('id', $a->batchId)->increment('quantityRemaining', $take);
             }
             DB::table('inventory_allocations')->where('id', $a->id)->increment('returnedQuantity', $take);

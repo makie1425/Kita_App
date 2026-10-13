@@ -37,8 +37,9 @@ class ReportController extends Controller
         if ($type === 'inventory') {
             $title = 'Current Inventory';
             $note .= ' This is current stock, not a historical balance. Date filters do not apply.';
-            $columns += ['Stock ID' => 'id', 'Barcode' => 'barcode', 'Unit' => 'unit', 'Stock' => 'stock', 'Reorder level' => 'minimum', 'Retail price (PHP)' => 'price', 'Status' => 'status'];
-            $select = array_merge($select, ['p.id', 'p.barcode', 'p.stockUnit as unit', 'p.stock', 'p.minStock as minimum', 'p.price', 'p.status']);
+            $columns += ['Stock ID' => 'id', 'Barcode' => 'barcode', 'Unit' => 'unit', 'Stock on Hand' => 'stockOnHand', 'Sellable Quantity' => 'sellableStock', 'Expired' => 'expiredStock', 'Recalled' => 'recalledStock', 'Reserved' => 'reservedStock', 'Exclusion reasons' => 'exclusionReason', 'Reorder level' => 'minimum', 'Retail price (PHP)' => 'price', 'Status' => 'status'];
+            $select = array_merge($select, ['p.id', 'p.barcode', 'p.stockUnit as unit', 'p.stock', 'p.expiry', 'p.minStock as minimum', 'p.price', 'p.status', 'p.archivedAt']);
+            $note .= ' On-hand stock includes expired units awaiting disposal; sellable quantities exclude expired and recalled batches.';
         } elseif ($type === 'sales') {
             $title = 'Sales Transaction Detail';
             $query->join('transaction_lines as line', 'line.productId', '=', 'p.id')->join('transactions as t', 't.uuid', '=', 'line.transaction_uuid');
@@ -56,6 +57,8 @@ class ReportController extends Controller
             $columns += ['Received date' => 'date', 'Receipt' => 'reference', 'Supplier' => 'supplier', 'Quantity received' => 'quantity', 'Remaining now' => 'remaining', 'Unit cost (PHP)' => 'cost', 'Batch' => 'batch'];
             $query->leftJoin('suppliers as s', 's.id', '=', 'b.supplierId');
             $select = array_merge($select, ['b.receivedDate as date', 'b.receiptId as reference', 's.name as supplier', 'b.quantityReceived as quantity', 'b.quantityRemaining as remaining', 'b.unitCost as cost', 'b.batchNumber as batch']);
+            $columns += ['Manufactured' => 'manufacturedDate', 'Expiry' => 'expiryDate'];
+            $select = array_merge($select, ['b.manufacturedDate', 'b.expiryDate']);
         } else {
             $title = 'Stock Movements';
             $query->join('stock_movements as m', 'm.productId', '=', 'p.id');
@@ -92,6 +95,10 @@ class ReportController extends Controller
             $query->orderByDesc('p.created_at');
         }
         $rows = $query->orderByDesc('p.id')->get($select);
+        if ($type === 'inventory') {
+            $rows = collect(\App\Services\InventoryAvailability::products($rows->map(fn ($row) => (array) $row)->all()))->map(fn ($row) => (object) $row);
+            foreach ($rows as $row) $row->exclusionReason = implode('; ', $row->exclusionReasons) ?: 'Eligible';
+        }
         foreach ($rows as $row) {
             if (in_array($type, ['sales', 'movements'])) {
                 $row->transactionId = $row->reference;
@@ -105,8 +112,8 @@ class ReportController extends Controller
             }
         }
         $moneyKeys = ['price', 'amount', 'refunded', 'cost'];
-        $numericKeys = array_merge($moneyKeys, ['stock', 'minimum', 'quantity', 'remaining', 'change', 'before', 'after']);
-        $summary = ['Detail rows' => number_format($rows->count())];
+        $numericKeys = array_merge($moneyKeys, ['stock', 'stockOnHand', 'sellableStock', 'expiredStock', 'recalledStock', 'reservedStock', 'minimum', 'quantity', 'remaining', 'change', 'before', 'after']);
+        $summary = ['Records' => number_format($rows->count())];
         if ($type === 'sales') {
             $summary += ['Transactions' => number_format($rows->pluck('reference')->unique()->count()), 'Recorded line totals (PHP)' => number_format($rows->sum('amount'), 2), 'Cumulative refunds (PHP)' => number_format($rows->sum('refunded'), 2)];
         } elseif ($type === 'inventory') {

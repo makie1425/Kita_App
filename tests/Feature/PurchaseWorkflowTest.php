@@ -55,6 +55,24 @@ class PurchaseWorkflowTest extends TestCase
         ])->assertCreated()->assertJsonPath('status', 'Pending Approval')->json('id');
     }
 
+    public function test_manufacturing_date_is_optional_validated_and_preserved_on_receipt(): void
+    {
+        $id = $this->requestOrder();
+        $this->approve($id);
+        $body = $this->delivery();
+        $body['lines'][0]['manufacturedDate'] = now()->addDay()->toDateString();
+        $this->actingAs($this->manager)->postJson('/api/purchase-orders/'.$id.'/receive', $body)->assertUnprocessable();
+        $this->assertDatabaseCount('receiving_records', 0);
+        $body['lines'][0]['manufacturedDate'] = now()->subDays(3)->toDateString();
+        $body['lines'][0]['expiryDate'] = now()->addDays(7)->toDateString();
+        $this->postJson('/api/purchase-orders/'.$id.'/receive', $body)->assertCreated();
+        foreach (['inventory_batches', 'receiving_record_lines'] as $table) {
+            $this->assertDatabaseHas($table, ['productId' => $this->product, 'manufacturedDate' => $body['lines'][0]['manufacturedDate'], 'expiryDate' => $body['lines'][0]['expiryDate']]);
+        }
+        $this->postJson('/api/purchase-orders/'.$id.'/receive', $body)->assertOk();
+        $this->assertDatabaseCount('inventory_batches', 1);
+    }
+
     private function approve(string $id): void
     {
         $this->actingAs($this->admin)->patchJson('/api/purchase-requests/'.$id, ['action' => 'approved', 'revision' => 0])

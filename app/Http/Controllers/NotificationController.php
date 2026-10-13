@@ -15,6 +15,7 @@ class NotificationController extends Controller
     public function index(Request $request)
     {
         $data = $request->validate(['before' => ['sometimes', 'integer', 'min:1']]);
+        \App\Services\ExpiryMonitoring::notify($request->user());
         $query = $this->owned($request);
         if (isset($data['before'])) {
             $query->where('id', '<', $data['before']);

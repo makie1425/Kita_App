@@ -133,6 +133,18 @@ class PayMongoController extends Controller
                 return response()->json(['received' => true]);
             }
             abort_unless($transaction->status === 'Pending Payment', 409, 'This payment requires reconciliation.');
+            // A batch may have expired or been recalled after the wallet reserved it.
+            $productIds = DB::table('transaction_lines')->where('transaction_uuid', $uuid)->orderBy('productId')->pluck('productId');
+            $products = DB::table('products')->whereIn('id', $productIds)->orderBy('id')->lockForUpdate()->get();
+            foreach ($products as $product) {
+                abort_unless($product->status === 'Active' && $product->archivedAt === null
+                    && DB::table('categories')->where('name', $product->category)->where('status', 'Active')->whereNull('archivedAt')->exists(), 409, 'Reserved product is no longer eligible. Payment requires reconciliation; do not release goods.');
+            }
+            $batches = DB::table('inventory_allocations as a')->join('inventory_batches as b', 'b.id', '=', 'a.batchId')
+                ->where('a.referenceId', $uuid)->where('a.referenceType', 'payment_reservation')->lockForUpdate()->get(['b.recalled', 'b.expiryDate']);
+            abort_if($products->count() !== $productIds->count() || $batches->isEmpty()
+                || $batches->contains(fn ($b) => $b->recalled || ($b->expiryDate && $b->expiryDate <= now()->toDateString())), 409,
+                'Reserved stock expired or was recalled. Payment requires reconciliation; do not release goods.');
             DB::table('transactions')->where('uuid', $uuid)->update(['status' => 'Paid', 'paid' => $transaction->total,
                 'referenceNo' => $session['id'], 'paymentReference' => $payment['id']]);
             SaleCheckout::recordSales($uuid);

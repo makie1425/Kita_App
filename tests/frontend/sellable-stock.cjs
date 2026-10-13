@@ -1,0 +1,50 @@
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+let serverProduct={id:1,name:'Milk',price:20,status:'Active',category:'Food',stock:8,stockOnHand:8,sellableStock:2,expiredStock:3,recalledStock:3,reservedStock:0,exclusionReasons:['Expired: 3','Recalled: 3']};
+let fail=false,deferred=null,calls=[];
+const fetch=async(url)=>{
+  if(fail)throw new Error('Network unavailable');
+  const quantity=Number(new URL(url,'http://localhost').searchParams.get('quantity')||0);
+  calls.push(quantity);
+  if(deferred)await deferred;
+  const ok=!quantity||quantity<=serverProduct.sellableStock;
+  return {ok,status:ok?200:422,json:async()=>ok?{products:[{...serverProduct}],businessDate:'2026-10-13',checkedAt:'2026-10-13T12:00:00+08:00'}:{message:'Only '+serverProduct.sellableStock+' sellable units. Expired or recalled stock cannot be sold.'}};
+};
+const context=vm.createContext({React:{createElement:(type,props,...children)=>({type,props,children})},DCLogic:class{setState(p,cb){Object.assign(this.state,typeof p==='function'?p(this.state):p);cb?.();}},fetch,URLSearchParams,AbortController,setTimeout:(cb,ms)=>ms===10000?setTimeout(cb,ms):0,clearTimeout,window:{confirm:()=>true},crypto:{randomUUID:()=> 'key'}});
+vm.runInContext(fs.readFileSync('public/app.js','utf8')+';globalThis.App=Component;',context);
+const app=new context.App();let messages=[];
+app.toast=m=>messages.push(m);app.handleSessionResponse=()=>{};app.generateReport=()=>{};
+app.state.data={BUSINESS_DATE:'2026-10-13',PRODUCTS:[{...serverProduct,sellableStock:8}],CATEGORIES:[{name:'Food'}],USERS:{manager:[]},SUBCATEGORIES:[],BRANDS:[]};
+app.state.productsLocal=app.state.data.PRODUCTS;app.state.authenticatedUser={id:1,role:'cashier'};
+app.state.categoriesLocal=app.state.data.CATEGORIES;
+app.state.suppliersLocal=[];
+app.state.role='cashier';app.state.promotionsLocal=[];
+const nodes=n=>!n||typeof n!=='object'?[]:Array.isArray(n)?n.flatMap(nodes):[n,...nodes(n.children)];
+const text=n=>n==null?'':typeof n!=='object'?String(n):Array.isArray(n)?n.map(text).join(' '):text(n.children);
+(async()=>{
+  // Rapid scans queue server checks against the latest cart quantity.
+  await Promise.all([app.addProductToCart(serverProduct),app.addProductToCart(serverProduct),app.addProductToCart(serverProduct)]);
+  assert.equal(app.state.cart[0].qty,2);assert.deepEqual(calls,[1,2,3]);assert.match(messages.at(-1),/Expired or recalled/);
+  serverProduct.sellableStock=0;
+  await app.stepQty(app.state.cart[0].lineId,1)();assert.equal(app.state.cart[0].qty,2);
+  let paymentCalls=0;app.finalizeTransaction=()=>paymentCalls++;
+  await app.startPayment();assert.equal(paymentCalls,0);assert.match(messages.at(-1),/Only 0 sellable/);
+  assert(text(app.buildPos()).includes('Requested quantity exceeds current sellable stock'));
+  fail=true;app.newSale();await app.addProductToCart(serverProduct,true);assert.equal(app.state.cart.length,0);assert.match(messages.at(-1),/Network/);
+  fail=false;serverProduct.sellableStock=2;
+  let finish;deferred=new Promise(r=>finish=r);
+  const pending=app.addProductToCart(serverProduct);await new Promise(r=>setImmediate(r));
+  app.newSale();finish();await pending;assert.equal(app.state.cart.length,0,'A late stock response must not add to a new cart');deferred=null;
+  await app.addProductToCart(serverProduct,true);assert.equal(app.state.cart[0].manual,true);
+  // Display the physical balance and each reason instead of presenting all units as sellable.
+  app.state.role='manager';app.state.invTab='table';app.state.data.PRODUCTS=[{...serverProduct}];app.state.productsLocal=app.state.data.PRODUCTS;
+  const inventory=app.buildMgrInventory();
+  for(const label of ['Stock on Hand','Sellable Quantity','Expired','Recalled','Reserved','Exclusion reasons'])assert(text(inventory).includes(label),label);
+  assert(text(inventory).includes('Expired: 3; Recalled: 3'));
+  app.state.inventoryWorkflows={today:'2026-10-13',batches:[{id:7,productId:1,name:'Milk',quantityRemaining:8,stockOnHand:8,recalled:true,eligibility:'Recalled'}],events:[],counts:[]};
+  app.state.workflowForm={batchId:'7',recallAction:'Release recall',reason:'Verified safe'};
+  let event;app.saveInventoryWorkflow=(route,data)=>event=data;
+  const recall=app.buildInventoryWorkflows('recall');
+  nodes(recall).find(n=>n.type==='button'&&text(n)==='Save recall status').props.onClick();
+  assert.equal(event.type,'Release recall');assert.equal(event.quantity,8);
+  console.log('Sellable stock UI: fresh selection, rapid scans, quantity/checkout checks, offline blocking, stale responses, physical totals and recall release passed.');
+})().catch(e=>{console.error(e);process.exitCode=1;});

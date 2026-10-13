@@ -9,6 +9,11 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schedule;
 use Illuminate\Support\Facades\Validator;
 
+Artisan::command('inventory:expiry-alerts', function () {
+    $this->info('Expiry notifications created: '.\App\Services\ExpiryMonitoring::notify());
+})->purpose('Notify managers and administrators about expired stock and stock expiring within seven days');
+Schedule::command('inventory:expiry-alerts')->hourly()->withoutOverlapping();
+
 Artisan::command('backup:run', function (DatabaseBackup $backups) {
     $this->info('Backup created: '.$backups->create());
     $backups->prune();

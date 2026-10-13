@@ -49,8 +49,8 @@ class InventoryWorkflowTest extends TestCase
     {
         $this->postJson('/api/inventory/workflows/events', $this->event(['type' => 'Recall']))->assertUnprocessable();
         $this->postJson('/api/inventory/workflows/events', $this->event(['type' => 'Recall', 'quantity' => 10]))->assertCreated();
-        $this->assertDatabaseHas('products', ['id' => 1, 'stock' => 0]);
-        $this->assertDatabaseHas('inventory_batches', ['id' => $this->batch, 'recalled' => true, 'quantityRemaining' => 0]);
+        $this->assertDatabaseHas('products', ['id' => 1, 'stock' => 10]);
+        $this->assertDatabaseHas('inventory_batches', ['id' => $this->batch, 'recalled' => true, 'quantityRemaining' => 10]);
     }
 
     public function test_counts_reconcile_surplus_and_shortage_and_hide_blind_expected(): void
@@ -70,20 +70,19 @@ class InventoryWorkflowTest extends TestCase
         $this->assertEquals(7, DB::table('inventory_batches')->sum('quantityRemaining'));
     }
 
-    public function test_recalled_batch_cannot_be_restocked_by_a_refund(): void
+    public function test_recalled_return_stays_in_quarantine_without_becoming_sellable(): void
     {
         DB::transaction(function () {
             FifoInventory::consume(1, 2, 'checkout', 'SALE-1');
             DB::table('products')->where('id', 1)->update(['stock' => 8]);
         });
         $this->postJson('/api/inventory/workflows/events', $this->event(['type' => 'Recall', 'quantity' => 8]))->assertCreated();
-        try {
-            DB::transaction(fn () => FifoInventory::returnStock(1, 2, 'SALE-1'));
-            $this->fail('Recalled stock must not be restocked.');
-        } catch (\Illuminate\Validation\ValidationException $e) {
-            $this->assertStringContainsString('Recalled stock', $e->getMessage());
-        }
-        $this->assertDatabaseHas('inventory_batches', ['id' => $this->batch, 'quantityRemaining' => 0]);
+        DB::transaction(function () {
+            FifoInventory::returnStock(1, 2, 'SALE-1');
+            DB::table('products')->where('id', 1)->increment('stock', 2);
+        });
+        $this->assertDatabaseHas('inventory_batches', ['id' => $this->batch, 'quantityRemaining' => 10, 'recalled' => true]);
+        $this->getJson('/api/inventory/availability')->assertOk()->assertJsonPath('products.0.stockOnHand', 10)->assertJsonPath('products.0.sellableStock', 0);
     }
 
     public function test_movement_requires_restart_and_cancel_preserves_stock(): void

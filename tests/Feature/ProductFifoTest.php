@@ -96,8 +96,9 @@ class ProductFifoTest extends TestCase
         $this->getJson('/api/inventory-history?brandId='.$this->input['brandId'])->assertOk()->assertJsonCount(2, 'batches');
     }
 
-    public function test_fefo_uses_earliest_expiry_then_fifo_and_restores_original_batches(): void
+    public function test_fifo_uses_receipt_order_regardless_of_expiry_and_restores_original_batches(): void
     {
+        $this->travelTo(\Carbon\Carbon::parse('2026-10-12'));
         DB::transaction(function () {
             FifoInventory::receive($this->product, 3, 10, '2026-01-01', batch: 'Undated oldest');
             FifoInventory::receive($this->product, 3, 20, '2026-01-02', batch: 'Later expiry', expiry: '2027-03-01');
@@ -106,12 +107,12 @@ class ProductFifoTest extends TestCase
             FifoInventory::receive($this->product, 3, 50, '2026-01-05', batch: 'Undated newest');
             FifoInventory::consume($this->product, 11, 'checkout', 'FEFO-SALE');
         });
-        $this->assertSame([30, 40, 20, 10], DB::table('inventory_allocations')->orderBy('id')->pluck('unitCost')->map(fn ($cost) => (int) $cost)->all());
-        $this->assertDatabaseHas('inventory_batches', ['batchNumber' => 'Undated oldest', 'quantityRemaining' => 1]);
+        $this->assertSame([10, 20, 30, 40], DB::table('inventory_allocations')->orderBy('id')->pluck('unitCost')->map(fn ($cost) => (int) $cost)->all());
+        $this->assertDatabaseHas('inventory_batches', ['batchNumber' => 'Undated oldest', 'quantityRemaining' => 0]);
         $this->assertDatabaseHas('inventory_batches', ['batchNumber' => 'Undated newest', 'quantityRemaining' => 3]);
         DB::transaction(fn () => FifoInventory::returnStock($this->product, 4, 'FEFO-SALE'));
-        $this->assertDatabaseHas('inventory_batches', ['batchNumber' => 'First expiry older', 'quantityRemaining' => 3]);
-        $this->assertDatabaseHas('inventory_batches', ['batchNumber' => 'First expiry newer', 'quantityRemaining' => 1]);
+        $this->assertDatabaseHas('inventory_batches', ['batchNumber' => 'Undated oldest', 'quantityRemaining' => 3]);
+        $this->assertDatabaseHas('inventory_batches', ['batchNumber' => 'Later expiry', 'quantityRemaining' => 1]);
     }
 
     public function test_new_catalog_entries_sort_before_older_entries_even_with_lower_stock_ids(): void
