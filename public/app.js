@@ -1461,21 +1461,24 @@ class Component extends DCLogic {
   purchaseRequestDetails(){
     const h=React.createElement,r=this.state.purchaseData?.requests.find(r=>r.id===this.state.purchaseRequestDetail);if(!r)return null;
     const close=()=>this.setState({purchaseRequestDetail:null});
+    const units=[...new Set(r.lines.map(l=>this.requestUnitLabel(l)))],mixed=units.length>1;
+    const unitHeading=units.join(' / ')||'Pieces';
     return h('dialog',{className:'purchase-details-dialog','aria-labelledby':'purchase-details-title',
       ref:node=>{if(node&&!node.open)node.showModal();},
       onCancel:e=>{e.preventDefault();close();},
       onClick:e=>{if(e.target===e.currentTarget){const rect=e.currentTarget.getBoundingClientRect();if(e.clientX<rect.left||e.clientX>rect.right||e.clientY<rect.top||e.clientY>rect.bottom)close();}}
     },[h('h2',{id:'purchase-details-title'},r.id),h('p',null,`${r.supplierName||this.purchaseSupplier(r.lines[0]?.supplierId)} | ${r.status} | Requested by ${r.requestedBy}`),
-      h('div',{className:'purchase-details-table'},table(['Item','Category','Reviewed quantity','Unit'],r.lines.map(l=>tr([td(l.name),td(l.category),td((l.confirmedQty??l.qty)+' '+this.purchaseUnit(l)),td(this.requestUnitSummary(l))],l.id)))),h('p',null,r.notes||''),h('p',null,r.disapprovalReason||r.adminNote||''),h('div',{className:'dialog-actions'},[h('button',{type:'button',className:'kita-button kita-button--primary',autoFocus:true,onClick:close},'Close details'),r.poId?this.purchaseReportLink(r.poId):null])]);
+      h('div',{className:'purchase-details-table'},table(['Item','Category','Reviewed quantity',unitHeading],r.lines.map(l=>tr([td(l.name),td(l.category),td(l.confirmedQty??l.qty),td(this.requestUnitSummary(l,mixed))],l.id)))),h('p',null,r.notes||''),h('p',null,r.disapprovalReason||r.adminNote||''),h('div',{className:'dialog-actions'},[h('button',{type:'button',className:'kita-button kita-button--primary',autoFocus:true,onClick:close},'Close details'),r.poId?this.purchaseReportLink(r.poId):null])]);
   }
-  requestUnitSummary=line=>{
+  requestUnitLabel=line=>{const unit=line.orderUnit||this.purchaseUnit(line);return ['piece','pieces'].includes(unit.toLowerCase())?'Pieces':unit;};
+  requestUnitSummary=(line,mixed=false)=>{
     const h=React.createElement,quantity=Number(line.confirmedQty??line.qty),unit=line.orderUnit||this.purchaseUnit(line),factor=Number(line.piecesPerBox);
     if(unit==='Box'&&factor>0){
       const boxes=Math.floor(quantity/factor),pieces=quantity%factor;
-      return h('div',null,[h('strong',null,'Box'),h('div',null,boxes+' box'+(boxes===1?'':'es')+(pieces?' + '+pieces+' pieces':'')),h('small',null,factor+' pieces per box')]);
+      return h('div',null,[h('div',null,(mixed?boxes+' box'+(boxes===1?'':'es'):String(boxes))+(pieces?' + '+pieces+' pieces':''))]);
     }
     const label=['piece','pieces'].includes(unit.toLowerCase())?'Pieces':unit;
-    return h('div',null,[h('strong',null,label),h('div',null,quantity+' '+label.toLowerCase())]);
+    return h('div',null,[h('div',null,mixed?quantity+' '+label.toLowerCase():quantity)]);
   };
   reviewPurchase=async(record,action)=>{
     if(this.reviewBusy)return;
