@@ -52,6 +52,26 @@ class SellableStockTest extends TestCase
         return $this->postJson('/api/transactions', ['uuid' => $uuid, 'items' => [['productId' => 1, 'qty' => $quantity]], 'paymentMode' => 'Cash', 'tendered' => 1000]);
     }
 
+    public function test_purchase_request_data_avoids_mysql_reserved_alias_and_preserves_overlap_totals(): void
+    {
+        $this->batch(3, '2026-10-20');
+        $this->batch(2, '2026-10-12', true);
+        DB::connection()->enableQueryLog();
+        try {
+            $this->getJson('/api/kita-data')->assertOk()
+                ->assertJsonPath('PRODUCTS.0.stockOnHand', 5)
+                ->assertJsonPath('PRODUCTS.0.sellableStock', 3)
+                ->assertJsonPath('PRODUCTS.0.expiredRecalledStock', 2)
+                ->assertJsonStructure(['ITEM_REQUESTS', 'SUPPLIERS', 'CATEGORIES']);
+            // SQLite accepts BOTH as an alias; production MySQL rejects it.
+            $queries = collect(DB::getQueryLog())->pluck('query')->implode("\n");
+            $this->assertDoesNotMatchRegularExpression('/\\bas\\s+both\\b/i', $queries);
+        } finally {
+            DB::connection()->disableQueryLog();
+            DB::connection()->flushQueryLog();
+        }
+    }
+
     public function test_mixed_batches_have_exact_physical_and_sellable_totals_without_double_counting(): void
     {
         $this->batch(3, '2026-10-20');

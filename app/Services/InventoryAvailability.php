@@ -21,7 +21,7 @@ class InventoryAvailability
             ->whereIn('b.productId', array_column($products, 'id'))->groupBy('b.productId')
             ->select('b.productId')->selectRaw('SUM(b.quantityRemaining) as onHand, SUM(COALESCE(r.reserved, 0)) as reserved, SUM(CASE WHEN b.recalled = 0 AND (b.expiryDate IS NULL OR b.expiryDate > ?) THEN b.quantityRemaining ELSE 0 END) as sellable', [$today])
             ->selectRaw('SUM(CASE WHEN b.expiryDate <= ? THEN b.quantityRemaining + COALESCE(r.reserved, 0) ELSE 0 END) as expired, SUM(CASE WHEN b.recalled = 1 THEN b.quantityRemaining + COALESCE(r.reserved, 0) ELSE 0 END) as recalled', [$today])
-            ->selectRaw('SUM(CASE WHEN b.recalled = 1 AND b.expiryDate <= ? THEN b.quantityRemaining + COALESCE(r.reserved, 0) ELSE 0 END) as both', [$today])
+            ->selectRaw('SUM(CASE WHEN b.recalled = 1 AND b.expiryDate <= ? THEN b.quantityRemaining + COALESCE(r.reserved, 0) ELSE 0 END) as expiredAndRecalled', [$today])
             ->get()->keyBy('productId');
         $categories = DB::table('categories')->where('status', 'Active')->whereNull('archivedAt')->pluck('name')->all();
 
@@ -32,7 +32,7 @@ class InventoryAvailability
             $product['stockOnHand'] = ($balance ? (int) $balance->onHand : (int) $product['stock']) + $product['reservedStock'];
             $product['expiredStock'] = $balance ? (int) $balance->expired : ((isset($product['expiry']) && $product['expiry'] <= $today) ? (int) $product['stock'] : 0);
             $product['recalledStock'] = $balance ? (int) $balance->recalled : 0;
-            $product['expiredRecalledStock'] = $balance ? (int) $balance->both : 0;
+            $product['expiredRecalledStock'] = $balance ? (int) $balance->expiredAndRecalled : 0;
             $product['stockMismatch'] = (int) $product['stock'] !== $product['stockOnHand'] - $product['reservedStock'];
             $reasons = [];
             if ($product['expiredStock']) {
