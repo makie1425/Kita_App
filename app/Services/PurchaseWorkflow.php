@@ -22,7 +22,7 @@ class PurchaseWorkflow
             'lines' => ['required', 'array', 'min:1', 'max:500'],
             'lines.*.productId' => ['required', 'integer', 'min:1'],
             'lines.*.qty' => ['required', 'integer', 'between:1,1000000'],
-            'lines.*.supplierId' => ['nullable', 'integer'],
+            'lines.*.supplierId' => ['required', 'integer', 'min:1'],
             'lines.*.orderUnit' => ['sometimes', 'string', 'max:40'],
             'lines.*.piecesPerBox' => ['nullable', 'integer', 'between:1,1000000'],
         ]);
@@ -51,7 +51,7 @@ class PurchaseWorkflow
             $lines = [];
             foreach (collect($data['lines'])->sortBy('productId') as $line) {
                 $product = InventoryRules::product($line['productId'], 'lines');
-                $supplierId = $line['supplierId'] ?? $product->supplierId;
+                $supplierId = $line['supplierId'];
                 $supplier = DB::table('suppliers')->where('id', $supplierId)->where('status', 'Active')->whereNull('archivedAt')->first();
                 if (! $supplier) {
                     throw ValidationException::withMessages(['lines' => 'Select an active supplier for every item.']);

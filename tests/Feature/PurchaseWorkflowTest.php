@@ -80,6 +80,20 @@ class PurchaseWorkflowTest extends TestCase
             ->assertOk()->assertJsonPath('poId', $id)->assertJsonPath('status', PurchaseWorkflow::WAITING);
     }
 
+    public function test_request_requires_explicit_supplier_even_when_product_has_default(): void
+    {
+        $body = ['category' => 'Supplies', 'lines' => [['productId' => $this->product, 'qty' => 1]]];
+        foreach ([null, '', 0] as $supplier) {
+            $body['lines'][0]['supplierId'] = $supplier;
+            $this->postJson('/api/purchase-requests', $body)->assertUnprocessable()->assertJsonValidationErrors('lines.0.supplierId');
+        }
+        unset($body['lines'][0]['supplierId']);
+        $this->postJson('/api/purchase-requests', $body)->assertUnprocessable();
+        $this->assertDatabaseCount('item_requests', 0);
+        $body['lines'][0]['supplierId'] = $this->supplier;
+        $this->postJson('/api/purchase-requests', $body)->assertCreated();
+    }
+
     public function test_box_requests_convert_to_pieces_and_validate_pack_size(): void
     {
         $body = ['category' => 'Supplies', 'lines' => [['productId' => $this->product, 'supplierId' => $this->supplier, 'qty' => 2, 'orderUnit' => 'Box']]];
@@ -227,7 +241,7 @@ class PurchaseWorkflowTest extends TestCase
     public function test_admin_removal_is_saved_and_historical_report_uses_snapshots(): void
     {
         DB::table('products')->insert(['id' => 100, 'name' => 'Second Item', 'category' => 'Supplies', 'stock' => 0, 'status' => 'Active', 'unit' => 'Piece', 'stockUnit' => 'Piece', 'unitPrice' => 1, 'supplierId' => $this->supplier]);
-        $id = $this->postJson('/api/purchase-requests', ['category' => 'Supplies', 'lines' => [['productId' => $this->product, 'qty' => 2], ['productId' => 100, 'qty' => 1]]])->assertCreated()->json('id');
+        $id = $this->postJson('/api/purchase-requests', ['category' => 'Supplies', 'lines' => [['supplierId' => $this->supplier, 'productId' => $this->product, 'qty' => 2], ['supplierId' => $this->supplier, 'productId' => 100, 'qty' => 1]]])->assertCreated()->json('id');
         $this->actingAs($this->admin)->patchJson('/api/purchase-requests/'.$id, ['action' => 'modify', 'note' => 'Second item is not needed.', 'revision' => 0, 'lines' => [['productId' => $this->product, 'qty' => 2]]])->assertOk();
         $this->assertDatabaseMissing('item_request_lines', ['requestId' => $id, 'productId' => 100]);
         $this->patchJson('/api/purchase-requests/'.$id, ['action' => 'approved', 'revision' => 1])->assertOk();
@@ -260,7 +274,7 @@ class PurchaseWorkflowTest extends TestCase
 
     public function test_po_numbers_are_allocated_in_database_and_retries_return_original_request(): void
     {
-        $body = ['submissionKey' => (string) Str::uuid(), 'category' => 'Supplies', 'lines' => [['productId' => $this->product, 'qty' => 2]]];
+        $body = ['submissionKey' => (string) Str::uuid(), 'category' => 'Supplies', 'lines' => [['supplierId' => $this->supplier, 'productId' => $this->product, 'qty' => 2]]];
         $first = $this->postJson('/api/purchase-requests', $body)->assertCreated()->json('id');
         $this->postJson('/api/purchase-requests', $body)->assertOk()->assertJsonPath('id', $first);
         $this->assertDatabaseCount('item_requests', 1);

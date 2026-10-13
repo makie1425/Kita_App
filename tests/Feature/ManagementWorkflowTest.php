@@ -132,7 +132,7 @@ class ManagementWorkflowTest extends TestCase
     public function test_purchase_order_combines_items_and_computes_total(): void
     {
         $id = $this->createItem();
-        $request = $this->postJson('/api/purchase-requests', ['category' => 'Medical', 'lines' => [['productId' => $id, 'qty' => 2], ['productId' => $id, 'qty' => 3]]])->assertCreated()->json('id');
+        $request = $this->postJson('/api/purchase-requests', ['category' => 'Medical', 'lines' => [['supplierId' => 1, 'productId' => $id, 'qty' => 2], ['supplierId' => 1, 'productId' => $id, 'qty' => 3]]])->assertCreated()->json('id');
         $this->assertDatabaseCount('item_request_lines', 1);
         $this->actingAs($this->admin)->patchJson('/api/purchase-requests/'.$request, ['action' => 'modify', 'note' => 'Adjusted for current demand.', 'lines' => [['productId' => $id, 'qty' => 4]]])->assertOk();
         $this->assertDatabaseHas('item_requests', ['id' => $request, 'status' => 'Pending Approval', 'adminNote' => 'Adjusted for current demand.']);
@@ -182,7 +182,7 @@ class ManagementWorkflowTest extends TestCase
     public function test_pending_request_blocks_manager_deactivation(): void
     {
         $id = $this->createItem();
-        $this->postJson('/api/purchase-requests', ['category' => 'Medical', 'lines' => [['productId' => $id, 'qty' => 1]]])->assertCreated();
+        $this->postJson('/api/purchase-requests', ['category' => 'Medical', 'lines' => [['supplierId' => 1, 'productId' => $id, 'qty' => 1]]])->assertCreated();
         $this->actingAs($this->admin)->patchJson('/api/accounts/manager/'.$this->manager->id, ['status' => 'Inactive'])->assertUnprocessable();
     }
 

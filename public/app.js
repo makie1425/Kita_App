@@ -1417,7 +1417,9 @@ class Component extends DCLogic {
   });
   submitPurchase=async()=>{
     if(this.purchaseBusy)return;
-    const lines=this.state.newReqCart.map(l=>({productId:l.productId,qty:Number(l.qty),supplierId:Number(this.state.newReqSupplier||l.supplierId),orderUnit:l.orderUnit||this.purchaseUnit(l),...(l.orderUnit==='Box'&&['piece','pieces'].includes(this.purchaseUnit(l).toLowerCase())?{piecesPerBox:Number(l.piecesPerBox)}:{})}));
+    const supplierId=Number(this.state.newReqSupplier);
+    if(!Number.isInteger(supplierId)||supplierId<=0){this.toast('Select a supplier before submitting the purchase request.','error');return;}
+    const lines=this.state.newReqCart.map(l=>({productId:l.productId,qty:Number(l.qty),supplierId,orderUnit:l.orderUnit||this.purchaseUnit(l),...(l.orderUnit==='Box'&&['piece','pieces'].includes(this.purchaseUnit(l).toLowerCase())?{piecesPerBox:Number(l.piecesPerBox)}:{})}));
     if(lines.some(l=>Object.hasOwn(l,'piecesPerBox')&&(!Number.isInteger(l.piecesPerBox)||l.piecesPerBox<1||l.qty*l.piecesPerBox>1000000))){this.toast('Enter positive whole pieces per box. Total pieces cannot exceed 1,000,000.','error');return;}
     if(!lines.length||lines.some(l=>!l.supplierId||!Number.isInteger(l.qty)||l.qty<=0)||new Set(lines.map(l=>l.supplierId)).size!==1){this.toast('Add positive whole quantities and select one supplier for this PO.','error');return;}
     this.purchaseBusy=true;
