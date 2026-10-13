@@ -65,9 +65,10 @@ class PurchaseWorkflowTest extends TestCase
         $this->assertDatabaseCount('receiving_records', 0);
         $body['lines'][0]['manufacturedDate'] = now()->subDays(3)->toDateString();
         $body['lines'][0]['expiryDate'] = now()->addDays(7)->toDateString();
+        $body['lines'][0]['lotNumber'] = 'LOT-RECEIVED';
         $this->postJson('/api/purchase-orders/'.$id.'/receive', $body)->assertCreated();
         foreach (['inventory_batches', 'receiving_record_lines'] as $table) {
-            $this->assertDatabaseHas($table, ['productId' => $this->product, 'manufacturedDate' => $body['lines'][0]['manufacturedDate'], 'expiryDate' => $body['lines'][0]['expiryDate']]);
+            $this->assertDatabaseHas($table, ['productId' => $this->product, 'lotNumber' => 'LOT-RECEIVED', 'manufacturedDate' => $body['lines'][0]['manufacturedDate'], 'expiryDate' => $body['lines'][0]['expiryDate']]);
         }
         $this->postJson('/api/purchase-orders/'.$id.'/receive', $body)->assertOk();
         $this->assertDatabaseCount('inventory_batches', 1);

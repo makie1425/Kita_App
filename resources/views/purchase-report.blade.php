@@ -58,7 +58,12 @@
         @else
             <p class="muted">No inspection snapshot was recorded for this legacy delivery.</p>
         @endif
-        <p class="notes">{{ $receipt->outcome ?: 'No receiving remarks.' }}</p></section>
+        <p class="notes">{{ $receipt->outcome ?: 'No receiving remarks.' }}</p>
+        @foreach($supplierContacts->get($receipt->id, collect()) as $contact)
+            <p class="notes"><strong>Supplier contact:</strong> {{ $contact->contactDate }} · {{ $contact->channel }} · {{ $contact->person }}<br>
+            {{ $contact->notes }}<br>Outcome: {{ $contact->outcome }}<br>Recorded by: {{ $contact->actor }}</p>
+        @endforeach
+        </section>
     @empty<p>No deliveries recorded.</p>@endforelse
     <h2>Notes / remarks</h2><p class="notes">{{ $purchase?->notes ?: 'No request notes.' }}</p><p class="notes">Admin: {{ $purchase?->adminNote ?: 'No review notes.' }}</p>
     <section class="signatures"><div class="signature">Prepared / Received By<br>Signature: _____________________<br>Date: _________________________</div><div class="signature">Approved / Verified By<br>{{ $purchase?->approvedBy }}<br>Signature: _____________________<br>Date: _________________________</div></section>

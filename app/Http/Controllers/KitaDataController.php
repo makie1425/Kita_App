@@ -20,6 +20,7 @@ class KitaDataController extends Controller
                 'CATEGORIES' => $this->rows($pdo, 'SELECT name, status, classification, archivedAt, archivedBy FROM categories ORDER BY created_at DESC, name'),
                 'PRODUCTS' => $this->products($pdo),
                 'EXPIRING_BATCHES' => \App\Services\ExpiryMonitoring::batches(),
+                'EXPIRY_ALERT_DAYS' => \App\Services\ExpiryMonitoring::days(),
                 'BRANDS' => DB::table('brands')->orderByDesc('id')->get(),
                 'SUBCATEGORIES' => DB::table('subcategories')->orderByDesc('id')->get(),
                 'SUPPLIERS' => $this->suppliers($pdo),

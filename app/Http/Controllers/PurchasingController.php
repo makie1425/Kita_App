@@ -28,7 +28,9 @@ class PurchasingController extends Controller
         $lines = DB::table('purchase_order_lines')->orderBy('id')->get()->groupBy('poId');
         $receipts = DB::table('receiving_records')->orderByDesc('received_at')->orderByDesc('id')->get();
         $receiptLines = DB::table('receiving_record_lines')->orderBy('id')->get()->groupBy('receivingId');
+        $contacts = DB::table('supplier_contacts')->orderByDesc('id')->get()->groupBy('receiptId');
         foreach ($receipts as $receipt) {
+            $receipt->contacts = $contacts->get($receipt->id, collect());
             $receipt->lines = $receiptLines->get($receipt->id, collect());
             unset($receipt->payloadHash, $receipt->idempotencyKey);
         }
@@ -56,6 +58,7 @@ class PurchasingController extends Controller
             'lines.*.sellingPrice' => ['sometimes', ...InventoryRules::moneyRules()],
             'lines.*.batchNumber' => ['nullable', 'string', 'max:80'],
             'lines.*.expiryDate' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:receivedDate'],
+            'lines.*.lotNumber' => ['nullable', 'string', 'max:40'],
             'lines.*.manufacturedDate' => ['nullable', 'date_format:Y-m-d', 'before_or_equal:receivedDate'],
         ]);
         // Generated from the PO and receiving version; ignore client-supplied references.
@@ -112,7 +115,7 @@ class PurchasingController extends Controller
                 $cost = (float) ($line['unitCost'] ?? $ordered->unitCost);
                 $receivedCents += (int) round(InventoryRules::lineTotal($line['qty'], $cost) * 100);
                 FifoInventory::opening($product->id, (int) $product->stock);
-                FifoInventory::receive($product->id, $line['qty'], $cost, $data['receivedDate'], $receiptId, $order->supplierId, 'purchase_receiving', $line['batchNumber'] ?? null, $line['expiryDate'] ?? null, $line['manufacturedDate'] ?? null);
+                FifoInventory::receive($product->id, $line['qty'], $cost, $data['receivedDate'], $receiptId, $order->supplierId, 'purchase_receiving', $line['batchNumber'] ?? null, $line['expiryDate'] ?? null, $line['manufacturedDate'] ?? null, $line['lotNumber'] ?? null);
                 $sellingPrice = (float) ($line['sellingPrice'] ?? $product->price);
                 DB::table('products')->where('id', $product->id)->update(['stock' => $after, 'unitPrice' => $cost, 'price' => $sellingPrice]);
                 if ((float) $product->price !== $sellingPrice || (float) $product->unitPrice !== $cost) {
@@ -129,6 +132,7 @@ class PurchasingController extends Controller
                     'unit' => $ordered->unit ?? ($product->stockUnit ?: $product->unit), 'conditionText' => 'Accepted',
                     'unitCost' => $cost, 'batchNumber' => $line['batchNumber'] ?? null, 'expiryDate' => $line['expiryDate'] ?? null,
                     'manufacturedDate' => $line['manufacturedDate'] ?? null,
+                    'lotNumber' => $line['lotNumber'] ?? null,
                 ]);
             }
             $matches = $orderLines->every(fn ($line) => (int) $line->deliveredQty === (int) $line->orderedQty);
@@ -210,7 +214,8 @@ class PurchasingController extends Controller
         $lines = DB::table('purchase_order_lines')->where('poId', $id)->orderBy('id')->get();
         $receipts = DB::table('receiving_records')->where('poId', $id)->orderBy('received_at')->orderBy('id')->get();
         $receiptLines = DB::table('receiving_record_lines')->whereIn('receivingId', $receipts->pluck('id'))->get()->groupBy('receivingId');
+        $supplierContacts = DB::table('supplier_contacts')->whereIn('receiptId', $receipts->pluck('id'))->orderBy('id')->get()->groupBy('receiptId');
 
-        return response()->view('purchase-report', compact('order', 'purchase', 'supplier', 'lines', 'receipts', 'receiptLines'))->header('Cache-Control', 'private, no-store');
+        return response()->view('purchase-report', compact('order', 'purchase', 'supplier', 'lines', 'receipts', 'receiptLines', 'supplierContacts'))->header('Cache-Control', 'private, no-store');
     }
 }

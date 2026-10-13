@@ -22,7 +22,13 @@ class InventoryAvailabilityController extends Controller
                 $products = InventoryAvailability::products($query->get()->map(fn ($p) => (array) $p)->all());
             }
 
-            return response()->json(['products' => $products, 'businessDate' => now()->toDateString(), 'checkedAt' => now()->toIso8601String()])->header('Cache-Control', 'private, no-store');
+            $promotions = DB::table('promotions')->where('startDate', '<=', now()->toDateString())
+                ->where('endDate', '>=', now()->toDateString())->orderBy('id')->get();
+            $links = DB::table('promotion_products')->whereIn('promotionId', $promotions->pluck('id'))->get()->groupBy('promotionId');
+            foreach ($promotions as $promotion) {
+                $promotion->productIds = ($links->get($promotion->id) ?? collect())->pluck('productId')->all();
+            }
+            return response()->json(['products' => $products, 'activePromotions' => $promotions, 'businessDate' => now()->toDateString(), 'checkedAt' => now()->toIso8601String()])->header('Cache-Control', 'private, no-store');
         });
     }
 }

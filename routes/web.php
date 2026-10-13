@@ -29,6 +29,14 @@ Route::middleware('role:super_admin')->prefix('api/backups')->group(function () 
 
 Route::get('/api/kita-data', KitaDataController::class)->middleware('role:cashier,manager,admin,super_admin')->name('kita.data');
 Route::get('/api/inventory/availability', \App\Http\Controllers\InventoryAvailabilityController::class)->middleware('role:cashier,manager,admin,super_admin');
+Route::post('/api/price-overrides/decline', [\App\Http\Controllers\ManagerWorkflowController::class, 'declineOverride'])->middleware('role:cashier,manager');
+Route::middleware('role:manager,admin')->group(function () {
+    Route::post('/api/promotions', [\App\Http\Controllers\ManagerWorkflowController::class, 'promotion']);
+    Route::patch('/api/inventory/expiry-settings', [\App\Http\Controllers\ManagerWorkflowController::class, 'expirySettings']);
+    Route::get('/api/inventory/recall-trace', [\App\Http\Controllers\ManagerWorkflowController::class, 'trace']);
+    Route::get('/api/inventory/adjustments/{id}/evidence', [\App\Http\Controllers\ManagerWorkflowController::class, 'evidence']);
+    Route::post('/api/receipts/{id}/supplier-contacts', [\App\Http\Controllers\ManagerWorkflowController::class, 'contact']);
+});
 Route::middleware('role:cashier,manager')->group(function () {
     Route::get('/api/transactions/{uuid}', [TransactionController::class, 'show']);
     Route::post('/api/transactions', [TransactionController::class, 'store'])->name('transactions.store');

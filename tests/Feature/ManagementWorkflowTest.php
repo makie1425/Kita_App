@@ -42,7 +42,8 @@ class ManagementWorkflowTest extends TestCase
         $this->assertDatabaseHas('products', ['id' => $id, 'cost' => 0, 'unitPrice' => 3.25, 'registrationQuantity' => 0, 'stock' => 0]);
         $this->postJson('/api/products', $this->item(['id' => $id, 'barcode' => 'NEW']))->assertUnprocessable()->assertJsonValidationErrors('id');
         $this->postJson('/api/products', $this->item())->assertUnprocessable()->assertJsonValidationErrors('barcode');
-        $id2 = $this->postJson('/api/products', $this->item(['barcode' => 'MASK002']))->assertCreated()->json('product.id');
+        $this->postJson('/api/products', $this->item(['barcode' => 'MASK002']))->assertUnprocessable()->assertJsonValidationErrors('name');
+        $id2 = $this->postJson('/api/products', $this->item(['name' => 'Face shield', 'barcode' => 'SHIELD001']))->assertCreated()->json('product.id');
         $this->assertNotEquals($id, $id2);
         $this->assertDatabaseCount('stock_movements', 0);
     }

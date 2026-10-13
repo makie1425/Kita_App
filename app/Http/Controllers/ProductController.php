@@ -21,6 +21,7 @@ class ProductController extends Controller
                 InventoryRules::lockActor($request);
                 // Both automatic and manual registrations serialize on this existing row.
                 $sequence = DB::table('inventory_sequences')->where('name', 'products')->lockForUpdate()->first();
+                $this->validateVariant($validated);
                 $this->rejectExistingProduct($validated);
                 $latest = max((int) $sequence->lastValue, (int) DB::table('products')->max('id'));
                 $id = isset($validated['id']) ? (int) $validated['id'] : $latest + 1;
@@ -55,6 +56,8 @@ class ProductController extends Controller
         $validated = $this->validateProduct($request, (int) $id);
         try {
             $product = DB::transaction(function () use ($validated, $id, $request): object {
+                InventoryRules::lockActor($request);
+                DB::table('inventory_sequences')->where('name', 'products')->lockForUpdate()->first();
                 $existing = DB::table('products')->where('id', $id)->lockForUpdate()->first();
                 abort_unless($existing, 404, 'Product not found.');
                 if (isset($validated['id']) && (int) $validated['id'] !== (int) $id) {
@@ -65,11 +68,12 @@ class ProductController extends Controller
                 }
                 $validated['stock'] = (int) $existing->stock;
                 $values = $this->productValues($validated);
-                foreach (['brandId', 'subcategoryId', 'size', 'sizeUnit', 'minStock'] as $field) {
+                foreach (['brandId', 'subcategoryId', 'size', 'sizeUnit', 'minStock', 'parentId', 'variantLabel'] as $field) {
                     if (! array_key_exists($field, $validated)) {
                         $values[$field] = $existing->{$field};
                     }
                 }
+                $this->validateVariant($values, (int) $id);
                 if ($values['subcategoryId'] && ! DB::table('subcategories')->where('id', $values['subcategoryId'])->where('category', $values['category'])->exists()) {
                     throw ValidationException::withMessages(['subcategoryId' => 'Choose a subcategory belonging to the selected category.']);
                 }
@@ -105,9 +109,11 @@ class ProductController extends Controller
     {
         $normalize = fn ($value) => mb_strtolower(preg_replace('/\s+/u', ' ', trim((string) $value)));
         $candidates = DB::table('products')->where('brandId', $values['brandId'] ?? null)
-            ->where('size', $values['size'] ?? null)->get(['id', 'name', 'sizeUnit', 'stockUnit', 'status']);
+            ->where('parentId', $values['parentId'] ?? null)
+            ->where('size', $values['size'] ?? null)->get(['id', 'name', 'sizeUnit', 'stockUnit', 'status', 'variantLabel']);
         foreach ($candidates as $product) {
             if ($normalize($product->name) === $normalize($values['name'])
+                && $normalize($product->variantLabel) === $normalize($values['variantLabel'] ?? '')
                 && $normalize($product->sizeUnit) === $normalize($values['sizeUnit'] ?? '')
                 && $normalize($product->stockUnit) === $normalize($values['stockUnit'])) {
                 throw ValidationException::withMessages(['name' => 'This product already exists in inventory (Stock ID '.$product->id.'). Use the existing product to receive stock or edit its details.']);
@@ -125,6 +131,8 @@ class ProductController extends Controller
         $validated = $request->validate([
             'id' => ['nullable', 'integer', 'min:1', 'max:2147483647', Rule::unique('products', 'id')->ignore($id)],
             'name' => ['required', 'string', 'max:160'],
+            'parentId' => ['nullable', 'integer', 'exists:products,id'],
+            'variantLabel' => ['nullable', 'string', 'max:80'],
             'category' => ['required', 'string', Rule::exists('categories', 'name')->where('status', 'Active')->whereNull('archivedAt')],
             'vatClass' => ['nullable', Rule::in(['VATable', 'VAT-Exempt', 'Zero-Rated'])],
             'price' => InventoryRules::moneyRules(),
@@ -163,6 +171,7 @@ class ProductController extends Controller
     {
         return [
             'name' => $validated['name'], 'category' => $validated['category'], 'vatClass' => $validated['vatClass'],
+            'parentId' => $validated['parentId'] ?? null, 'variantLabel' => trim($validated['variantLabel'] ?? ''),
             'price' => $validated['price'], 'unitPrice' => $validated['unitPrice'], 'cost' => $validated['cost'],
             'stock' => $validated['stock'] ?? 0,
             'brandId' => $validated['brandId'] ?? null, 'subcategoryId' => $validated['subcategoryId'] ?? null,
@@ -172,6 +181,30 @@ class ProductController extends Controller
             'purchaseUnit' => trim($validated['purchaseUnit']), 'stockUnit' => trim($validated['stockUnit']),
             'conversionFactor' => $validated['conversionFactor'],
         ];
+    }
+
+    private function validateVariant(array $values, ?int $id = null): void
+    {
+        $parentId = $values['parentId'] ?? null;
+        $label = trim($values['variantLabel'] ?? '');
+        if (!$parentId) {
+            if ($id && DB::table('products')->where('parentId', $id)->where('category', '!=', $values['category'])->exists()) {
+                throw ValidationException::withMessages(['category' => 'A parent product and its variants must remain in the same category.']);
+            }
+            if ($label !== '') {
+                throw ValidationException::withMessages(['parentId' => 'Select a parent product for this variant.']);
+            }
+            return;
+        }
+        $parent = InventoryRules::product((int) $parentId, 'parentId');
+        if ($parentId == $id || $parent->parentId || $parent->category !== $values['category'] || !$label
+            || ($id && DB::table('products')->where('parentId', $id)->exists())) {
+            throw ValidationException::withMessages(['parentId' => 'Choose an active main product in the same category and enter a variant label. Nested or circular variants are not allowed.']);
+        }
+        if (DB::table('products')->where('parentId', $parentId)->when($id, fn ($q) => $q->where('id', '!=', $id))
+            ->whereRaw('LOWER(TRIM(variantLabel)) = ?', [mb_strtolower($label)])->exists()) {
+            throw ValidationException::withMessages(['variantLabel' => 'This variant already exists under the selected product.']);
+        }
     }
 
     private function handleDuplicate(QueryException $exception): never

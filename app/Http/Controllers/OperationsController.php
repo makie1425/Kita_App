@@ -23,18 +23,23 @@ class OperationsController extends Controller
             'productId' => ['required', 'integer', 'min:1'],
             'qtyChange' => ['required', 'integer', 'not_in:0', 'between:-2147483647,-1'],
             'reason' => ['required', 'string', 'max:80'], 'comment' => ['required', 'string', 'max:2000'], 'photo' => ['sometimes', 'boolean'],
+            'evidence' => ['nullable', 'string', 'max:2800000'],
         ]);
+        $evidence = \App\Services\AdjustmentEvidence::decode($data['evidence'] ?? null);
         $id = $data['id'] ?? 'ADJ-'.Str::ulid();
-        DB::transaction(function () use ($request, $data, $id) {
+        DB::transaction(function () use ($request, $data, $id, $evidence) {
             InventoryRules::lockActor($request);
             $product = InventoryRules::product($data['productId']);
             $this->stockAfter($product->stock, $data['qtyChange']);
             DB::table('adjustments')->insert([
                 'id' => $id, 'productId' => $product->id, 'qtyChange' => $data['qtyChange'],
-                'reason' => $data['reason'], 'comment' => $data['comment'], 'photo' => $data['photo'] ?? false,
+                'reason' => $data['reason'], 'comment' => $data['comment'], 'photo' => $evidence !== null,
                 'status' => 'Pending Admin Approval', 'date' => now()->toDateString(), 'remarks' => 'Submitted by '.$request->user()->name,
                 'requestedById' => $request->user()->id, 'requestedByRole' => $request->user()->role,
             ]);
+            if ($evidence) {
+                DB::table('adjustment_evidence')->insert(['adjustmentId' => $id] + $evidence);
+            }
             InventoryRules::audit($request->user()->name, 'Submitted adjustment', $id, null, 'Pending Admin Approval');
             WorkflowNotifications::send([...WorkflowNotifications::reviewers(), $request->user()], $request->user(),
                 'Inventory approval requested', $request->user()->name.' submitted adjustment '.$id.' for approval.', 'adjustment', $id);

@@ -16,11 +16,11 @@ class FifoInventory
         }
     }
 
-    public static function receive(int $id, int $qty, float $cost, string $date, ?string $receipt = null, ?int $supplier = null, string $source = 'purchase_receiving', ?string $batch = null, ?string $expiry = null, ?string $manufactured = null): void
+    public static function receive(int $id, int $qty, float $cost, string $date, ?string $receipt = null, ?int $supplier = null, string $source = 'purchase_receiving', ?string $batch = null, ?string $expiry = null, ?string $manufactured = null, ?string $lot = null): void
     {
         DB::table('inventory_batches')->insert(['productId' => $id, 'quantityReceived' => $qty, 'quantityRemaining' => $qty,
             'unitCost' => $cost, 'receivedDate' => $date, 'receiptId' => $receipt, 'supplierId' => $supplier, 'source' => $source,
-            'batchNumber' => $batch, 'expiryDate' => $expiry, 'manufacturedDate' => $manufactured, 'created_at' => now()]);
+            'batchNumber' => $batch, 'expiryDate' => $expiry, 'manufacturedDate' => $manufactured, 'lotNumber' => $lot, 'created_at' => now()]);
     }
 
     public static function consume(int $id, int $qty, string $type, string $reference): void

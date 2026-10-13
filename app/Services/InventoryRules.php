@@ -55,7 +55,7 @@ class InventoryRules
         $brand = empty($product->brandId) ? null : DB::table('brands')->where('id', $product->brandId)->value('name');
         $size = empty($product->size) ? null : (string) (float) $product->size;
 
-        return implode(' ', array_filter([$product->name, $brand, $size, $product->sizeUnit ?? null], fn ($v) => $v !== null && $v !== ''));
+        return implode(' ', array_filter([$product->name, $product->variantLabel ?? null, $brand, $size, $product->sizeUnit ?? null], fn ($v) => $v !== null && $v !== ''));
     }
 
     public static function unitCost(object $product, string $field = 'lines'): float

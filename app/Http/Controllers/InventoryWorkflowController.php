@@ -35,13 +35,18 @@ class InventoryWorkflowController extends Controller
     {
         InventoryRules::authorize($r);
         $d = $r->validate(['requestKey' => ['required', 'uuid'], 'batchId' => ['required', 'integer', 'exists:inventory_batches,id'],
-            'type' => ['required', Rule::in(['Write-off', 'Disposal', 'Transfer', 'Recall', 'Release recall'])], 'quantity' => ['required', 'integer', 'min:0', 'max:1000000'],
+            'type' => ['required', Rule::in(['Write-off', 'Disposal', 'Transfer', 'Supplier return', 'Recall', 'Release recall'])], 'quantity' => ['required', 'integer', 'min:0', 'max:1000000'],
             'destination' => ['required_if:type,Transfer', 'nullable', 'string', 'max:255'], 'reason' => ['required', 'string', 'max:2000']]);
 
         return DB::transaction(function () use ($r, $d) {
             InventoryRules::lockActor($r);
             $info = DB::table('inventory_batches')->where('id', $d['batchId'])->first();
             $p = InventoryRules::product($info->productId);
+            if ($d['type'] === 'Supplier return') {
+                $supplier = DB::table('suppliers')->where('id', $info->supplierId)->first();
+                abort_unless($supplier, 422, 'This batch has no recorded supplier. Reconcile its source before returning it.');
+                $d['destination'] = $supplier->name;
+            }
             $old = DB::table('inventory_events')->where('requestKey', $d['requestKey'])->first();
             if ($old) {
                 foreach (['batchId', 'type', 'quantity', 'reason'] as $field) {
