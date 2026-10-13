@@ -1121,3 +1121,49 @@ label.field-group { display:flex; flex-direction:column; gap:8px; font-size:13px
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
 }
+
+/* Keep evidence controls on separate, aligned rows within the adjustment form. */
+.adjustment-evidence {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  margin: 4px 0 16px;
+}
+.adjustment-evidence > label { font-size: 12px; font-weight: 700; color: #475467; }
+.adjustment-evidence > input[type="file"] {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 6px;
+  border: 1px solid #d0d5dd;
+  border-radius: 7px;
+  background: #fff;
+  font: inherit;
+  font-size: 12px;
+  line-height: 28px;
+}
+.adjustment-evidence > input[type="file"]::file-selector-button {
+  margin: 0 12px 0 0;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 5px;
+  background: #eaf0ff;
+  color: #1747e8;
+  font: inherit;
+  font-weight: 600;
+  line-height: 20px;
+  cursor: pointer;
+}
+.adjustment-evidence > small { color: #667085; font-size: 12px; }
+.adjustment-evidence > img {
+  display: block;
+  max-width: min(180px, 100%);
+  max-height: 140px;
+  object-fit: contain;
+  border-radius: 7px;
+}
