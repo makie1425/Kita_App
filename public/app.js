@@ -1553,7 +1553,7 @@ class Component extends DCLogic {
           React.createElement("p",{style:{margin:"0 0 8px",fontSize:13,color:COLORS.textSoft}},"Purchasing a product that is not in inventory yet?"),
           btn("Register Product First",()=>{this.setState({itemPickerOpen:false,regEditing:null,regStockId:""});this.goScreen("mgrRegistration")();},"primary")
         ]),
-        lowStockCount>0?React.createElement("div",{key:"banner",style:{background:COLORS.redBg,color:COLORS.red,padding:"8px 12px",borderRadius:8,fontSize:12,fontWeight:700,marginBottom:10}},`âš  ${lowStockCount} item(s) are currently low on stock â€” consider adding them to this request.`):null,
+        lowStockCount>0?React.createElement("div",{key:"banner",style:{background:COLORS.redBg,color:COLORS.red,padding:"8px 12px",borderRadius:8,fontSize:12,fontWeight:700,marginBottom:10}},`${lowStockCount} item(s) are currently low on stock - consider adding them to this request.`):null,
         React.createElement("div",{key:"filters",style:{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:8,marginBottom:8,minWidth:0}},[
           React.createElement("input",{key:"s",value:itemPickerSearch,onChange:this.setItemPickerSearch,placeholder:"Searchâ€¦",style:{padding:8,border:"1px solid "+COLORS.border,borderRadius:7}}),
           React.createElement("select",{key:"c",value:itemPickerFilterCategory,onChange:this.setItemPickerFilterCategory,style:{padding:8,border:"1px solid "+COLORS.border,borderRadius:7}},[React.createElement("option",{key:"-",value:""},"All Categories"),...data.CATEGORIES.filter(c=>c.status==="Active").map(c=>React.createElement("option",{key:c.name,value:c.name},c.name))]),
@@ -1567,7 +1567,7 @@ class Component extends DCLogic {
             return React.createElement("label",{key:p.id,style:{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderBottom:"1px solid #eef1f6",cursor:"pointer",background:low?COLORS.redBg:"transparent"}},[
               React.createElement("input",{key:"cb",type:"checkbox",checked:!!itemPickerChecked[p.id],onChange:this.toggleItemPickerCheck(p.id)}),
               React.createElement("div",{key:"n",style:{flex:1}},[
-                React.createElement("div",{key:"nm",style:{fontSize:13,fontWeight:600,color:low?COLORS.red:COLORS.text}},[low?"âš  ":"",p.name," â€” ",React.createElement("span",{key:"s",style:{color:low?COLORS.red:COLORS.textSoft,fontWeight:700}},p.stock+" left"),` (min: ${p.minStock})`]),
+                React.createElement("div",{key:"nm",style:{fontSize:13,fontWeight:600,color:low?COLORS.red:COLORS.text}},[p.name," - ",React.createElement("span",{key:"s",style:{color:low?COLORS.red:COLORS.textSoft,fontWeight:700}},p.stock+" left"),` (min: ${p.minStock})`]),
                 React.createElement("div",{key:"c",style:{fontSize:11,color:low?COLORS.red:COLORS.textMuted}},p.category),
               ]),
               React.createElement("div",{key:"p",style:{fontSize:12,fontWeight:700,color:COLORS.textSoft}},peso(p.price)),
