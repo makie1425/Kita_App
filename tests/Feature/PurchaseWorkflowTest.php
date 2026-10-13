@@ -80,6 +80,24 @@ class PurchaseWorkflowTest extends TestCase
             ->assertOk()->assertJsonPath('poId', $id)->assertJsonPath('status', PurchaseWorkflow::WAITING);
     }
 
+    public function test_box_requests_convert_to_pieces_and_validate_pack_size(): void
+    {
+        $body = ['category' => 'Supplies', 'lines' => [['productId' => $this->product, 'supplierId' => $this->supplier, 'qty' => 2, 'orderUnit' => 'Box']]];
+        $this->postJson('/api/purchase-requests', $body)->assertUnprocessable();
+        $body['lines'][0]['piecesPerBox'] = 12;
+        $id = $this->postJson('/api/purchase-requests', $body)->assertCreated()->json('id');
+        $this->assertDatabaseHas('item_request_lines', ['requestId' => $id, 'qty' => 24, 'unit' => 'Piece']);
+        $this->approve($id);
+        $this->assertDatabaseHas('purchase_order_lines', ['poId' => $id, 'orderedQty' => 24, 'unit' => 'Piece']);
+        $this->actingAs($this->manager);
+        $body['lines'][0]['piecesPerBox'] = 1000000;
+        $this->postJson('/api/purchase-requests', $body)->assertUnprocessable();
+        $body['lines'][0]['orderUnit'] = 'Piece';
+        unset($body['lines'][0]['piecesPerBox']);
+        $id = $this->postJson('/api/purchase-requests', $body)->assertCreated()->json('id');
+        $this->assertDatabaseHas('item_request_lines', ['requestId' => $id, 'qty' => 2, 'unit' => 'Piece']);
+    }
+
     private function delivery(int $qty = 4, int $version = 0): array
     {
         return ['idempotencyKey' => (string) Str::uuid(), 'version' => $version,

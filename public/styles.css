@@ -1189,3 +1189,9 @@ body:has(.purchase-details-dialog[open]) { overflow: hidden; }
 @media (max-width: 600px) {
   .purchase-details-dialog { padding: 16px; max-height: calc(100dvh - 24px); }
 }
+
+.request-unit-control { display:flex; flex-wrap:wrap; align-items:center; gap:10px; }
+.request-unit-control > select { min-width:100px; }
+.request-unit-control > label { display:flex; flex-direction:column; gap:4px; font-size:12px; }
+.request-unit-control > label > input { width:130px; min-width:0; }
+.request-unit-control > small { flex-basis:100%; color:#667085; }

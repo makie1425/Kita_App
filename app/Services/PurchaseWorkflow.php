@@ -23,6 +23,8 @@ class PurchaseWorkflow
             'lines.*.productId' => ['required', 'integer', 'min:1'],
             'lines.*.qty' => ['required', 'integer', 'between:1,1000000'],
             'lines.*.supplierId' => ['nullable', 'integer'],
+            'lines.*.orderUnit' => ['sometimes', 'string', 'max:40'],
+            'lines.*.piecesPerBox' => ['nullable', 'integer', 'between:1,1000000'],
         ]);
         $hash = hash('sha256', json_encode($data));
 
@@ -57,7 +59,19 @@ class PurchaseWorkflow
                 if ($lines && (int) reset($lines)['supplierId'] !== (int) $supplierId) {
                     throw ValidationException::withMessages(['lines' => 'Use one supplier per PO. Submit a separate request for another supplier.']);
                 }
-                $qty = ($lines[$product->id]['qty'] ?? 0) + $line['qty'];
+                $stockUnit = $product->stockUnit ?: $product->unit;
+                $orderUnit = $line['orderUnit'] ?? $stockUnit;
+                $pieceStock = in_array(strtolower($stockUnit ?? ''), ['piece', 'pieces'], true);
+                $factor = 1;
+                if ($orderUnit === 'Box' && $pieceStock) {
+                    if (empty($line['piecesPerBox'])) {
+                        throw ValidationException::withMessages(['lines' => 'Enter the number of pieces per box.']);
+                    }
+                    $factor = $line['piecesPerBox'];
+                } elseif ($orderUnit !== $stockUnit && !($pieceStock && $orderUnit === 'Piece')) {
+                    throw ValidationException::withMessages(['lines' => 'Choose the inventory unit, or Box for products stocked in pieces.']);
+                }
+                $qty = ($lines[$product->id]['qty'] ?? 0) + $line['qty'] * $factor;
                 if ($qty > 1000000) {
                     throw ValidationException::withMessages(['lines' => 'Total quantity per item must not exceed 1,000,000.']);
                 }
@@ -76,7 +90,7 @@ class PurchaseWorkflow
                 'submissionKey' => $data['submissionKey'] ?? null, 'submissionHash' => $hash,
             ]);
             DB::table('item_request_lines')->insert(array_values($lines));
-            InventoryRules::audit($request->user()->name, 'Submitted purchase request', $id, null, 'Pending Approval');
+            InventoryRules::audit($request->user()->name, 'Submitted purchase request', $id, null, json_encode(['status' => 'Pending Approval', 'requestedLines' => $data['lines']]));
             WorkflowNotifications::send([...WorkflowNotifications::reviewers(), $request->user()], $request->user(), 'Purchase request submitted',
                 $request->user()->name.' submitted PO '.$id.' for approval.', 'purchase', $id);
 

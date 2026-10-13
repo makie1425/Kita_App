@@ -1032,6 +1032,15 @@ class Component extends DCLogic {
     this.toast(`${added.length} item(s) added to the request.`);
   };
   setReqCartQty=i=>e=>{ const val=e.target.value; this.setState(s=>({newReqCart:s.newReqCart.map((l,idx)=>idx===i?{...l,qty:val}:l)})); };
+  setRequestUnitField=(i,field,value)=>{this.purchaseSubmissionKey=null;this.setState(s=>({newReqCart:s.newReqCart.map((l,n)=>n===i?{...l,[field]:value,...(field==='orderUnit'?{piecesPerBox:''}:{})}:l)}));};
+  buildRequestUnit(line,index){
+    const h=React.createElement,stockUnit=this.purchaseUnit(line),pieceStock=['piece','pieces'].includes(stockUnit.toLowerCase()),unit=line.orderUnit||(pieceStock?'Piece':stockUnit);
+    return h('div',{className:'request-unit-control'},[
+      h('select',{'aria-label':'Unit for '+line.name,value:unit,onChange:e=>this.setRequestUnitField(index,'orderUnit',e.target.value)},(pieceStock?['Piece','Box']:[stockUnit]).map(value=>h('option',{key:value,value},value))),
+      pieceStock&&unit==='Box'?h('label',null,['Pieces per box',h('input',{'aria-label':'Pieces per box for '+line.name,type:'number',min:1,max:1000000,step:1,required:true,value:line.piecesPerBox||'',onChange:e=>this.setRequestUnitField(index,'piecesPerBox',e.target.value)})]):null,
+      pieceStock&&unit==='Box'&&Number(line.piecesPerBox)>0?h('small',null,Number(line.qty)*Number(line.piecesPerBox)+' pieces total'):null
+    ]);
+  }
   toggleRolePerm=(mi,ri)=>()=>this.setState(s=>{ const grid=s.rolesMatrix.grid.map((row,i)=>i===mi?{...row,cells:row.cells.map((c,j)=>j===ri?(c?0:1):c)}:row); return {rolesMatrix:{...s.rolesMatrix,grid}}; });
   reloadBackups=async()=>{
     this.setState({backupLoading:true,backupError:""});
@@ -1408,7 +1417,8 @@ class Component extends DCLogic {
   });
   submitPurchase=async()=>{
     if(this.purchaseBusy)return;
-    const lines=this.state.newReqCart.map(l=>({productId:l.productId,qty:Number(l.qty),supplierId:Number(this.state.newReqSupplier||l.supplierId)}));
+    const lines=this.state.newReqCart.map(l=>({productId:l.productId,qty:Number(l.qty),supplierId:Number(this.state.newReqSupplier||l.supplierId),orderUnit:l.orderUnit||this.purchaseUnit(l),...(l.orderUnit==='Box'&&['piece','pieces'].includes(this.purchaseUnit(l).toLowerCase())?{piecesPerBox:Number(l.piecesPerBox)}:{})}));
+    if(lines.some(l=>Object.hasOwn(l,'piecesPerBox')&&(!Number.isInteger(l.piecesPerBox)||l.piecesPerBox<1||l.qty*l.piecesPerBox>1000000))){this.toast('Enter positive whole pieces per box. Total pieces cannot exceed 1,000,000.','error');return;}
     if(!lines.length||lines.some(l=>!l.supplierId||!Number.isInteger(l.qty)||l.qty<=0)||new Set(lines.map(l=>l.supplierId)).size!==1){this.toast('Add positive whole quantities and select one supplier for this PO.','error');return;}
     this.purchaseBusy=true;
     // The database assigns the PO number; retain a separate retry key after network errors.
@@ -1442,7 +1452,7 @@ class Component extends DCLogic {
     return h('div',null,[sectionTitle('Create Purchase Request','Choose one supplier per PO. Quantities are in inventory units; stock changes only after receiving.'),
       h('div',{className:'purchase-filters'},[h('label',null,['Supplier',h('select',{value:s.newReqSupplier||'',onChange:e=>this.setState({newReqSupplier:e.target.value})},[h('option',{value:''},'Select supplier'),...s.data.SUPPLIERS.filter(sp=>sp.status==='Active'&&!sp.archivedAt).map(sp=>h('option',{key:sp.id,value:sp.id},sp.name))])]),btn('+ Add Items',this.openItemPicker,'primary')]),
 
-      this.recordTable('purchase-cart',['Item','Category','Quantity','Unit','Action'],s.newReqCart.map((l,i)=>tr([td(l.name),td(l.category),td(h('input',{'aria-label':'Quantity for '+l.name,type:'number',min:1,step:1,value:l.qty,onChange:this.setReqCartQty(i)})),td(this.purchaseUnit(l)),td(btn('Remove',this.removeReqLine(i)))],i))),
+      this.recordTable('purchase-cart',['Item','Category','Quantity','Unit','Action'],s.newReqCart.map((l,i)=>tr([td(l.name),td(l.category),td(h('input',{'aria-label':'Quantity for '+l.name,type:'number',min:1,step:1,value:l.qty,onChange:this.setReqCartQty(i)})),td(this.buildRequestUnit(l,i)),td(btn('Remove',this.removeReqLine(i)))],i))),
       h('label',{className:'purchase-notes'},['Purchase notes',h('textarea',{value:s.purchaseNotes||'',maxLength:2000,onChange:e=>this.setState({purchaseNotes:e.target.value})})]),
       btn('Submit Purchase Request',this.submitPurchase,'primary'),
       s.itemPickerOpen?this.buildItemPickerModal():null,s.categoryModalOpen?this.buildCategoryModal():null
