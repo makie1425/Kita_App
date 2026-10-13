@@ -72,6 +72,9 @@ class PurchaseWorkflow
                     throw ValidationException::withMessages(['lines' => 'Choose the inventory unit, or Box for products stocked in pieces.']);
                 }
                 $qty = ($lines[$product->id]['qty'] ?? 0) + $line['qty'] * $factor;
+                if (isset($lines[$product->id]) && ($lines[$product->id]['orderUnit'] !== $orderUnit || ($lines[$product->id]['piecesPerBox'] ?? 1) !== $factor)) {
+                    throw ValidationException::withMessages(['lines' => 'Use the same unit and box size for each product.']);
+                }
                 if ($qty > 1000000) {
                     throw ValidationException::withMessages(['lines' => 'Total quantity per item must not exceed 1,000,000.']);
                 }
@@ -81,7 +84,8 @@ class PurchaseWorkflow
                 }
                 $lines[$product->id] = ['requestId' => $id, 'productId' => $product->id, 'name' => InventoryRules::productLabel($product),
                     'category' => $product->category, 'unit' => $unit, 'qty' => $qty, 'supplierId' => $supplierId,
-                    'unitCost' => InventoryRules::unitCost($product)];
+                    'unitCost' => InventoryRules::unitCost($product), 'orderUnit' => $orderUnit,
+                    'piecesPerBox' => $orderUnit === 'Box' && $pieceStock ? $factor : null];
             }
             DB::table('item_requests')->insert([
                 'id' => $id, 'category' => $data['category'], 'status' => 'Pending Approval', 'dateRequested' => now()->toDateString(),
