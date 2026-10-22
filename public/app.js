@@ -1613,18 +1613,43 @@ class Component extends DCLogic {
   buildPurchaseReceiving(){
     const h=React.createElement,state=this.purchasingState();if(state)return state;
     const order=this.state.purchaseData.orders.find(o=>o.id===this.state.purchaseReceivingId);
-    if(order)return h('div',null,[sectionTitle('Receive '+order.id,`${order.supplierName||this.purchaseSupplier(order.supplierId)} | ${order.status}`),
+    if(order)return h('div',{className:'receiving-form'},[sectionTitle('Receive '+order.id,`${order.supplierName||this.purchaseSupplier(order.supplierId)} | ${order.status}`),
       h('p',null,'Enter delivered quantities, cost price and retail price per stock unit. Cost starts with the purchase order price and can be changed to the actual delivery cost. Confirming adds the delivery to the same product in inventory. The new retail price applies to all its remaining stock, including earlier deliveries. Missing items are saved in a shortage report. Leave undelivered items blank.'),
       table(['Item','Category','Ordered','Previously received','Received order','Current stock','Stock after receipt','Missing','Excess','Stock unit','Cost price (PHP)','Retail price (PHP)','Batch','Expiry','Manufactured','Lot'],order.lines.map(l=>tr([td(l.name),td(l.category),td(l.orderedQty),td(l.deliveredQty||0),td(h('input',{'aria-label':'Receive '+l.name,type:'number',min:1,step:1,value:this.state.receiveQty[l.productId]??'',onChange:e=>this.setState(s=>({receiveQty:{...s.receiveQty,[l.productId]:e.target.value}}))})),td(this.receivingStock(l.productId)),td(this.receivingStock(l.productId)+Number(this.state.receiveQty[l.productId]||0)),td(Math.max(0,Number(l.orderedQty)-Number(l.deliveredQty||0)-Number(this.state.receiveQty[l.productId]||0))),td(Math.max(0,Number(l.deliveredQty||0)+Number(this.state.receiveQty[l.productId]||0)-Number(l.orderedQty))),td(this.purchaseUnit(l)),...this.buildReceivingFields(l)],l.id))),
-      h('div',{className:'purchase-filters'},[h('label',null,['Delivery reference',h('input',{readOnly:true,value:'Assigned automatically from '+order.id,'aria-label':'Automatic delivery reference'})]),h('label',null,['Date received',h('input',{type:'date',max:this.state.data?.BUSINESS_DATE,value:this.state.receiveDate,onChange:e=>this.setState({receiveDate:e.target.value})})])]),
+      h('div',{className:'purchase-filters'},[h('label',null,['Receipt reference',h('input',{readOnly:true,value:'Assigned automatically from '+order.id,'aria-label':'Automatic delivery reference'})])]),
       h('label',{className:'purchase-notes'},['Receiving notes (required for excess delivery)',h('textarea',{maxLength:2000,value:this.state.receiveNotes,onChange:e=>this.setState({receiveNotes:e.target.value})})]),
       this.state.receiveError?h('p',{role:'alert',className:'alert'},this.state.receiveError):null,
       h('button',{className:'primary-button',disabled:!!this.state.receivingSaving,"aria-busy":!!this.state.receivingSaving,onClick:this.confirmPurchaseReceiving},this.state.receivingSaving?'Posting delivery...':'Confirm Receipt'),btn('Back',()=>this.setState({purchaseReceivingId:null})),this.purchaseReportLink(order.id)
     ]);
-    return h('div',null,[sectionTitle('Stock Receiving','Open an approved PO after delivery. Inventory posts once for each confirmed delivery.'),this.state.lastReceivedPo?h('div',{className:'sa-panel',role:'status'},['Delivery saved. View the receiving inspection and any missing-item report: ',this.purchaseReportLink(this.state.lastReceivedPo)]):null,this.purchaseFilters(),this.buildSupplierContacts(this.state.purchaseData.orders),
-      this.recordTable('purchase-receiving',['PO ID','Supplier','Items','Status','Actions'],this.filterPurchases(this.state.purchaseData.orders).map(o=>tr([td(o.id),td(o.supplierName||this.purchaseSupplier(o.supplierId)),td(o.lines.map(l=>`${l.name}: ${l.deliveredQty||0} / ${l.orderedQty} ${this.purchaseUnit(l)}`).join(', ')),td(badge(o.status)),td([(['Approved / Waiting for Delivery','Partially Received','Approved','Ordered'].includes(o.status)||(o.status==='Draft'&&o.request?.status==='Approved'))?btn('Receive Stock',()=>this.openPurchaseReceiving(o),'primary'):null,this.purchaseReportLink(o.id)])],o.id)))
+    const orders=this.state.purchaseData.orders;
+    const canReceive=o=>['Approved / Waiting for Delivery','Partially Received','Approved','Ordered'].includes(o.status)||(o.status==='Draft'&&o.request?.status==='Approved');
+    const missing=o=>(o.lines||[]).reduce((sum,l)=>sum+Math.max(0,Number(l.orderedQty)-Number(l.deliveredQty||0)),0);
+    const discrepancy=o=>o.status==='Received with Discrepancy'||(o.receipts||[]).some(r=>r.discrepancy);
+    const tab=this.state.receivingTab||'active';
+    const selected=this.filterPurchases(orders).filter(o=>tab==='missing'?(o.receipts||[]).length&&missing(o)>0:tab==='discrepancies'?discrepancy(o):true);
+    const receipts=orders.flatMap(o=>o.receipts||[]);
+    const today=this.state.data?.BUSINESS_DATE;
+    const receivedValue=receipts.filter(r=>r.date===today).reduce((sum,r)=>sum+(r.lines||[]).reduce((total,l)=>total+Number(l.deliveredQty||0)*Number(l.unitCost||0),0),0);
+    return h('div',{className:'receiving-dashboard'},[
+      h('div',{className:'receiving-heading'},[sectionTitle('Stock Receiving Dashboard'),h('label',{className:'receiving-search'},[h('span',{className:'sr-only'},'Search receiving records'),h('input',{type:'search',placeholder:'Search PO, supplier, receipt...',value:this.state.tableViews['purchase-receiving']?.query||'',onChange:e=>this.setTableView('purchase-receiving',{query:e.target.value,page:1})})])]),
+      h('div',{className:'receiving-metrics'},[
+        kpi('Pending Deliveries',orders.filter(canReceive).length+' POs'),
+        kpi('Received Today',peso(receivedValue),'Recorded receiving value'),
+        kpi('Missing Items',orders.filter(o=>(o.receipts||[]).length&&canReceive(o)).reduce((sum,o)=>sum+missing(o),0)+' units'),
+        kpi('Discrepancies',orders.filter(discrepancy).length+' POs'),
+        kpi('Completed Receipts',orders.filter(o=>o.status==='Fully Received').length+' POs'),
+      ]),
+      this.state.lastReceivedPo?h('div',{className:'sa-panel',role:'status'},['Receipt saved. ',this.purchaseReportLink(this.state.lastReceivedPo)]):null,
+      this.purchaseFilters(),
+      h('div',{className:'receiving-tabs',role:'group','aria-label':'Receiving views'},[['active','Active Receiving'],['missing','Missing Items / Backorders'],['discrepancies','Discrepancies & Follow-ups']].map(([value,label])=>h('button',{type:'button',key:value,'data-action-tone':'blue','aria-pressed':tab===value,onClick:()=>{this.setState({receivingTab:value});this.setTableView('purchase-receiving',{page:1});}},label))),
+      this.recordTable('purchase-receiving',['PO Number','Receipt ID','Supplier','Items / Received','Batch / Lot','Status','Actions'],selected.map(o=>{
+        const receiptLines=(o.receipts||[]).flatMap(r=>r.lines||[]);
+        return tr([td(o.id,{fontWeight:700}),td((o.receipts||[]).map(r=>r.id).join(', ')||'Not received'),td(o.supplierName||this.purchaseSupplier(o.supplierId)),td(h('details',null,[h('summary',null,o.lines.length+' items'),...o.lines.map(l=>h('p',{key:l.productId},`${l.name}: ${l.deliveredQty||0} / ${l.orderedQty} ${this.purchaseUnit(l)}`))])),td([...new Set(receiptLines.map(l=>[l.batchNumber,l.lotNumber].filter(Boolean).join(' / ')).filter(Boolean))].join(', ')||'Assigned on receipt'),td(badge(o.status)),td([canReceive(o)?btn('Receive Stock',()=>this.openPurchaseReceiving(o),'primary'):null,this.purchaseReportLink(o.id)])],o.id);
+      }),{externalSearch:true}),
+      tab==='discrepancies'?this.buildSupplierContacts(selected):null,
     ]);
   }
+
   buildPurchaseHistory(){
     const h=React.createElement,state=this.purchasingState();if(state)return state;
     const orders=this.filterPurchases(this.state.purchaseData.orders).filter(o=>o.receipts.length>0);
