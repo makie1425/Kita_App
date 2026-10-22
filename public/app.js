@@ -165,6 +165,23 @@ function rankedSales(rows){
     React.createElement("div",{key:"bar",className:"sales-bar","aria-hidden":true},React.createElement("span",{style:{width:(row.rev/maximum*100)+"%"}})),
   ]))):React.createElement("div",{className:"record-empty"},"No sales recorded for these products yet.");
 }
+function dashboardSales(data, period, selectedDate){
+  const anchor=selectedDate||data.BUSINESS_DATE;
+  const start=new Date(anchor+"T00:00:00Z");
+  if(!Number.isFinite(start.getTime())) return {rows:[],total:0,units:0,range:"Business date unavailable"};
+  if(period==="weekly") start.setUTCDate(start.getUTCDate()-(start.getUTCDay()+6)%7);
+  if(period==="monthly") start.setUTCDate(1);
+  if(period==="yearly") start.setUTCMonth(0,1);
+  const end=new Date(start);
+  if(period==="yearly") end.setUTCFullYear(end.getUTCFullYear()+1);
+  else if(period==="monthly") end.setUTCMonth(end.getUTCMonth()+1);
+  else end.setUTCDate(end.getUTCDate()+(period==="weekly"?7:1));
+  const from=start.toISOString().slice(0,10), until=end.toISOString().slice(0,10);
+  const rows=(data.SALES_LOG||[]).filter(row=>row.date>=from&&row.date<until);
+  end.setUTCDate(end.getUTCDate()-1);
+  const to=end.toISOString().slice(0,10);
+  return {rows,total:rows.reduce((sum,row)=>sum+row.qty*row.amount,0),units:rows.reduce((sum,row)=>sum+Number(row.qty),0),range:from===to?from:from+" to "+to};
+}
 function btn(label,onClick,variant){ const styles={primary:{background:COLORS.brand,color:"#fff",border:"none"},ghost:{background:"#fff",color:COLORS.text,border:"1px solid "+COLORS.border},danger:{background:COLORS.redBg,color:COLORS.red,border:"1px solid #f5c6c6"},green:{background:COLORS.greenBg,color:COLORS.green,border:"1px solid #bfe8d3"},amber:{background:COLORS.amberBg,color:COLORS.amber,border:"1px solid #f3e0ac"}};
   return React.createElement("button",{type:"button",className:"kita-button kita-button--"+(variant||"ghost"),onClick,style:Object.assign({padding:"8px 14px",borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer"},styles[variant||"ghost"])},label); }
 function loadingStatus(label){
@@ -176,6 +193,7 @@ function loadingStatus(label){
 class Component extends DCLogic {
   state = {
     data: null,
+    dashboardPeriod:"daily", dashboardDate:"",
     authStep:"login", loginPending:false, loginUsername:"", loginPassword:"", otpCode:"", otpEmail:"", loginError:"", loginTries:0, loginLocked:false, pendingRole:null,
     role:null, screen:null, toasts:[], sidebarOpen:false,tableViews:{},
     barcodeInput:"", cart:[], scannerConnected:true, manualLookupOpen:false, manualSearch:"",
@@ -1329,17 +1347,31 @@ class Component extends DCLogic {
     this.goScreen('mgrRequest')();
     this.toast(exists?'This product is already in your purchase request.':supplierId?'Product added. Review the quantity before submitting.':'Product added. Select a supplier before submitting.');
   };
+  buildDashboardSalesFilter(sales){
+    const h=React.createElement;
+    return h("div",{className:"dashboard-sales-filter",style:{display:"flex",gap:14,alignItems:"center",flexWrap:"wrap",marginBottom:16}},[
+      h("label",{key:"period"},["Sales period ",h("select",{value:this.state.dashboardPeriod,onChange:e=>this.setState({dashboardPeriod:e.target.value})},
+        ["daily","weekly","monthly","yearly"].map(value=>h("option",{key:value,value},value[0].toUpperCase()+value.slice(1))))]),
+      h("label",{key:"date"},["Date in period ",h("input",{type:"date",value:this.state.dashboardDate||this.state.data.BUSINESS_DATE||"",onChange:e=>this.setState({dashboardDate:e.target.value})})]),
+      h("span",{key:"range",role:"status"},sales.range+(this.state.dashboardPeriod==="weekly"?" (Monday–Sunday)":"")),
+    ]);
+  }
   buildMgrDashboard(){
     const {data,itemRequestsLocal}=this.state; if(!data) return null;
     const pending=itemRequestsLocal.filter(r=>["Pending","Pending Approval"].includes(r.status)).length;
     const forwarded=itemRequestsLocal.filter(r=>["Approved","Approved / Waiting for Delivery"].includes(r.status)).length;
     const proceedPurchase=itemRequestsLocal.filter(r=>r.status==="Proceed to Purchase").length;
     const disapproved=itemRequestsLocal.filter(r=>["Disapproved","Declined"].includes(r.status));
-    const byProduct={}; data.SALES_LOG.forEach(t=>{ byProduct[t.productId]=(byProduct[t.productId]||0)+t.qty*t.amount; });
+    const sales=dashboardSales(data,this.state.dashboardPeriod,this.state.dashboardDate);
+    const byProduct={}; sales.rows.forEach(t=>{ byProduct[t.productId]=(byProduct[t.productId]||0)+t.qty*t.amount; });
     const ranked=Object.entries(byProduct).map(([id,rev])=>({p:data.PRODUCTS.find(p=>p.id===Number(id)),rev})).filter(x=>x.p).sort((a,b)=>b.rev-a.rev);
     const lowStock=this.managerLowStock();
     return React.createElement("div",null,[
       sectionTitle("Manager Dashboard","Item requests, sales & inventory overview"),
+      this.buildDashboardSalesFilter(sales),
+      React.createElement("div",{style:{display:"flex",gap:14,marginBottom:16,flexWrap:"wrap"}},[
+        kpi("Recorded Sales",peso(sales.total),sales.range,COLORS.brand),kpi("Units Sold",sales.units,sales.range),
+      ]),
       this.buildManagerPin(),
       React.createElement("div",{style:{display:"flex",gap:14,marginBottom:16,flexWrap:"wrap"}},[
         kpi("Item Requests (Pending)",pending,null,COLORS.amber), kpi("Forwarded Purchase Requests",forwarded,null,COLORS.purple),
@@ -2247,15 +2279,17 @@ class Component extends DCLogic {
   // ---- Admin screens ----
   buildAdmDashboard(){
     const {data}=this.state; if(!data) return null;
-    const byProduct={}; data.SALES_LOG.forEach(t=>{ byProduct[t.productId]=(byProduct[t.productId]||0)+t.qty*t.amount; });
+    const sales=dashboardSales(data,this.state.dashboardPeriod,this.state.dashboardDate);
+    const byProduct={}; sales.rows.forEach(t=>{ byProduct[t.productId]=(byProduct[t.productId]||0)+t.qty*t.amount; });
     const ranked=Object.entries(byProduct).map(([id,rev])=>({p:data.PRODUCTS.find(p=>p.id===Number(id)),rev})).filter(x=>x.p).sort((a,b)=>b.rev-a.rev);
-    const byHour={}; data.SALES_LOG.forEach(t=>{ byHour[t.hour]=(byHour[t.hour]||0)+t.qty; }); const maxHour=Math.max(...Object.values(byHour));
+    const byHour={}; sales.rows.forEach(t=>{ byHour[t.hour]=(byHour[t.hour]||0)+t.qty; }); const maxHour=Math.max(1,...Object.values(byHour));
     return React.createElement("div",null,[sectionTitle("Dashboard / Analytics"),
+      this.buildDashboardSalesFilter(sales),
       React.createElement("div",{style:{display:"flex",gap:14,marginBottom:16,flexWrap:"wrap"}},[
         kpi("Active Products",data.PRODUCTS.filter(p=>p.status==="Active"&&!p.archivedAt).length,"From the current catalog"),
         kpi("Low Stock Items",data.PRODUCTS.filter(p=>p.status==="Active"&&!p.archivedAt&&p.stock<=p.minStock).length,"At or below minimum stock",COLORS.amber),
-        kpi("Recorded Sales",peso(data.SALES_LOG.reduce((sum,t)=>sum+t.amount*t.qty,0)),"All records in the sales log",COLORS.brand),
-        kpi("Business Day Sales",peso(data.SALES_LOG.filter(t=>t.date===data.BUSINESS_DATE).reduce((sum,t)=>sum+t.amount*t.qty,0)),data.BUSINESS_DATE||"Business date unavailable",COLORS.brand),
+        kpi("Recorded Sales",peso(sales.total),sales.range,COLORS.brand),
+        kpi("Units Sold",sales.units,sales.range,COLORS.brand),
       ]),
       React.createElement("details",{className:"reference-metrics"},[
         React.createElement("summary",null,"Existing reference metrics"),
