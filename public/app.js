@@ -1391,51 +1391,80 @@ class Component extends DCLogic {
   };
   buildDashboardSalesFilter(sales){
     const h=React.createElement;
-    return h("div",{className:"dashboard-sales-filter",style:{display:"flex",gap:14,alignItems:"center",flexWrap:"wrap",marginBottom:16}},[
-      h("label",{key:"period"},["Sales period ",h("select",{value:this.state.dashboardPeriod,onChange:e=>this.setState({dashboardPeriod:e.target.value})},
+    return h("div",{className:"dashboard-sales-filter"},[
+      h("div",{key:"buttons",className:"dashboard-period-tabs",role:"group","aria-label":"Sales period"},["daily","weekly","monthly","yearly"].map(value=>h("button",{key:value,type:"button","aria-pressed":this.state.dashboardPeriod===value,onClick:()=>this.setState({dashboardPeriod:value})},value[0].toUpperCase()+value.slice(1)))),
+      h("label",{key:"period",className:"dashboard-period-select"},["Sales period ",h("select",{value:this.state.dashboardPeriod,onChange:e=>this.setState({dashboardPeriod:e.target.value})},
         ["daily","weekly","monthly","yearly"].map(value=>h("option",{key:value,value},value[0].toUpperCase()+value.slice(1))))]),
       h("label",{key:"date"},["Date in period ",h("input",{type:"date",value:this.state.dashboardDate||this.state.data.BUSINESS_DATE||"",onChange:e=>this.setState({dashboardDate:e.target.value})})]),
       h("span",{key:"range",role:"status"},sales.range+(this.state.dashboardPeriod==="weekly"?" (Monday–Sunday)":"")),
     ]);
   }
-  buildMgrDashboard(){
-    const {data,itemRequestsLocal}=this.state; if(!data) return null;
-    const pending=itemRequestsLocal.filter(r=>["Pending","Pending Approval"].includes(r.status)).length;
-    const forwarded=itemRequestsLocal.filter(r=>["Approved","Approved / Waiting for Delivery"].includes(r.status)).length;
-    const proceedPurchase=itemRequestsLocal.filter(r=>r.status==="Proceed to Purchase").length;
-    const disapproved=itemRequestsLocal.filter(r=>["Disapproved","Declined"].includes(r.status));
+  buildMgrDashboard(){ return this.buildOperationsDashboard(true); }
+  buildOperationsDashboard(manager){
+    const {data}=this.state; if(!data)return null;
+    const h=React.createElement;
     const sales=dashboardSales(data,this.state.dashboardPeriod,this.state.dashboardDate);
-    const byProduct={}; sales.rows.forEach(t=>{ byProduct[t.productId]=(byProduct[t.productId]||0)+t.qty*t.amount; });
-    const ranked=Object.entries(byProduct).map(([id,rev])=>({p:data.PRODUCTS.find(p=>p.id===Number(id)),rev})).filter(x=>x.p).sort((a,b)=>b.rev-a.rev);
+    const byProduct={};sales.rows.forEach(row=>{byProduct[row.productId]=(byProduct[row.productId]||0)+row.qty*row.amount;});
+    const ranked=Object.entries(byProduct).map(([id,rev])=>({p:data.PRODUCTS.find(p=>String(p.id)===id),rev})).filter(row=>row.p).sort((a,b)=>b.rev-a.rev);
     const lowStock=this.managerLowStock();
-    return React.createElement("div",null,[
-      sectionTitle("Manager Dashboard","Item requests, sales & inventory overview"),
-      this.buildDashboardSalesFilter(sales),
-      salesHistoryChart(sales,this.state.dashboardPeriod),
-      React.createElement("div",{style:{display:"flex",gap:14,marginBottom:16,flexWrap:"wrap"}},[
-        kpi("Recorded Sales",peso(sales.total),sales.range,COLORS.brand),kpi("Units Sold",sales.units,sales.range),
+    const orders=this.state.purchaseOrdersLocal||data.PURCHASE_ORDERS||[];
+    const requests=this.state.itemRequestsLocal||data.ITEM_REQUESTS||[];
+    const disapproved=requests.filter(r=>['Disapproved','Declined'].includes(r.status));
+    const activeOrders=orders.filter(order=>!['Fully Received','Received','Delivered','Completed','Closed','Cancelled','Canceled','Rejected'].includes(order.status));
+    const heading=(title,description,extra)=>h('div',{className:'dashboard-panel-heading'},[h('div',null,[h('h2',{className:'panel-title'},title),h('p',null,description)]),extra]);
+    const byHour={};sales.rows.forEach(row=>{byHour[row.hour]=(byHour[row.hour]||0)+Number(row.qty);});
+    const maxHour=Math.max(1,...Object.values(byHour));
+    return h('div',{className:'operations-dashboard'},[
+      h('header',{key:'header',className:'dashboard-header'},[
+        sectionTitle('Sales & Operations Dashboard',manager?'Sales performance, stock alerts and purchase requests':'Sales performance, inventory and purchasing overview'),
+        this.buildDashboardSalesFilter(sales),
+        h('button',{type:'button',className:'kita-button',disabled:!!this.state.pendingLoads,onClick:()=>this.reloadCatalog().catch(error=>this.toast(error.message,'error'))},this.state.pendingLoads?'Refreshing...':'Refresh dashboard'),
       ]),
-      this.buildManagerPin(),
-      React.createElement("div",{style:{display:"flex",gap:14,marginBottom:16,flexWrap:"wrap"}},[
-        kpi("Item Requests (Pending)",pending,null,COLORS.amber), kpi("Forwarded Purchase Requests",forwarded,null,COLORS.purple),
-        kpi("For Purchased Request",proceedPurchase,null,COLORS.amber), kpi("Disapproved Requests",disapproved.length,null,COLORS.red),
-        kpi("Low Stock Items",lowStock.length,null,COLORS.amber),
+      h('div',{key:'metrics',className:'dashboard-metrics'},[
+        kpi('Recorded Sales',peso(sales.total),sales.range,COLORS.brand),
+        kpi('Units Sold',sales.units,'For the selected sales period'),
+        kpi('Active Products',data.PRODUCTS.filter(p=>p.status==='Active'&&!p.archivedAt).length,'Current product catalog'),
+        kpi('Low Stock Items',lowStock.length,lowStock.length?'At or below minimum stock':'Stock levels above minimum',lowStock.length?COLORS.red:COLORS.green),
       ]),
-      card([
-        React.createElement('h2',{key:'title',className:'panel-title'},'Low Stock Products'),
-        React.createElement('p',{key:'description'},'Products at or below minimum stock. Purchase opens a request for review and approval.'),
-        lowStock.length?this.recordTable('manager-low-stock',['Product','Category','Stock on hand','Minimum stock','Unit','Action'],lowStock.map(p=>tr([
-          td(p.name),td(p.category),td(p.stock),td(p.minStock),td(p.stockUnit||p.unit||'Not recorded'),
-          td(btn('Purchase',this.purchaseLowStock(p.id),'primary'))
-        ],p.id))):React.createElement('p',{key:'empty',role:'status'},'No low-stock products.')
-      ],{marginBottom:16}),
-      disapproved.length?card([React.createElement("div",{key:"t",style:{fontWeight:800,marginBottom:8,color:COLORS.red}},"Disapproved â€” reason visible"),
-        ...disapproved.map(r=>React.createElement("div",{key:r.id,style:{fontSize:13,padding:"6px 0",borderBottom:"1px solid #eef1f6"}},[React.createElement("b",{key:"i"},r.id+": "),r.lines.map(l=>l.name).join(", ")+" â€” "+r.disapprovalReason]))],{marginBottom:16}):null,
-      React.createElement("div",{style:{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:14}},[
-        card([React.createElement("div",{key:"t",className:"panel-title"},"Best Sellers - Sales (PHP)"),rankedSales(ranked.slice(0,5))]),
-        card([React.createElement("div",{key:"t",className:"panel-title"},"Least Sales - Sales (PHP)"),rankedSales(ranked.slice(-5).reverse(),this.quickPromoFromLeastSales)]),
-        this.buildNearExpiredWidget(true),
+      h('div',{key:'charts',className:'dashboard-chart-grid'},[
+        salesHistoryChart(sales,this.state.dashboardPeriod),
+        card([heading('Top Performing Products','Sales by product (PHP)',h('span',{className:'dashboard-period-badge'},this.state.dashboardPeriod)),rankedSales(ranked.slice(0,5))]),
       ]),
+      h('div',{key:'operations',className:'dashboard-operations-grid'},[
+        card([heading('Low Stock Products','Current inventory at or below the reorder threshold',badge(lowStock.length+' items')),
+          h('div',{className:'dashboard-records',tabIndex:0,'aria-label':'Low stock products'},lowStock.length?lowStock.map(p=>h('div',{key:p.id,className:'dashboard-record'},[
+            h('div',{className:'dashboard-record-main'},[h('strong',null,p.name),h('p',null,['Stock: ',h('b',{className:'dashboard-stock-alert'},String(p.stock)),' / Minimum: '+p.minStock+' '+(p.stockUnit||p.unit||'')]),h('small',null,(data.SUPPLIERS||[]).find(s=>String(s.id)===String(p.supplierId))?.name||'Supplier not assigned')]),
+            manager?btn('Purchase',this.purchaseLowStock(p.id),'primary'):badge('Low stock'),
+          ])):h('p',{role:'status',className:'record-empty'},'No low-stock products.')),
+        ]),
+        card([heading('Purchase Orders Tracking','Latest purchase orders and delivery status',h('span',{className:'dashboard-period-badge'},activeOrders.length+' active')),
+          h('div',{className:'dashboard-records',tabIndex:0,'aria-label':'Purchase orders'},orders.length?orders.slice(0,10).map(order=>h('div',{key:order.id,className:'dashboard-record'},[
+            h('div',{className:'dashboard-record-main'},[h('strong',null,order.id),h('p',null,(order.lines||[]).map(line=>line.name||data.PRODUCTS.find(p=>String(p.id)===String(line.productId))?.name||'Product').join(', ')||'No items recorded'),h('small',null,'Supplier: '+((data.SUPPLIERS||[]).find(s=>String(s.id)===String(order.supplierId))?.name||'Not recorded'))]),
+            h('div',{className:'dashboard-record-value'},[h('strong',null,peso(order.orderedValue)),badge(order.status)]),
+          ])):h('p',{role:'status',className:'record-empty'},'No purchase orders recorded.')),
+          btn(manager?'View Stock Receiving':'View Purchase Requests',this.goScreen(manager?'mgrPO':'admPurchasedOrders')),
+        ]),
+      ]),
+      h('details',{key:'secondary',className:'dashboard-more'},[
+        h('summary',null,'More insights: slow-moving products, expiry and peak hours'),
+        h('div',{className:'dashboard-secondary-grid'},[
+        card([heading('Least Sales','Lowest recorded product sales (PHP)'),rankedSales(ranked.slice(-5).reverse(),manager?this.quickPromoFromLeastSales:null)]),
+        this.buildNearExpiredWidget(manager),
+        card([heading('Peak-Hour Activity','Units sold by hour in the selected period'),Object.keys(byHour).length?h('div',{className:'dashboard-hour-bars'},Object.keys(byHour).sort((a,b)=>a-b).map(hour=>h('div',{key:hour,className:'dashboard-hour-row'},[
+          h('span',null,String(hour).padStart(2,'0')+':00'),h('div',{className:'sales-bar','aria-hidden':true},h('span',{style:{width:byHour[hour]/maxHour*100+'%'}})),h('strong',null,byHour[hour]),
+        ]))):h('p',{className:'record-empty'},'No sales recorded for this period.')]),
+      ])]),
+      manager?h('details',{key:'requests',className:'dashboard-manager-tools dashboard-more'},[
+        h('summary',null,'Purchase requests & manager settings'),
+        h('div',{className:'dashboard-request-metrics'},[
+          kpi('Item Requests (Pending)',requests.filter(r=>['Pending','Pending Approval'].includes(r.status)).length),
+          kpi('Forwarded Purchase Requests',requests.filter(r=>['Approved','Approved / Waiting for Delivery'].includes(r.status)).length),
+          kpi('For Purchased Request',requests.filter(r=>r.status==='Proceed to Purchase').length),
+          kpi('Disapproved Requests',disapproved.length),
+        ]),
+        disapproved.length?card([h('h3',null,'Disapproved requests'),...disapproved.map(r=>h('p',{key:r.id},r.id+': '+(r.lines||[]).map(line=>line.name).join(', ')+' - '+(r.disapprovalReason||'No reason recorded')))]):null,
+        h('details',{className:'dashboard-pin-settings'},[h('summary',null,'Manager approval PIN settings'),this.buildManagerPin()]),
+      ]):null,
     ]);
   }
   expiringBatches=()=> (this.state.data?.EXPIRING_BATCHES||[]).map(b=>({p:{...b,id:b.productId,batch:b.batchNumber||b.id,lot:b.lotNumber||'-',stock:b.quantityRemaining},days:Math.round((new Date(b.expiryDate)-new Date(this.state.data.BUSINESS_DATE))/86400000)}));
@@ -2320,33 +2349,7 @@ class Component extends DCLogic {
   }
 
   // ---- Admin screens ----
-  buildAdmDashboard(){
-    const {data}=this.state; if(!data) return null;
-    const sales=dashboardSales(data,this.state.dashboardPeriod,this.state.dashboardDate);
-    const byProduct={}; sales.rows.forEach(t=>{ byProduct[t.productId]=(byProduct[t.productId]||0)+t.qty*t.amount; });
-    const ranked=Object.entries(byProduct).map(([id,rev])=>({p:data.PRODUCTS.find(p=>p.id===Number(id)),rev})).filter(x=>x.p).sort((a,b)=>b.rev-a.rev);
-    const byHour={}; sales.rows.forEach(t=>{ byHour[t.hour]=(byHour[t.hour]||0)+t.qty; }); const maxHour=Math.max(1,...Object.values(byHour));
-    return React.createElement("div",null,[sectionTitle("Dashboard / Analytics"),
-      this.buildDashboardSalesFilter(sales),
-      salesHistoryChart(sales,this.state.dashboardPeriod),
-      React.createElement("div",{style:{display:"flex",gap:14,marginBottom:16,flexWrap:"wrap"}},[
-        kpi("Active Products",data.PRODUCTS.filter(p=>p.status==="Active"&&!p.archivedAt).length,"From the current catalog"),
-        kpi("Low Stock Items",data.PRODUCTS.filter(p=>p.status==="Active"&&!p.archivedAt&&p.stock<=p.minStock).length,"At or below minimum stock",COLORS.amber),
-        kpi("Recorded Sales",peso(sales.total),sales.range,COLORS.brand),
-        kpi("Units Sold",sales.units,sales.range,COLORS.brand),
-      ]),
-      React.createElement("details",{className:"reference-metrics"},[
-        React.createElement("summary",null,"Existing reference metrics"),
-        React.createElement("p",null,"Receiving accuracy: 91% | On-time delivery: 86% | Damage rate: 3.2%. These existing reference values are not calculated from live records."),
-      ]),
-      React.createElement("div",{style:{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:14}},[
-        card([React.createElement("div",{key:"t",className:"panel-title"},"Best Sellers - Sales (PHP)"),rankedSales(ranked.slice(0,5))]),
-        card([React.createElement("div",{key:"t",className:"panel-title"},"Worst Sellers - Sales (PHP)"),rankedSales(ranked.slice(-5).reverse())]),
-        card([React.createElement("div",{key:"t",style:{fontWeight:800,marginBottom:10}},"Peak-Hour Heatmap"),...Object.keys(byHour).sort((a,b)=>a-b).map(hr=>React.createElement("div",{key:hr,style:{display:"flex",alignItems:"center",gap:8,marginBottom:4}},[React.createElement("span",{style:{fontSize:11,width:36,color:COLORS.textMuted}},hr+":00"),React.createElement("div",{style:{flex:1,height:10,background:"#eef0f4",borderRadius:5}},React.createElement("div",{style:{width:(byHour[hr]/maxHour*100)+"%",height:10,background:COLORS.brand,borderRadius:5}}))]))]),
-        this.buildNearExpiredWidget(false),
-      ]),
-    ]);
-  }
+  buildAdmDashboard(){ return this.buildOperationsDashboard(false); }
   buildAdmPurchasedOrders(){ return this.buildPurchaseReview(); }
   buildAdmForwarded(){ return this.buildPurchaseStatusList(); }
   buildAdmDisapproved(){ return this.buildPurchaseStatusList(true); }

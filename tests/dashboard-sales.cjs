@@ -31,7 +31,12 @@ for(const build of ['buildMgrDashboard','buildAdmDashboard']) {
   app.setState({dashboardPeriod:'daily',dashboardDate:''});
   const initial = app[build]();
   assert.equal(flatten(initial).filter(node=>node.type==='polyline').length,1);
-  assert.equal(flatten(initial).filter(node=>node.props?.className==='sales-bar').length,2);
+  assert.equal(flatten(initial).filter(node=>node.props?.className==='sales-ranking').length,2);
+  assert.equal(flatten(initial).filter(node=>node.props?.className==='dashboard-metrics').length,1);
+  assert(JSON.stringify(initial).includes('Purchase Orders Tracking'));
+  const periodButton=flatten(initial).find(node=>node.type==='button'&&node.children.includes('Monthly'));
+  periodButton.props.onClick();
+  assert.equal(app.state.dashboardPeriod,'monthly');
   assert(!JSON.stringify(initial).includes('NaN'));
   if(build==='buildMgrDashboard') {
     const promo=flatten(initial).find(node=>node.type==='button'&&node.children.includes('Create promotion'));
