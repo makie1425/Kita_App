@@ -158,17 +158,18 @@ function recordText(node){
   if(["button","input","select","svg"].includes(node.type))return "";
   return recordText(node.props?.children??node.children);
 }
-function rankedSales(rows){
+function rankedSales(rows, onPromo){
   const maximum=Math.max(1,...rows.map(row=>row.rev));
   return rows.length?React.createElement("div",{className:"sales-ranking"},rows.map((row,index)=>React.createElement("div",{key:row.p.id,className:"sales-rank"},[
     React.createElement("div",{key:"label",className:"sales-rank-label"},[React.createElement("span",{key:"name"},`${index+1}. ${row.p.name}`),React.createElement("strong",{key:"value"},peso(row.rev))]),
     React.createElement("div",{key:"bar",className:"sales-bar","aria-hidden":true},React.createElement("span",{style:{width:(row.rev/maximum*100)+"%"}})),
+    onPromo?btn("Create promotion",onPromo(row.p.id)):null,
   ]))):React.createElement("div",{className:"record-empty"},"No sales recorded for these products yet.");
 }
 function dashboardSales(data, period, selectedDate){
   const anchor=selectedDate||data.BUSINESS_DATE;
   const start=new Date(anchor+"T00:00:00Z");
-  if(!Number.isFinite(start.getTime())) return {rows:[],total:0,units:0,range:"Business date unavailable"};
+  if(!Number.isFinite(start.getTime())) return {rows:[],series:[],total:0,units:0,range:"Business date unavailable"};
   if(period==="weekly") start.setUTCDate(start.getUTCDate()-(start.getUTCDay()+6)%7);
   if(period==="monthly") start.setUTCDate(1);
   if(period==="yearly") start.setUTCMonth(0,1);
@@ -178,9 +179,50 @@ function dashboardSales(data, period, selectedDate){
   else end.setUTCDate(end.getUTCDate()+(period==="weekly"?7:1));
   const from=start.toISOString().slice(0,10), until=end.toISOString().slice(0,10);
   const rows=(data.SALES_LOG||[]).filter(row=>row.date>=from&&row.date<until);
+  const series=[];
+  const cursor=new Date(start);
+  while(cursor<end){
+    const date=cursor.toISOString().slice(0,10);
+    const key=period==="daily"?String(cursor.getUTCHours()):period==="yearly"?date.slice(0,7):date;
+    const label=period==="daily"?key.padStart(2,"0")+":00":period==="yearly"?cursor.toLocaleString("en-PH",{month:"short",timeZone:"UTC"}):date.slice(5);
+    series.push({key,label,value:0});
+    if(period==="daily") cursor.setUTCHours(cursor.getUTCHours()+1);
+    else if(period==="yearly") cursor.setUTCMonth(cursor.getUTCMonth()+1);
+    else cursor.setUTCDate(cursor.getUTCDate()+1);
+  }
+  const buckets=new Map(series.map(point=>[point.key,point]));
+  rows.forEach(row=>{
+    const key=period==="daily"?String(Number(row.hour)):period==="yearly"?row.date.slice(0,7):row.date;
+    if(buckets.has(key)) buckets.get(key).value+=row.qty*row.amount;
+  });
   end.setUTCDate(end.getUTCDate()-1);
   const to=end.toISOString().slice(0,10);
-  return {rows,total:rows.reduce((sum,row)=>sum+row.qty*row.amount,0),units:rows.reduce((sum,row)=>sum+Number(row.qty),0),range:from===to?from:from+" to "+to};
+  return {rows,series,total:rows.reduce((sum,row)=>sum+row.qty*row.amount,0),units:rows.reduce((sum,row)=>sum+Number(row.qty),0),range:from===to?from:from+" to "+to};
+}
+function salesHistoryChart(sales,period){
+  const h=React.createElement, points=sales.series;
+  const maximum=Math.max(1,...points.map(point=>point.value));
+  const minimum=Math.min(0,...points.map(point=>point.value));
+  const x=i=>110+i*650/Math.max(1,points.length-1), y=value=>235-(value-minimum)/(maximum-minimum)*200;
+  const interval=Math.max(1,Math.ceil(points.length/8));
+  const unit=period==="daily"?"Hour":period==="yearly"?"Month":"Date (MM-DD)";
+  return card([
+    h("h2",{key:"title",className:"panel-title"},"Sales History"),
+    h("p",{key:"range",className:"helper-text"},"Sales (PHP) • "+sales.range),
+    !sales.rows.length?h("p",{key:"empty",role:"status"},"No sales recorded for this period."):null,
+    points.length?h("div",{key:"chart",className:"sales-history-scroll"},h("svg",{viewBox:"0 0 800 295",className:"sales-history-chart",role:"img","aria-label":"Sales history line graph, "+sales.range},[
+      h("title",{key:"title"},"Sales in PHP by "+unit.toLowerCase()),
+      ...Array.from({length:5},(_,i)=>{const value=minimum+(maximum-minimum)*i/4;return h("g",{key:"grid"+i},[
+        h("line",{x1:110,x2:760,y1:y(value),y2:y(value),stroke:"#e4e7ec"}),
+        h("text",{x:100,y:y(value)+4,textAnchor:"end",fontSize:11,fill:COLORS.textSoft},value.toLocaleString("en-PH",{maximumFractionDigits:2})),
+      ]);}),
+      h("polyline",{key:"line",points:points.map((point,i)=>x(i)+","+y(point.value)).join(" "),fill:"none",stroke:COLORS.brand,strokeWidth:3,strokeLinejoin:"round"}),
+      ...points.map((point,i)=>h("circle",{key:point.key,cx:x(i),cy:y(point.value),r:4,fill:COLORS.brand},h("title",null,point.label+": PHP "+point.value.toFixed(2)))),
+      ...points.filter((point,i)=>i%interval===0||i===points.length-1).map(point=>h("text",{key:"label"+point.key,x:x(points.indexOf(point)),y:255,textAnchor:"middle",fontSize:11,fill:COLORS.textSoft},point.label)),
+      h("text",{key:"axis",x:435,y:283,textAnchor:"middle",fontSize:12,fill:COLORS.textSoft},unit),
+    ])):null,
+    points.length?h("details",{key:"values"},[h("summary",null,"View sales history values"),table([unit,"Sales (PHP)"],points.map(point=>tr([td(point.label),td(peso(point.value))],point.key)))]):null,
+  ],{marginBottom:16});
 }
 function btn(label,onClick,variant){ const styles={primary:{background:COLORS.brand,color:"#fff",border:"none"},ghost:{background:"#fff",color:COLORS.text,border:"1px solid "+COLORS.border},danger:{background:COLORS.redBg,color:COLORS.red,border:"1px solid #f5c6c6"},green:{background:COLORS.greenBg,color:COLORS.green,border:"1px solid #bfe8d3"},amber:{background:COLORS.amberBg,color:COLORS.amber,border:"1px solid #f3e0ac"}};
   return React.createElement("button",{type:"button",className:"kita-button kita-button--"+(variant||"ghost"),onClick,style:Object.assign({padding:"8px 14px",borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer"},styles[variant||"ghost"])},label); }
@@ -1369,6 +1411,7 @@ class Component extends DCLogic {
     return React.createElement("div",null,[
       sectionTitle("Manager Dashboard","Item requests, sales & inventory overview"),
       this.buildDashboardSalesFilter(sales),
+      salesHistoryChart(sales,this.state.dashboardPeriod),
       React.createElement("div",{style:{display:"flex",gap:14,marginBottom:16,flexWrap:"wrap"}},[
         kpi("Recorded Sales",peso(sales.total),sales.range,COLORS.brand),kpi("Units Sold",sales.units,sales.range),
       ]),
@@ -1389,8 +1432,8 @@ class Component extends DCLogic {
       disapproved.length?card([React.createElement("div",{key:"t",style:{fontWeight:800,marginBottom:8,color:COLORS.red}},"Disapproved â€” reason visible"),
         ...disapproved.map(r=>React.createElement("div",{key:r.id,style:{fontSize:13,padding:"6px 0",borderBottom:"1px solid #eef1f6"}},[React.createElement("b",{key:"i"},r.id+": "),r.lines.map(l=>l.name).join(", ")+" â€” "+r.disapprovalReason]))],{marginBottom:16}):null,
       React.createElement("div",{style:{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:14}},[
-        card([React.createElement("div",{key:"t",className:"panel-title"},"Best Sellers"),rankedSales(ranked.slice(0,5))]),
-        card([React.createElement("div",{key:"t",style:{fontWeight:800,marginBottom:10}},"Least Sales"),...ranked.slice(-5).reverse().map((x,i)=>React.createElement("div",{key:i,style:{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:13,padding:"6px 0",borderBottom:"1px solid #eef1f6"}},[React.createElement("span",null,x.p.name),React.createElement("div",{style:{display:"flex",alignItems:"center",gap:8}},[React.createElement("span",{style:{fontWeight:700,color:COLORS.textMuted}},peso(x.rev)),React.createElement("a",{onClick:this.quickPromoFromLeastSales(x.p.id),style:{fontSize:11,fontWeight:700,cursor:"pointer"}},"Promo â†’")])]))]),
+        card([React.createElement("div",{key:"t",className:"panel-title"},"Best Sellers - Sales (PHP)"),rankedSales(ranked.slice(0,5))]),
+        card([React.createElement("div",{key:"t",className:"panel-title"},"Least Sales - Sales (PHP)"),rankedSales(ranked.slice(-5).reverse(),this.quickPromoFromLeastSales)]),
         this.buildNearExpiredWidget(true),
       ]),
     ]);
@@ -2285,6 +2328,7 @@ class Component extends DCLogic {
     const byHour={}; sales.rows.forEach(t=>{ byHour[t.hour]=(byHour[t.hour]||0)+t.qty; }); const maxHour=Math.max(1,...Object.values(byHour));
     return React.createElement("div",null,[sectionTitle("Dashboard / Analytics"),
       this.buildDashboardSalesFilter(sales),
+      salesHistoryChart(sales,this.state.dashboardPeriod),
       React.createElement("div",{style:{display:"flex",gap:14,marginBottom:16,flexWrap:"wrap"}},[
         kpi("Active Products",data.PRODUCTS.filter(p=>p.status==="Active"&&!p.archivedAt).length,"From the current catalog"),
         kpi("Low Stock Items",data.PRODUCTS.filter(p=>p.status==="Active"&&!p.archivedAt&&p.stock<=p.minStock).length,"At or below minimum stock",COLORS.amber),
@@ -2296,8 +2340,8 @@ class Component extends DCLogic {
         React.createElement("p",null,"Receiving accuracy: 91% | On-time delivery: 86% | Damage rate: 3.2%. These existing reference values are not calculated from live records."),
       ]),
       React.createElement("div",{style:{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:14}},[
-        card([React.createElement("div",{key:"t",className:"panel-title"},"Best Sellers"),rankedSales(ranked.slice(0,5))]),
-        card([React.createElement("div",{key:"t",style:{fontWeight:800,marginBottom:10}},"Worst Sellers"),...ranked.slice(-5).reverse().map((x,i)=>React.createElement("div",{key:i,style:{display:"flex",justifyContent:"space-between",fontSize:13,padding:"6px 0",borderBottom:"1px solid #eef1f6"}},[React.createElement("span",null,x.p.name),React.createElement("span",{style:{fontWeight:700,color:COLORS.textMuted}},peso(x.rev))]))]),
+        card([React.createElement("div",{key:"t",className:"panel-title"},"Best Sellers - Sales (PHP)"),rankedSales(ranked.slice(0,5))]),
+        card([React.createElement("div",{key:"t",className:"panel-title"},"Worst Sellers - Sales (PHP)"),rankedSales(ranked.slice(-5).reverse())]),
         card([React.createElement("div",{key:"t",style:{fontWeight:800,marginBottom:10}},"Peak-Hour Heatmap"),...Object.keys(byHour).sort((a,b)=>a-b).map(hr=>React.createElement("div",{key:hr,style:{display:"flex",alignItems:"center",gap:8,marginBottom:4}},[React.createElement("span",{style:{fontSize:11,width:36,color:COLORS.textMuted}},hr+":00"),React.createElement("div",{style:{flex:1,height:10,background:"#eef0f4",borderRadius:5}},React.createElement("div",{style:{width:(byHour[hr]/maxHour*100)+"%",height:10,background:COLORS.brand,borderRadius:5}}))]))]),
         this.buildNearExpiredWidget(false),
       ]),

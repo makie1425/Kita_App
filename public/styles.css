@@ -795,8 +795,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .sales-rank-label { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; margin-bottom: 8px; }
 .sales-rank-label span { overflow-wrap: anywhere; }
 .sales-rank-label strong { white-space: nowrap; font-variant-numeric: tabular-nums; }
-.sales-bar { height: 5px; background: #edf1fc; border-radius: 3px; overflow: hidden; }
+.sales-bar { height: 18px; background: #edf1fc; border-radius: 3px; overflow: hidden; }
 .sales-bar span { display: block; height: 100%; background: var(--brand); border-radius: inherit; }
+.sales-rank .kita-button { margin-top: 8px; }
+.sales-history-scroll { overflow-x: auto; }
+.sales-history-chart { display: block; width: 100%; min-width: 560px; max-height: 360px; }
 .reference-metrics { margin: 0 0 20px; font-size: 12px; color: var(--text-soft); }
 .reference-metrics summary { cursor: pointer; padding: 8px 0; }
 .reference-metrics p { padding: 12px 16px; background: #fff; border: 1px solid var(--border); border-radius: 8px; }
