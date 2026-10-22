@@ -273,17 +273,17 @@ class Component extends DCLogic {
   };
 
   setTableView=(key,patch)=>this.setState(s=>({tableViews:{...s.tableViews,[key]:{...s.tableViews[key],...patch}}}));
-  recordTable(key,headers,rows,{emptyMessage}={}){
+  recordTable(key,headers,rows,{emptyMessage,externalSearch=false}={}){
     const h=React.createElement,view=this.state.tableViews[key]||{},query=view.query||"",size=Number(view.size)||20;
     const filtered=query.trim()?rows.filter(row=>searchMatches(recordText(row),query)):rows;
     const pages=Math.max(1,Math.ceil(filtered.length/size)),page=Math.min(Math.max(1,view.page||1),pages),start=(page-1)*size;
     const searchId="records-"+key;
     return h("section",{className:"record-list","aria-label":"Records"},[
-      h("div",{key:"toolbar",className:"record-toolbar"},[
+      !externalSearch?h("div",{key:"toolbar",className:"record-toolbar"},[
         h("label",{key:"search",className:"record-search",htmlFor:searchId},[uiIcon("search"),h("span",{className:"sr-only"},"Search records"),h("input",{id:searchId,type:"search",value:query,placeholder:"Search these records...",onChange:e=>this.setTableView(key,{query:e.target.value,page:1})})]),
         query?h("button",{key:"clear",type:"button",className:"kita-button",onClick:()=>this.setTableView(key,{query:"",page:1})},"Clear search"):null,
         h("label",{key:"size",className:"record-page-size"},["Rows per page",h("select",{value:size,onChange:e=>this.setTableView(key,{size:Number(e.target.value),page:1})},[10,20,50,100].map(n=>h("option",{key:n,value:n},n)))])
-      ]),
+      ]):null,
       table(headers,filtered.slice(start,start+size),query?"No records match your table search.":emptyMessage),
       !filtered.length&&!emptyMessage?h("p",{key:"empty",className:"record-empty",role:"status"},query?"No matching records. Try another search or clear your filters.":"Records will appear here when available."):null,
       h("div",{key:"pagination",className:"record-pagination"},[
@@ -2395,6 +2395,26 @@ class Component extends DCLogic {
     }catch(error){if(this.reportRequestId===requestId)this.setState({reportLoading:false,reportError:error.name==='AbortError'?'The report request timed out. Retry to load the latest records.':error.message});}
     finally{clearTimeout(timeout);if(this.reportRequestId===requestId)this.reportController=null;}
   };
+  buildReportCharts(rows){
+    const h=React.createElement, hours=Array.from({length:24},()=>new Set()),products=new Map();
+    rows.forEach(row=>{
+      const match=/^(\d{1,2}):/.exec(row.time||'');
+      if(match&&Number(match[1])<24)hours[Number(match[1])].add(row.transactionId||row.reference);
+      const name=row.product||'Unnamed product';
+      products.set(name,(products.get(name)||0)+Number(row.amount||0));
+    });
+    const peak=Math.max(1,...hours.map(set=>set.size));
+    const ranked=[...products].sort((a,b)=>b[1]-a[1]).slice(0,6).map(([name,rev],i)=>({p:{id:i,name},rev}));
+    return h('div',{className:'report-chart-grid'},[
+      card([h('h3',{className:'panel-title'},'Peak Sales Hours & Shift Load'),h('p',{className:'report-filter-hint'},'Distinct transactions by recorded hour. All listed statuses included.'),
+        h('div',{className:'report-hour-chart',role:'img','aria-label':'Hourly transaction counts'},hours.map((set,hour)=>h('div',{key:hour,className:'report-hour-column',title:String(hour).padStart(2,'0')+':00 - '+set.size+' transactions'},[
+          h('span',{className:'report-hour-count'},set.size||''),h('div',{className:'report-hour-track'},h('span',{style:{height:set.size/peak*100+'%'}})),h('small',null,hour%3===0?String(hour).padStart(2,'0')+':00':''),
+        ]))),
+        !hours.some(set=>set.size)?h('p',{className:'record-empty'},'No recorded transaction times for this selection.'):null,
+      ]),
+      card([h('h3',{className:'panel-title'},'Top Product Performance'),h('p',{className:'report-filter-hint'},'Recorded line totals by product (PHP), before refunds. All listed statuses included.'),rankedSales(ranked)]),
+    ]);
+  }
   buildAdmReports(){
     const h=React.createElement,s=this.state,d=s.data,f=s.reportFilters||{type:'sales'},loaded=s.reportResult;
     const common={'Product':'product','Category':'category','Brand':'brand','Subcategory':'subcategory'};
@@ -2420,10 +2440,11 @@ class Component extends DCLogic {
       h('div',{className:'report-type-actions',role:'group','aria-label':'Report type'},types.map(([value,label])=>h('button',{key:value,type:'button','aria-pressed':f.type===value,className:'report-type-button'+(f.type===value?' is-selected':''),onClick:()=>this.setReportFilter('type',value)},label))),
       h('section',{className:'report-filter-bar','aria-label':'Report filters'},[
         h('div',{className:'report-filter-actions'},[h('strong',null,'Filters'+(activeCount?' ('+activeCount+')':'')),
-          f.type!=='inventory'?filterButton('date','Date range',f.from||f.to):null,
-          ...facets.filter(([key])=>['category','subcategoryId'].includes(key)).map(([key,label])=>filterButton(key,label,!!f[key],key==='subcategoryId'&&!f.category)),
+          f.type!=='inventory'?filterButton('date','Date range: '+(f.from||f.to?((f.from||'Any')+' to '+(f.to||'Any')):'All time'),f.from||f.to):null,
+          ...facets.filter(([key])=>['category','subcategoryId'].includes(key)).map(([key,label])=>filterButton(key,label+': '+(f[key]?labelFor(facets.find(item=>item[0]===key)[2],f[key]):'All'),!!f[key],key==='subcategoryId'&&!f.category)),
           filterButton('more','More filters',!!(f.brandId||f.supplierId||f.productId||f.lowStock)),
-          activeCount?h('button',{type:'button',className:'report-clear',onClick:this.resetReportFilters},'Clear all'):null
+          activeCount?h('button',{type:'button',className:'report-clear',onClick:this.resetReportFilters},'Clear all'):null,
+          h('label',{className:'report-search'},[h('span',{className:'sr-only'},'Search report records'),h('input',{type:'search',placeholder:'Search transaction, product, category...',value:s.tableViews['generated-report']?.query||'',onChange:e=>this.setTableView('generated-report',{query:e.target.value,page:1})})])
         ]),
         open?h('div',{id:'report-filter-options',className:'report-filter-options',onKeyDown:e=>{if(e.key==='Escape'){this.setState({reportFilterOpen:null});e.currentTarget.parentElement.querySelector('[aria-expanded="true"]')?.focus();}}},[
           open==='more'?h('div',{className:'report-date-options'},[...facets.filter(([key])=>!['category','subcategoryId'].includes(key)).map(([key,label,options])=>h('label',{key},[label,h('select',{value:f[key]||'',onChange:e=>this.setReportFilter(key,e.target.value)},[['','All '+label.toLowerCase()+' options'],...options].map(([value,name])=>h('option',{key:value,value},name)))])),f.type==='inventory'?h('label',null,[h('input',{type:'checkbox',checked:!!f.lowStock,onChange:e=>this.setReportFilter('lowStock',e.target.checked?'1':'')}),'Low stock only']):null]):open==='date'?h('div',{className:'report-date-options'},[
@@ -2442,12 +2463,14 @@ class Component extends DCLogic {
       h('p',{role:'status','aria-live':'polite',className:'report-filter-hint'},s.reportLoading?'Updating results below...':s.reportError?'Results could not be updated.':r?r.rows.length+' matching records':'Loading report...'),
       s.reportError?h('div',{role:'alert'},[s.reportError,btn('Retry',this.generateReport)]):null,
       h('section',{key:'report-results',className:'report-results','aria-label':'Report results','aria-busy':!!s.reportLoading},[
-        h('div',{className:'report-results-header'},[h('h2',null,r.title),loaded?h('div',{className:'action-group'},[h('a',{className:'kita-button',href:url('pdf'),download:true},'Download PDF'),h('a',{className:'kita-button',href:url('csv'),download:true},'Export CSV'),h('a',{className:'kita-button',href:url('print'),target:'_blank',rel:'noopener'},'Print report')]):null]),
+        h('div',{className:'report-results-header'},[h('h2',null,r.title),loaded?h('div',{className:'action-group'},[h('a',{className:'kita-button',href:url('pdf'),download:true},'Download PDF Summary'),h('a',{className:'kita-button',href:url('csv'),download:true},'Export CSV'),h('a',{className:'kita-button',href:url('print'),target:'_blank',rel:'noopener'},'Print report')]):null]),
         loaded?h('p',{className:'report-filter-hint'},(s.reportLoading||s.reportError?'Showing the last successfully loaded results. ':'')+'Exports include all filtered records, before table search or pagination. Generated: '+r.generated):null,
         h('p',{className:'report-filter-hint'},Object.entries(r.labels||{}).map(([key,value])=>key+': '+value).join(' | ')),
-        this.recordTable('generated-report',Object.keys(r.columns),r.rows.map((row,i)=>tr(Object.values(r.columns).map(key=>td(row[key]==null?'-':(r.moneyKeys||[]).includes(key)?Number(row[key]).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}):row[key],(r.numericKeys||[]).includes(key)?{textAlign:'right',fontVariantNumeric:'tabular-nums'}:key==='reference'?{fontFamily:'monospace'}:{})),i)),{emptyMessage}),
-        !r.rows.length&&activeCount?h('div',{className:'action-group'},[h('span',null,'Try removing a filter to see more records.'),btn('Clear all filters',this.resetReportFilters)]):null,
         h('div',{className:'report-summary'},Object.entries(r.summary||{}).map(([label,value])=>h('div',{key:label,className:'report-metric'},[h('span',null,label),h('strong',null,value)]))),
+        loaded&&(s.reportAppliedFilters?.type||f.type)==='sales'?this.buildReportCharts(r.rows):null,
+        this.recordTable('generated-report',Object.keys(r.columns),r.rows.map((row,i)=>tr(Object.values(r.columns).map(key=>td(row[key]==null?'-':key==='status'?badge(row[key]):(r.moneyKeys||[]).includes(key)?Number(row[key]).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}):row[key],(r.numericKeys||[]).includes(key)?{textAlign:'right',fontVariantNumeric:'tabular-nums'}:key==='reference'?{fontFamily:'monospace'}:{})),i)),{emptyMessage,externalSearch:true}),
+        !r.rows.length&&activeCount?h('div',{className:'action-group'},[h('span',null,'Try removing a filter to see more records.'),btn('Clear all filters',this.resetReportFilters)]):null,
+
         h('p',{className:'report-filter-hint'},r.note)
       ])
     ]);

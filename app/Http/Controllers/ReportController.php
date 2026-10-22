@@ -48,7 +48,7 @@ class ReportController extends Controller
             $note .= ' Amounts are recorded line totals; refunds shown are cumulative, including refunds after the sale date. All recorded transaction statuses are listed.';
             $columns = ['Transaction No.' => 'reference', 'Sale date' => 'date'] + $columns + ['Status' => 'status', 'Quantity' => 'quantity', 'Line total (PHP)' => 'amount', 'Refunded (PHP)' => 'refunded'];
             $select[0] = 'line.name as product';
-            $select = array_merge($select, ['t.date', 't.uuid as reference', 'tn.id as numberId', 'tn.issued_date as numberDate', 't.status', 'line.qty as quantity', 'line.lineTotal as amount', 'line.refundedAmount as refunded']);
+            $select = array_merge($select, ['t.date', 'line.created_at as recordedAt', 't.uuid as reference', 'tn.id as numberId', 'tn.issued_date as numberDate', 't.status', 'line.qty as quantity', 'line.lineTotal as amount', 'line.refundedAmount as refunded']);
         } elseif ($type === 'receipts') {
             $title = 'Received Stock';
             $query->join('inventory_batches as b', 'b.productId', '=', 'p.id')->where('b.source', '<>', 'legacy_opening');
@@ -102,6 +102,10 @@ class ReportController extends Controller
         foreach ($rows as $row) {
             if (in_array($type, ['sales', 'movements'])) {
                 $row->transactionId = $row->reference;
+                if ($type === 'sales') {
+                    $row->time = $row->recordedAt ? substr($row->recordedAt, 11, 5) : null;
+                    unset($row->recordedAt);
+                }
                 if ($row->numberId) {
                     $row->reference = TransactionNumber::format($row->numberId, $row->numberDate);
                 }
@@ -116,6 +120,7 @@ class ReportController extends Controller
         $summary = ['Records' => number_format($rows->count())];
         if ($type === 'sales') {
             $summary += ['Transactions' => number_format($rows->pluck('reference')->unique()->count()), 'Recorded line totals (PHP)' => number_format($rows->sum('amount'), 2), 'Cumulative refunds (PHP)' => number_format($rows->sum('refunded'), 2)];
+            $summary['Recorded less refunds (PHP)'] = number_format($rows->sum('amount') - $rows->sum('refunded'), 2);
         } elseif ($type === 'inventory') {
             $summary += ['Products at reorder level' => number_format($rows->filter(fn ($row) => $row->stock <= $row->minimum)->count())];
         } elseif ($type === 'receipts') {

@@ -51,6 +51,14 @@ class ReportsTest extends TestCase
         $this->getJson('/reports/data?type=inventory&category=Missing')->assertOk()->assertJsonCount(0, 'rows');
     }
 
+    public function test_sales_chart_time_and_refund_summary_use_recorded_lines(): void
+    {
+        DB::table('transaction_lines')->where('transaction_uuid', 'sale-1')->update(['created_at' => '2026-10-06 14:30:00', 'refundedAmount' => 3]);
+        $this->getJson('/reports/data?type=sales&from=2026-10-06&to=2026-10-06')
+            ->assertOk()->assertJsonPath('rows.0.time', '14:30')
+            ->assertJsonPath('summary.Recorded less refunds (PHP)', '7.00');
+    }
+
     public function test_transaction_numbers_remain_stable_across_filters_and_exports(): void
     {
         $number = TransactionNumber::assign('sale-1', '2026-10-06');
