@@ -1407,16 +1407,10 @@ class Component extends DCLogic {
     const byProduct={};sales.rows.forEach(row=>{byProduct[row.productId]=(byProduct[row.productId]||0)+row.qty*row.amount;});
     const ranked=Object.entries(byProduct).map(([id,rev])=>({p:data.PRODUCTS.find(p=>String(p.id)===id),rev})).filter(row=>row.p).sort((a,b)=>b.rev-a.rev);
     const lowStock=this.managerLowStock();
-    const orders=this.state.purchaseOrdersLocal||data.PURCHASE_ORDERS||[];
-    const requests=this.state.itemRequestsLocal||data.ITEM_REQUESTS||[];
-    const disapproved=requests.filter(r=>['Disapproved','Declined'].includes(r.status));
-    const activeOrders=orders.filter(order=>!['Fully Received','Received','Delivered','Completed','Closed','Cancelled','Canceled','Rejected'].includes(order.status));
     const heading=(title,description,extra)=>h('div',{className:'dashboard-panel-heading'},[h('div',null,[h('h2',{className:'panel-title'},title),h('p',null,description)]),extra]);
-    const byHour={};sales.rows.forEach(row=>{byHour[row.hour]=(byHour[row.hour]||0)+Number(row.qty);});
-    const maxHour=Math.max(1,...Object.values(byHour));
     return h('div',{className:'operations-dashboard'},[
       h('header',{key:'header',className:'dashboard-header'},[
-        sectionTitle('Sales & Operations Dashboard',manager?'Sales performance, stock alerts and purchase requests':'Sales performance, inventory and purchasing overview'),
+        sectionTitle('Sales & Operations Dashboard',manager?'Manager overview of sales, stock and expiry alerts':'Sales performance, stock and expiry alerts'),
         this.buildDashboardSalesFilter(sales),
         h('button',{type:'button',className:'kita-button',disabled:!!this.state.pendingLoads,onClick:()=>this.reloadCatalog().catch(error=>this.toast(error.message,'error'))},this.state.pendingLoads?'Refreshing...':'Refresh dashboard'),
       ]),
@@ -1437,52 +1431,31 @@ class Component extends DCLogic {
             manager?btn('Purchase',this.purchaseLowStock(p.id),'primary'):badge('Low stock'),
           ])):h('p',{role:'status',className:'record-empty'},'No low-stock products.')),
         ]),
-        card([heading('Purchase Orders Tracking','Latest purchase orders and delivery status',h('span',{className:'dashboard-period-badge'},activeOrders.length+' active')),
-          h('div',{className:'dashboard-records',tabIndex:0,'aria-label':'Purchase orders'},orders.length?orders.slice(0,10).map(order=>h('div',{key:order.id,className:'dashboard-record'},[
-            h('div',{className:'dashboard-record-main'},[h('strong',null,order.id),h('p',null,(order.lines||[]).map(line=>line.name||data.PRODUCTS.find(p=>String(p.id)===String(line.productId))?.name||'Product').join(', ')||'No items recorded'),h('small',null,'Supplier: '+((data.SUPPLIERS||[]).find(s=>String(s.id)===String(order.supplierId))?.name||'Not recorded'))]),
-            h('div',{className:'dashboard-record-value'},[h('strong',null,peso(order.orderedValue)),badge(order.status)]),
-          ])):h('p',{role:'status',className:'record-empty'},'No purchase orders recorded.')),
-          btn(manager?'View Stock Receiving':'View Purchase Requests',this.goScreen(manager?'mgrPO':'admPurchasedOrders')),
-        ]),
-      ]),
-      h('details',{key:'secondary',className:'dashboard-more'},[
-        h('summary',null,'More insights: slow-moving products, expiry and peak hours'),
-        h('div',{className:'dashboard-secondary-grid'},[
-        card([heading('Least Sales','Lowest recorded product sales (PHP)'),rankedSales(ranked.slice(-5).reverse(),manager?this.quickPromoFromLeastSales:null)]),
         this.buildNearExpiredWidget(manager),
-        card([heading('Peak-Hour Activity','Units sold by hour in the selected period'),Object.keys(byHour).length?h('div',{className:'dashboard-hour-bars'},Object.keys(byHour).sort((a,b)=>a-b).map(hour=>h('div',{key:hour,className:'dashboard-hour-row'},[
-          h('span',null,String(hour).padStart(2,'0')+':00'),h('div',{className:'sales-bar','aria-hidden':true},h('span',{style:{width:byHour[hour]/maxHour*100+'%'}})),h('strong',null,byHour[hour]),
-        ]))):h('p',{className:'record-empty'},'No sales recorded for this period.')]),
-      ])]),
-      manager?h('details',{key:'requests',className:'dashboard-manager-tools dashboard-more'},[
-        h('summary',null,'Purchase requests & manager settings'),
-        h('div',{className:'dashboard-request-metrics'},[
-          kpi('Item Requests (Pending)',requests.filter(r=>['Pending','Pending Approval'].includes(r.status)).length),
-          kpi('Forwarded Purchase Requests',requests.filter(r=>['Approved','Approved / Waiting for Delivery'].includes(r.status)).length),
-          kpi('For Purchased Request',requests.filter(r=>r.status==='Proceed to Purchase').length),
-          kpi('Disapproved Requests',disapproved.length),
-        ]),
-        disapproved.length?card([h('h3',null,'Disapproved requests'),...disapproved.map(r=>h('p',{key:r.id},r.id+': '+(r.lines||[]).map(line=>line.name).join(', ')+' - '+(r.disapprovalReason||'No reason recorded')))]):null,
-        h('details',{className:'dashboard-pin-settings'},[h('summary',null,'Manager approval PIN settings'),this.buildManagerPin()]),
+      ]),
+      manager?h('details',{key:'manager-settings',className:'dashboard-manager-tools dashboard-more'},[
+        h('summary',null,'Manager approval PIN settings'),this.buildManagerPin(),
       ]):null,
     ]);
   }
   expiringBatches=()=> (this.state.data?.EXPIRING_BATCHES||[]).map(b=>({p:{...b,id:b.productId,batch:b.batchNumber||b.id,lot:b.lotNumber||'-',stock:b.quantityRemaining},days:Math.round((new Date(b.expiryDate)-new Date(this.state.data.BUSINESS_DATE))/86400000)}));
-  buildNearExpiredWidget(withLink){
-    const {data}=this.state;
-    const soon=this.expiringBatches().slice(0,5);
+  buildNearExpiredWidget(manager){
+    const h=React.createElement, soon=this.expiringBatches();
     return card([
-      React.createElement("div",{key:"t",style:{fontWeight:800,marginBottom:10}},"Near-Expired Products"),
-      soon.length===0?React.createElement("div",{key:"e",style:{fontSize:13,color:COLORS.textMuted}},"Nothing near expiry."):
-      soon.map((x,i)=>React.createElement("div",{key:i,style:{padding:"6px 0",borderBottom:"1px solid #eef1f6",fontSize:13}},[
-        React.createElement("div",{key:"row",style:{display:"flex",justifyContent:"space-between",alignItems:"center"}},[
-          React.createElement("div",{key:"n",style:{fontWeight:600}},x.p.name),
-          this.state.role==="manager"&&x.days>0?React.createElement("a",{key:"cp",onClick:this.quickPromoFromNearExpiry(x.p.id),style:{fontSize:11,fontWeight:700,cursor:"pointer"}},"Create Promo â†’"):null,
+      h('div',{className:'dashboard-panel-heading'},[
+        h('div',null,[h('h2',{className:'panel-title'},'Near-Expired Products'),h('p',null,'Current batches approaching expiry or already expired')]),
+        badge(soon.length+' batches'),
+      ]),
+      h('div',{className:'dashboard-records',tabIndex:0,'aria-label':'Near-expired products'},soon.length?soon.map((x,i)=>h('div',{key:x.p.batch+'-'+i,className:'dashboard-record'},[
+        h('div',{className:'dashboard-record-main'},[
+          h('strong',null,x.p.name),
+          h('p',null,'Stock: '+x.p.stock+' / Expiry: '+x.p.expiryDate),
+          h('small',null,'Batch: '+x.p.batch+' / Lot: '+x.p.lot),
+          h('p',{className:x.days<=0?'dashboard-stock-alert':null},x.days<=0?'Expired - blocked from sale':x.days+' day(s) left'),
         ]),
-        React.createElement("div",{key:"m",style:{fontSize:11,color:COLORS.textMuted}},`Batch ${x.p.batch} Â· Lot ${x.p.lot} Â· Qty ${x.p.stock}`),
-        React.createElement("span",{key:"d",style:{fontSize:11,fontWeight:700,color:x.days<=1?COLORS.red:x.days<=7?COLORS.amber:COLORS.textSoft}},x.days<=0?"Expired - blocked from sale":x.days+" day(s) left"),
-      ])),
-      withLink?React.createElement("a",{key:"link",onClick:()=>{ this.setState({screen:"mgrInventory",invTab:"expiry"});this.loadInventoryWorkflows(); },style:{display:"block",marginTop:10,fontSize:12,fontWeight:700,cursor:"pointer"}},"View Near-Expiry Monitoring â†’"):null,
+        manager&&x.days>0?btn('Create promotion',this.quickPromoFromNearExpiry(x.p.id),'primary'):badge(x.days<=0?'Expired':'Near expiry'),
+      ])):h('p',{role:'status',className:'record-empty'},'Nothing near expiry.')),
+      manager?btn('View Near-Expiry Monitoring',()=>{this.setState({screen:'mgrInventory',invTab:'expiry'});this.loadInventoryWorkflows();}):null,
     ]);
   }
   reloadPurchasing=async()=>{

@@ -25,23 +25,31 @@ assert.equal(dashboardSales(data,'yearly','2025-12-31').total,2);
 assert.equal(dashboardSales({},'daily','').total,0);
 const app = new Component();
 Object.assign(app.state,{data,itemRequestsLocal:[]});
-app.buildManagerPin=()=>null;
 function flatten(node) { return !node||typeof node!=='object'?[]:[node,...(node.children||[]).flat(Infinity).flatMap(flatten)]; }
 for(const build of ['buildMgrDashboard','buildAdmDashboard']) {
   app.setState({dashboardPeriod:'daily',dashboardDate:''});
   const initial = app[build]();
   assert.equal(flatten(initial).filter(node=>node.type==='polyline').length,1);
-  assert.equal(flatten(initial).filter(node=>node.props?.className==='sales-ranking').length,2);
+  assert.equal(flatten(initial).filter(node=>node.props?.className==='sales-ranking').length,1);
   assert.equal(flatten(initial).filter(node=>node.props?.className==='dashboard-metrics').length,1);
-  assert(JSON.stringify(initial).includes('Purchase Orders Tracking'));
+  for(const removed of ['Purchase Orders Tracking','Least Sales','Peak-Hour Activity','Disapproved Requests','Purchase Request Overview']) assert(!JSON.stringify(initial).includes(removed));
+  assert(JSON.stringify(initial).includes('Near-Expired Products'));
+  assert.equal(JSON.stringify(initial).includes('Manager approval PIN settings'),build==='buildMgrDashboard');
   const periodButton=flatten(initial).find(node=>node.type==='button'&&node.children.includes('Monthly'));
   periodButton.props.onClick();
   assert.equal(app.state.dashboardPeriod,'monthly');
   assert(!JSON.stringify(initial).includes('NaN'));
   if(build==='buildMgrDashboard') {
-    const promo=flatten(initial).find(node=>node.type==='button'&&node.children.includes('Create promotion'));
+    data.EXPIRING_BATCHES=[{id:11,productId:1,name:'Milk',batchNumber:'B11',quantityRemaining:3,expiryDate:'2026-10-24'}, {id:12,productId:1,name:'Milk',batchNumber:'B12',quantityRemaining:1,expiryDate:'2026-10-21'}];
+    const expiryView=app[build]();
+    const promos=flatten(expiryView).filter(node=>node.type==='button'&&node.children.includes('Create promotion'));
+    assert.equal(promos.length,1);
+    const promo=promos[0];
     promo.props.onClick();
     assert.deepEqual(app.state.promoSelectedItems,[1]);
+    assert.equal(app.state.promoType,'Near-Expiry');
+    assert(JSON.stringify(expiryView).includes('Expired - blocked from sale'));
+    data.EXPIRING_BATCHES=[];
   }
   const select = flatten(initial).find(node=>node.type==='select');
   assert.deepEqual(select.children.flat().map(node=>node.props.value),['daily','weekly','monthly','yearly']);
