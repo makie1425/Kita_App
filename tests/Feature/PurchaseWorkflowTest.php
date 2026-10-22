@@ -48,6 +48,36 @@ class PurchaseWorkflowTest extends TestCase
         $this->assertDatabaseHas('products', ['id' => $this->product, 'stock' => 4]);
     }
 
+    public function test_substitutions_enforce_cost_and_outstanding_quantity_and_preserve_receipt_history(): void
+    {
+        $replacement = $this->postJson('/api/products', [
+            'name' => 'Replacement', 'category' => 'Supplies', 'barcode' => 'REPLACEMENT', 'stock' => 0, 'conversionFactor' => 1,
+            'unitPrice' => 2, 'price' => 4, 'stockUnit' => 'Piece', 'purchaseUnit' => 'Piece', 'supplierId' => $this->supplier,
+        ])->assertCreated()->json('product.id');
+        $id = $this->requestOrder(4);
+        $this->approve($id);
+        $body = $this->delivery(4);
+        $body['lines'][0]['substituteProductId'] = $replacement;
+        $body['lines'][0]['substitutionReason'] = 'damaged';
+        $body['lines'][0]['unitCost'] = 3;
+        $this->actingAs($this->manager)->postJson('/api/purchase-orders/'.$id.'/receive', $body)->assertUnprocessable();
+        $body['lines'][0]['unitCost'] = 2;
+        DB::table('products')->where('id', $replacement)->update(['unitPrice' => 3]);
+        $this->postJson('/api/purchase-orders/'.$id.'/receive', $body)->assertUnprocessable();
+        DB::table('products')->where('id', $replacement)->update(['unitPrice' => 2]);
+        $body['lines'][0]['qty'] = 5;
+        $this->postJson('/api/purchase-orders/'.$id.'/receive', $body)->assertUnprocessable();
+        $this->assertDatabaseCount('receiving_records', 0);
+        $body['lines'][0]['qty'] = 4;
+        $this->postJson('/api/purchase-orders/'.$id.'/receive', $body)->assertCreated()->assertJsonPath('status', 'Fully Received');
+        $this->assertDatabaseHas('products', ['id' => $this->product, 'stock' => 0]);
+        $this->assertDatabaseHas('products', ['id' => $replacement, 'stock' => 4]);
+        $this->assertDatabaseHas('receiving_record_lines', ['productId' => $replacement, 'name' => 'Replacement', 'conditionText' => 'Damaged replacement for product #'.$this->product.' (New Item)']);
+        $this->assertDatabaseHas('inventory_batches', ['productId' => $replacement, 'unitCost' => 2]);
+        $this->postJson('/api/purchase-orders/'.$id.'/receive', $body)->assertOk();
+        $this->assertDatabaseHas('products', ['id' => $replacement, 'stock' => 4]);
+    }
+
     private function requestOrder(int $qty = 10): string
     {
         return $this->actingAs($this->manager)->postJson('/api/purchase-requests', ['category' => 'Supplies', 'notes' => 'For replenishment',

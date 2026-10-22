@@ -1443,3 +1443,15 @@ body:has(.purchase-details-dialog[open]) { overflow: hidden; }
 .receiving-top-filters .purchase-filters { flex:1; margin:0; padding:0; border:0; }
 .receiving-audit-filter,.report-status-filter { display:flex; flex-direction:column; gap:5px; font-size:11px; color:#526579; }
 .receiving-audit-filter select,.report-status-filter select { padding:9px 12px; background:white; color:#172033; border:1px solid #dce6f7; border-radius:7px; }
+
+/* Receiving stays above the queue; native dialog provides focus trapping. */
+.receiving-dialog { width:min(1200px,94vw); max-height:90dvh; padding:0; border:1px solid #dce6f7; border-radius:18px; color:#162b51; background:white; overflow:auto; }
+.receiving-dialog::backdrop { background:rgba(19,36,67,.55); }
+body:has(.receiving-dialog[open]) { overflow:hidden; }
+.receiving-dialog .receiving-form { border:0; padding:24px; }
+.receiving-dialog .primary-button { background:#1747e8!important; color:white!important; }
+.receiving-dialog button:hover { color:white!important; background:#1239be!important; }
+.receiving-substitution { min-width:240px; display:grid; gap:8px; }
+.receiving-substitution small { color:#58729b; }
+.receiving-top-filters .purchase-filters { display:flex; flex-wrap:wrap; align-items:end; gap:12px; }
+.receiving-top-filters .purchase-filters>label { flex:1 1 170px; }

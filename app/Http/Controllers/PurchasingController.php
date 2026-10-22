@@ -53,6 +53,8 @@ class PurchasingController extends Controller
             'notes' => ['nullable', 'string', 'max:2000'],
             'lines' => ['required', 'array', 'min:1', 'max:500'],
             'lines.*.productId' => ['required', 'integer', 'distinct'],
+            'lines.*.substituteProductId' => ['nullable', 'integer'],
+            'lines.*.substitutionReason' => ['nullable', 'in:missing,damaged'],
             'lines.*.qty' => ['required', 'integer', 'between:1,1000000'],
             'lines.*.unitCost' => ['sometimes', ...InventoryRules::moneyRules()],
             'lines.*.sellingPrice' => ['sometimes', ...InventoryRules::moneyRules()],
@@ -95,12 +97,25 @@ class PurchasingController extends Controller
             $receiptId = 'RCV-'.Str::ulid();
             DB::table('receiving_records')->insert(['id' => $receiptId, 'poId' => $id]);
             $receivedCents = 0;
+            $replacementReasons = [];
             foreach ($data['lines'] as $line) {
                 $ordered = $orderLines->firstWhere('productId', $line['productId']);
                 if (! $ordered) {
                     throw ValidationException::withMessages(['lines' => 'A delivered item does not belong to this PO.']);
                 }
-                $product = InventoryRules::product($line['productId'], 'lines');
+                $substitute = ! empty($line['substituteProductId']);
+                $product = InventoryRules::product($line['substituteProductId'] ?? $line['productId'], 'lines');
+                if ($substitute) {
+                    $replacementReasons[] = ucfirst($line['substitutionReason'] ?? '').' replacement';
+                    $limit = (int) round((float) $ordered->unitCost * 100);
+                    $actualCost = $line['unitCost'] ?? $product->unitPrice;
+                    if ($product->id == $ordered->productId || empty($line['substitutionReason'])
+                        || $line['qty'] > $ordered->orderedQty - $ordered->deliveredQty
+                        || (int) round(InventoryRules::unitCost($product) * 100) > $limit
+                        || (int) round((float) $actualCost * 100) > $limit) {
+                        throw ValidationException::withMessages(['lines' => 'Select an equal-or-lower-cost replacement, provide its missing/damaged reason, and receive only the outstanding quantity.']);
+                    }
+                }
                 if ($ordered->unit && $ordered->unit !== ($product->stockUnit ?: $product->unit)) {
                     throw ValidationException::withMessages(['lines' => 'The inventory unit has changed since approval. Reconcile the unit before receiving.']);
                 }
@@ -112,7 +127,7 @@ class PurchasingController extends Controller
                 if ($received > $ordered->orderedQty && ! trim($data['notes'] ?? '')) {
                     throw ValidationException::withMessages(['notes' => 'Explain the excess delivery before posting it.']);
                 }
-                $cost = (float) ($line['unitCost'] ?? $ordered->unitCost);
+                $cost = (float) ($line['unitCost'] ?? ($substitute ? $product->unitPrice : $ordered->unitCost));
                 $receivedCents += (int) round(InventoryRules::lineTotal($line['qty'], $cost) * 100);
                 FifoInventory::opening($product->id, (int) $product->stock);
                 FifoInventory::receive($product->id, $line['qty'], $cost, $data['receivedDate'], $receiptId, $order->supplierId, 'purchase_receiving', $line['batchNumber'] ?? null, $line['expiryDate'] ?? null, $line['manufacturedDate'] ?? null, $line['lotNumber'] ?? null);
@@ -128,8 +143,8 @@ class PurchasingController extends Controller
                 $ordered->deliveredQty = $received;
                 DB::table('receiving_record_lines')->insert([
                     'receivingId' => $receiptId, 'productId' => $product->id, 'poQty' => $ordered->orderedQty,
-                    'deliveredQty' => $line['qty'], 'name' => $ordered->name, 'category' => $ordered->category ?? $product->category,
-                    'unit' => $ordered->unit ?? ($product->stockUnit ?: $product->unit), 'conditionText' => 'Accepted',
+                    'deliveredQty' => $line['qty'], 'name' => $product->name, 'category' => $product->category,
+                    'unit' => $ordered->unit ?? ($product->stockUnit ?: $product->unit), 'conditionText' => $substitute ? ucfirst($line['substitutionReason']).' replacement for product #'.$ordered->productId.' ('.$ordered->name.')' : 'Accepted',
                     'unitCost' => $cost, 'batchNumber' => $line['batchNumber'] ?? null, 'expiryDate' => $line['expiryDate'] ?? null,
                     'manufacturedDate' => $line['manufacturedDate'] ?? null,
                     'lotNumber' => $line['lotNumber'] ?? null,
@@ -154,7 +169,7 @@ class PurchasingController extends Controller
             }
             DB::table('receiving_records')->where('id', $receiptId)->update([
                 'id' => $receiptId, 'poId' => $id, 'date' => $data['receivedDate'], 'received_at' => now(),
-                'deliveryStatus' => $status, 'discrepancy' => ! $matches, 'discrepancyType' => $short ? 'Missing items' : ($matches ? null : 'Quantity difference'),
+                'deliveryStatus' => $status, 'discrepancy' => ! $matches || count($replacementReasons) > 0, 'discrepancyType' => implode('; ', array_unique(array_filter([$short ? 'Missing items' : ($matches ? null : 'Quantity difference'), ...$replacementReasons]))) ?: null,
                 'inspection' => json_encode($inspection),
                 'outcome' => $data['notes'] ?? '', 'adminApproval' => 'Posted by Manager', 'barcodeAssignment' => 'Existing inventory barcode',
                 'idempotencyKey' => $data['idempotencyKey'], 'deliveryReference' => $data['deliveryReference'], 'payloadHash' => $hash,
