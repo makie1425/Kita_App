@@ -1438,3 +1438,8 @@ body:has(.purchase-details-dialog[open]) { overflow: hidden; }
 .receiving-dashboard .receiving-tabs button { background:transparent !important; color:#526579 !important; }
 .receiving-dashboard .receiving-tabs button[aria-pressed=true] { background:#fff !important; color:#1747e8 !important; border-bottom:2px solid #1747e8 !important; }
 .receiving-dashboard td details summary { cursor:pointer; color:#1747e8; font-weight:600; }
+.receiving-dashboard .receiving-tabs button:hover,.receiving-dashboard .receiving-tabs button:focus-visible,.reports-page .report-type-button:hover,.reports-page .report-filter-button:hover { background:#1747e8 !important; color:#fff !important; }
+.receiving-top-filters { display:flex; flex-wrap:wrap; align-items:end; gap:12px; margin-bottom:18px; padding:14px; background:white; border:1px solid #dce6f7; border-radius:12px; }
+.receiving-top-filters .purchase-filters { flex:1; margin:0; padding:0; border:0; }
+.receiving-audit-filter,.report-status-filter { display:flex; flex-direction:column; gap:5px; font-size:11px; color:#526579; }
+.receiving-audit-filter select,.report-status-filter select { padding:9px 12px; background:white; color:#172033; border:1px solid #dce6f7; border-radius:7px; }

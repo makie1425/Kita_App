@@ -1484,7 +1484,7 @@ class Component extends DCLogic {
       h('label',null,['Status',h('select',{value:this.state.purchaseStatusFilter||'',onChange:e=>this.setState({purchaseStatusFilter:e.target.value})},['','Pending Approval','Approved / Waiting for Delivery','Declined','Partially Received','Fully Received','Received with Discrepancy','Pending','Approved','Draft','Closed'].map(s=>h('option',{key:s,value:s},s||'All statuses')))]),
       h('label',null,['Request date from',h('input',{type:'date',value:this.state.purchaseFrom||'',onChange:e=>this.setState({purchaseFrom:e.target.value})})]),
       h('label',null,['Request date to',h('input',{type:'date',value:this.state.purchaseTo||'',onChange:e=>this.setState({purchaseTo:e.target.value})})]),
-      btn('Clear filters',()=>this.setState({purchaseSupplierFilter:'',purchaseStatusFilter:'',purchaseFrom:'',purchaseTo:''})),
+      btn('Clear filters',()=>this.setState({purchaseSupplierFilter:'',purchaseStatusFilter:'',purchaseFrom:'',purchaseTo:'',receivingAudit:''})),
       btn(this.state.purchaseLoading?'Refreshing...':'Refresh',()=>this.reloadPurchasing().catch(()=>{}))
     ]);
   }
@@ -1610,6 +1610,17 @@ class Component extends DCLogic {
       onChange:e=>this.setState(s=>({[field]:{...s[field],[id]:e.target.value}}))
     })));
   }
+  matchesReceivingAudit(order,filter){
+    const receipts=order.receipts||[];
+    const missing=receipts.length>0&&(order.lines||[]).some(l=>Number(l.orderedQty)>Number(l.deliveredQty||0));
+    const damaged=receipts.some(r=>/damag/i.test(r.discrepancyType||'')||(r.lines||[]).some(l=>/damag/i.test(l.conditionText||'')));
+    const flagged=missing||damaged||receipts.some(r=>r.discrepancy)||order.status==='Received with Discrepancy';
+    return !filter||(filter==='missing'?missing:filter==='damaged'?damaged:filter==='none'?!flagged:flagged);
+  }
+  buildReceivingAuditFilter(){
+    const h=React.createElement;
+    return h('label',{className:'receiving-audit-filter'},['Discrepancy audit',h('select',{'aria-label':'Discrepancy audit',value:this.state.receivingAudit||'',onChange:e=>{this.setState({receivingAudit:e.target.value});this.setTableView('purchase-receiving',{page:1});}},[['','All discrepancies'],['missing','Missing items only'],['damaged','Damaged stock only'],['flagged','Discrepancy flagged'],['none','No discrepancy']].map(([value,label])=>h('option',{key:value,value},label)))]);
+  }
   buildPurchaseReceiving(){
     const h=React.createElement,state=this.purchasingState();if(state)return state;
     const order=this.state.purchaseData.orders.find(o=>o.id===this.state.purchaseReceivingId);
@@ -1619,19 +1630,20 @@ class Component extends DCLogic {
       h('div',{className:'purchase-filters'},[h('label',null,['Receipt reference',h('input',{readOnly:true,value:'Assigned automatically from '+order.id,'aria-label':'Automatic delivery reference'})])]),
       h('label',{className:'purchase-notes'},['Receiving notes (required for excess delivery)',h('textarea',{maxLength:2000,value:this.state.receiveNotes,onChange:e=>this.setState({receiveNotes:e.target.value})})]),
       this.state.receiveError?h('p',{role:'alert',className:'alert'},this.state.receiveError):null,
-      h('button',{className:'primary-button',disabled:!!this.state.receivingSaving,"aria-busy":!!this.state.receivingSaving,onClick:this.confirmPurchaseReceiving},this.state.receivingSaving?'Posting delivery...':'Confirm Receipt'),btn('Back',()=>this.setState({purchaseReceivingId:null})),this.purchaseReportLink(order.id)
+      h('button',{className:'primary-button',disabled:!!this.state.receivingSaving,"aria-busy":!!this.state.receivingSaving,onClick:this.confirmPurchaseReceiving},this.state.receivingSaving?'Posting delivery...':'Confirm Receipt'),btn('Back',()=>this.setState({purchaseReceivingId:null}))
     ]);
     const orders=this.state.purchaseData.orders;
     const canReceive=o=>['Approved / Waiting for Delivery','Partially Received','Approved','Ordered'].includes(o.status)||(o.status==='Draft'&&o.request?.status==='Approved');
     const missing=o=>(o.lines||[]).reduce((sum,l)=>sum+Math.max(0,Number(l.orderedQty)-Number(l.deliveredQty||0)),0);
     const discrepancy=o=>o.status==='Received with Discrepancy'||(o.receipts||[]).some(r=>r.discrepancy);
     const tab=this.state.receivingTab||'active';
-    const selected=this.filterPurchases(orders).filter(o=>tab==='missing'?(o.receipts||[]).length&&missing(o)>0:tab==='discrepancies'?discrepancy(o):true);
+    const selected=this.filterPurchases(orders).filter(o=>this.matchesReceivingAudit(o,this.state.receivingAudit||'')).filter(o=>tab==='missing'?(o.receipts||[]).length&&missing(o)>0:tab==='discrepancies'?discrepancy(o):true);
     const receipts=orders.flatMap(o=>o.receipts||[]);
     const today=this.state.data?.BUSINESS_DATE;
     const receivedValue=receipts.filter(r=>r.date===today).reduce((sum,r)=>sum+(r.lines||[]).reduce((total,l)=>total+Number(l.deliveredQty||0)*Number(l.unitCost||0),0),0);
     return h('div',{className:'receiving-dashboard'},[
       h('div',{className:'receiving-heading'},[sectionTitle('Stock Receiving Dashboard'),h('label',{className:'receiving-search'},[h('span',{className:'sr-only'},'Search receiving records'),h('input',{type:'search',placeholder:'Search PO, supplier, receipt...',value:this.state.tableViews['purchase-receiving']?.query||'',onChange:e=>this.setTableView('purchase-receiving',{query:e.target.value,page:1})})])]),
+      h('div',{className:'receiving-top-filters'},[this.purchaseFilters(),this.buildReceivingAuditFilter()]),
       h('div',{className:'receiving-metrics'},[
         kpi('Pending Deliveries',orders.filter(canReceive).length+' POs'),
         kpi('Received Today',peso(receivedValue),'Recorded receiving value'),
@@ -1639,12 +1651,11 @@ class Component extends DCLogic {
         kpi('Discrepancies',orders.filter(discrepancy).length+' POs'),
         kpi('Completed Receipts',orders.filter(o=>o.status==='Fully Received').length+' POs'),
       ]),
-      this.state.lastReceivedPo?h('div',{className:'sa-panel',role:'status'},['Receipt saved. ',this.purchaseReportLink(this.state.lastReceivedPo)]):null,
-      this.purchaseFilters(),
+      this.state.lastReceivedPo?h('div',{className:'sa-panel',role:'status'},'Receipt saved. View or print its report from Reports.'):null,
       h('div',{className:'receiving-tabs',role:'group','aria-label':'Receiving views'},[['active','Active Receiving'],['missing','Missing Items / Backorders'],['discrepancies','Discrepancies & Follow-ups']].map(([value,label])=>h('button',{type:'button',key:value,'data-action-tone':'blue','aria-pressed':tab===value,onClick:()=>{this.setState({receivingTab:value});this.setTableView('purchase-receiving',{page:1});}},label))),
       this.recordTable('purchase-receiving',['PO Number','Receipt ID','Supplier','Items / Received','Batch / Lot','Status','Actions'],selected.map(o=>{
         const receiptLines=(o.receipts||[]).flatMap(r=>r.lines||[]);
-        return tr([td(o.id,{fontWeight:700}),td((o.receipts||[]).map(r=>r.id).join(', ')||'Not received'),td(o.supplierName||this.purchaseSupplier(o.supplierId)),td(h('details',null,[h('summary',null,o.lines.length+' items'),...o.lines.map(l=>h('p',{key:l.productId},`${l.name}: ${l.deliveredQty||0} / ${l.orderedQty} ${this.purchaseUnit(l)}`))])),td([...new Set(receiptLines.map(l=>[l.batchNumber,l.lotNumber].filter(Boolean).join(' / ')).filter(Boolean))].join(', ')||'Assigned on receipt'),td(badge(o.status)),td([canReceive(o)?btn('Receive Stock',()=>this.openPurchaseReceiving(o),'primary'):null,this.purchaseReportLink(o.id)])],o.id);
+        return tr([td(o.id,{fontWeight:700}),td((o.receipts||[]).map(r=>r.id).join(', ')||'Not received'),td(o.supplierName||this.purchaseSupplier(o.supplierId)),td(h('details',null,[h('summary',null,o.lines.length+' items'),...o.lines.map(l=>h('p',{key:l.productId},`${l.name}: ${l.deliveredQty||0} / ${l.orderedQty} ${this.purchaseUnit(l)}`))])),td([...new Set(receiptLines.map(l=>[l.batchNumber,l.lotNumber].filter(Boolean).join(' / ')).filter(Boolean))].join(', ')||'Assigned on receipt'),td(badge(o.status)),td([canReceive(o)?btn('Receive Stock',()=>this.openPurchaseReceiving(o),'primary'):null])],o.id);
       }),{externalSearch:true}),
       tab==='discrepancies'?this.buildSupplierContacts(selected):null,
     ]);
@@ -2402,7 +2413,7 @@ class Component extends DCLogic {
     return React.createElement("div",null,[sectionTitle("Supplier Records","Contact info, address, category, status (Active/Inactive only)"),
       this.recordTable("supplier-records",["Supplier","Category","Status","Details"],data.SUPPLIERS.map(s=>tr([td(s.name,{fontWeight:600}),td(s.category),td(badge(s.status)),td(React.createElement("button",{onClick:this.openSupplierDetail(s.id),style:{color:COLORS.brand,background:"none",border:"none",fontWeight:700,cursor:"pointer"}},"View â†’"))],s.id)))]);
   }
-  setReportFilter=(key,value)=>this.setState(s=>({reportFilters:{...(s.reportFilters||{type:'sales'}),[key]:value,...(key==='category'?{subcategoryId:'',productId:''}:['brandId','subcategoryId','supplierId','type'].includes(key)?{productId:''}:{}),...(key==='type'?{expiryStatus:'',lowStock:'',...(value==='inventory'?{from:'',to:''}:{})}:{})},reportFilterOpen:['from','to'].includes(key)?s.reportFilterOpen:null}),this.generateReport);
+  setReportFilter=(key,value)=>this.setState(s=>({reportFilters:{...(s.reportFilters||{type:'sales'}),[key]:value,...(key==='category'?{subcategoryId:'',productId:''}:['brandId','subcategoryId','supplierId','type'].includes(key)?{productId:''}:{}),...(key==='type'?{status:'',audit:'',expiryStatus:'',lowStock:'',...(value==='inventory'?{from:'',to:''}:{})}:{})},reportFilterOpen:['from','to'].includes(key)?s.reportFilterOpen:null}),this.generateReport);
   resetReportFilters=()=>this.setState({reportFilters:{type:this.state.reportFilters?.type||'sales'},reportFilterOpen:null},this.generateReport);
   generateReport=async()=>{
     const filters={...(this.state.reportFilters||{type:'sales'})};
@@ -2476,6 +2487,7 @@ class Component extends DCLogic {
     const h=React.createElement,s=this.state,d=s.data,f=s.reportFilters||{type:'sales'},loaded=s.reportResult;
     const common={'Product':'product','Category':'category','Brand':'brand','Subcategory':'subcategory'};
     const schemas={
+      receiving:{'PO Number':'reportPo','Receipt ID':'reference','Supplier':'supplier','Product':'product','Status':'status','Discrepancy':'discrepancyType','Condition':'condition','Received':'quantity'},
       expiry:{'SKU / Code':'code','Batch / Lot':'batch','Product name':'product','Category':'category','Expiration date':'expiryDate','Stock remaining':'remaining','Unit':'unit','Expiration status':'status'},
       sales:{'Transaction No.':'reference','Sale date':'date',...common,'Status':'status','Quantity':'quantity','Line total (PHP)':'amount','Refunded (PHP)':'refunded'},
       inventory:{...common,'Stock ID':'id','Barcode':'barcode','Unit':'unit','Stock on Hand':'stockOnHand','Sellable Quantity':'sellableStock','Expired':'expiredStock','Recalled':'recalledStock','Reserved':'reservedStock','Exclusion reasons':'exclusionReason','Reorder level':'minimum','Retail price (PHP)':'price','Status':'status'},
@@ -2485,11 +2497,11 @@ class Component extends DCLogic {
     const r=loaded||{title:'Report results',columns:schemas[f.type]||schemas.sales,rows:[],labels:{},summary:{}};
     const appliedLabels=Object.entries(r?.labels||{}).filter(([key])=>key!=='Type').map(([key,value])=>key+': '+value).join(', ');
     const emptyMessage=h('div',{className:'report-table-message',role:s.reportError?'alert':'status','aria-live':'polite'},s.reportLoading?'Loading report records. Please wait...':s.reportError?'Unable to update the report. '+s.reportError:!loaded?'Preparing your report...':'No results found'+(appliedLabels?' for '+appliedLabels:'')+'. Change or clear the filters and try again.');
-    const types=[['sales','Sales lines'],['inventory','Current inventory'],['receipts','Received stock'],['movements','Stock movements'],['expiry','Expiration Monitoring']];
+    const types=[['sales','Sales lines'],['inventory','Current inventory'],['receipts','Received stock'],['movements','Stock movements'],['expiry','Expiration Monitoring'],['receiving','Receiving Audit']];
     const products=d.PRODUCTS.filter(p=>(!f.category||p.category===f.category)&&(!f.subcategoryId||String(p.subcategoryId)===String(f.subcategoryId))&&(!f.brandId||String(p.brandId)===String(f.brandId))&&(f.type==='receipts'||!f.supplierId||String(p.supplierId)===String(f.supplierId)));
     const facets=[['category','Category',d.CATEGORIES.map(c=>[c.name,c.name])],['subcategoryId','Subcategory',this.subcategoriesFor(f.category,true).map(c=>[c.id,c.name])],['brandId','Brand',(d.BRANDS||[]).map(b=>[b.id,b.name])],['supplierId','Supplier',d.SUPPLIERS.map(p=>[p.id,p.name])],['productId','Product',products.map(p=>[p.id,this.productLabel(p)+' #'+p.id])]];
     const selected=facets.filter(([key])=>f[key]);
-    const activeCount=selected.length+(f.expiryStatus?1:0)+(f.lowStock?1:0)+(f.from||f.to?1:0);
+    const activeCount=selected.length+(f.status?1:0)+(f.audit?1:0)+(f.expiryStatus?1:0)+(f.lowStock?1:0)+(f.from||f.to?1:0);
     const open=s.reportFilterOpen,facet=facets.find(([key])=>key===open);
     const labelFor=(options,value)=>options.find(([id])=>String(id)===String(value))?.[1]||value;
     const url=format=>'/reports/data?'+new URLSearchParams({...Object.fromEntries(Object.entries(s.reportAppliedFilters||{}).filter(([,v])=>v)),format});
@@ -2504,6 +2516,8 @@ class Component extends DCLogic {
         h('div',{className:'report-filter-actions'},[h('strong',null,'Filters'+(activeCount?' ('+activeCount+')':'')),
           f.type!=='inventory'?filterButton('date','Date range: '+(f.from||f.to?((f.from||'Any')+' to '+(f.to||'Any')):'All time'),f.from||f.to):null,
           ...facets.filter(([key])=>['category','subcategoryId'].includes(key)).map(([key,label])=>filterButton(key,label+': '+(f[key]?labelFor(facets.find(item=>item[0]===key)[2],f[key]):'All'),!!f[key],key==='subcategoryId'&&!f.category)),
+          ['sales','inventory','receiving'].includes(f.type)?h('label',{className:'report-status-filter'},['Status',h('select',{'aria-label':'Report status',value:f.status||'',onChange:e=>this.setReportFilter('status',e.target.value)},['',...(f.type==='sales'?['Completed','Paid','Pending Payment','Partially Refunded','Refunded','Voided','Cancelled','Payment Failed']:f.type==='inventory'?['Active','Inactive']:['Fully Received','Partially Received','Received with Discrepancy'])].map(value=>h('option',{key:value,value},value||'All statuses')))]):null,
+          f.type==='receiving'?h('label',{className:'report-status-filter'},['Discrepancy audit',h('select',{'aria-label':'Report discrepancy',value:f.audit||'',onChange:e=>this.setReportFilter('audit',e.target.value)},[['','All'],['missing','Missing'],['damaged','Damaged'],['flagged','Other discrepancies'],['none','No discrepancy']].map(([value,label])=>h('option',{key:value,value},label)))]):null,
           filterButton('more','More filters',!!(f.brandId||f.supplierId||f.productId||f.lowStock||f.expiryStatus)),
           activeCount?h('button',{type:'button',className:'report-clear',onClick:this.resetReportFilters},'Clear all'):null,
           h('label',{className:'report-search'},[h('span',{className:'sr-only'},'Search report records'),h('input',{type:'search',placeholder:'Search transaction, product, category...',value:s.tableViews['generated-report']?.query||'',onChange:e=>this.setTableView('generated-report',{query:e.target.value,page:1})})])
@@ -2530,7 +2544,7 @@ class Component extends DCLogic {
         h('p',{className:'report-filter-hint'},Object.entries(r.labels||{}).map(([key,value])=>key+': '+value).join(' | ')),
         h('div',{className:'report-summary'},Object.entries(r.summary||{}).map(([label,value])=>h('div',{key:label,className:'report-metric'},[h('span',null,label),h('strong',null,value)]))),
         loaded&&(s.reportAppliedFilters?.type||f.type)==='sales'?this.buildReportCharts(r.rows):null,
-        this.recordTable('generated-report',Object.keys(r.columns),r.rows.map((row,i)=>tr(Object.values(r.columns).map(key=>td(row[key]==null?'-':key==='status'?((s.reportAppliedFilters?.type||f.type)==='expiry'?h('span',{className:'expiry-status expiry-status--'+String(row[key]).toLowerCase()},row[key]):badge(row[key])):(r.moneyKeys||[]).includes(key)?Number(row[key]).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}):row[key],(r.numericKeys||[]).includes(key)?{textAlign:'right',fontVariantNumeric:'tabular-nums'}:key==='reference'?{fontFamily:'monospace'}:{})),i)),{emptyMessage,externalSearch:true}),
+        this.recordTable('generated-report',Object.keys(r.columns),r.rows.map((row,i)=>tr(Object.values(r.columns).map(key=>td(row[key]==null?'-':key==='reportPo'?this.purchaseReportLink(row[key]):key==='status'?((s.reportAppliedFilters?.type||f.type)==='expiry'?h('span',{className:'expiry-status expiry-status--'+String(row[key]).toLowerCase()},row[key]):badge(row[key])):(r.moneyKeys||[]).includes(key)?Number(row[key]).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}):row[key],(r.numericKeys||[]).includes(key)?{textAlign:'right',fontVariantNumeric:'tabular-nums'}:key==='reference'?{fontFamily:'monospace'}:{})),i)),{emptyMessage,externalSearch:true}),
         !r.rows.length&&activeCount?h('div',{className:'action-group'},[h('span',null,'Try removing a filter to see more records.'),btn('Clear all filters',this.resetReportFilters)]):null,
 
         h('p',{className:'report-filter-hint'},r.note)

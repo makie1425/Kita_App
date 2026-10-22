@@ -16,7 +16,7 @@ class ReportController extends Controller
     {
         InventoryRules::authorize($request, ['manager', 'admin']);
         $filters = $request->validate([
-            'type' => ['required', Rule::in(['inventory', 'sales', 'receipts', 'movements', 'expiry'])],
+            'type' => ['required', Rule::in(['inventory', 'sales', 'receipts', 'movements', 'expiry', 'receiving'])],
             'format' => ['nullable', Rule::in(['json', 'print', 'csv', 'pdf'])],
             'from' => ['nullable', 'date_format:Y-m-d'],
             'to' => ['nullable', 'date_format:Y-m-d', ...($request->filled('from') ? ['after_or_equal:from'] : [])],
@@ -26,6 +26,8 @@ class ReportController extends Controller
             'productId' => ['nullable', 'integer', 'exists:products,id'],
             'supplierId' => ['nullable', 'integer', 'exists:suppliers,id'],
             'lowStock' => ['nullable', 'boolean'],
+            'status' => ['nullable', 'string', 'max:60'],
+            'audit' => ['nullable', Rule::in(['missing', 'damaged', 'flagged', 'none'])],
             'expiryStatus' => ['nullable', Rule::in(['Nearly expired', 'Expired', 'Critical', 'Warning', 'Good', 'Unknown'])],
         ]);
         $type = $filters['type'];
@@ -50,6 +52,21 @@ class ReportController extends Controller
             $columns = ['Transaction No.' => 'reference', 'Sale date' => 'date'] + $columns + ['Status' => 'status', 'Quantity' => 'quantity', 'Line total (PHP)' => 'amount', 'Refunded (PHP)' => 'refunded'];
             $select[0] = 'line.name as product';
             $select = array_merge($select, ['t.date', DB::raw('(SELECT MIN(clock_line.created_at) FROM transaction_lines AS clock_line WHERE clock_line.transaction_uuid = t.uuid) as recordedAt'), 't.uuid as reference', 'tn.id as numberId', 'tn.issued_date as numberDate', 't.status', 'line.qty as quantity', 'line.lineTotal as amount', 'line.refundedAmount as refunded']);
+        } elseif ($type === 'receiving') {
+            $title = 'Stock Receiving Audit';
+            $query->join('receiving_record_lines as rl', 'rl.productId', '=', 'p.id')->join('receiving_records as rr', 'rr.id', '=', 'rl.receivingId')->join('purchase_orders as po', 'po.id', '=', 'rr.poId')->leftJoin('suppliers as supplier', 'supplier.id', '=', 'po.supplierId');
+            $dateColumn = 'rr.date';
+            $columns = ['PO Number' => 'reportPo', 'Receipt ID' => 'reference', 'Supplier' => 'supplier', 'Product' => 'product', 'Status' => 'status', 'Discrepancy' => 'discrepancyType', 'Condition' => 'condition', 'Received' => 'quantity'];
+            $select = ['p.name as product', 'rr.poId as reportPo', 'rr.id as reference', 'supplier.name as supplier', 'rr.deliveryStatus as status', 'rr.discrepancyType', 'rl.conditionText as condition', 'rl.deliveredQty as quantity', 'rr.discrepancy'];
+            $note = 'Recorded receipt lines and inspection findings. Open a PO number to view or print the complete receiving report.';
+            if ($request->filled('supplierId')) $query->where('po.supplierId', $filters['supplierId']);
+            if ($request->filled('audit')) {
+                $audit = $filters['audit'];
+                if ($audit === 'missing') $query->where('rr.discrepancyType', 'like', '%Missing%');
+                elseif ($audit === 'damaged') $query->where(fn ($q) => $q->where('rr.discrepancyType', 'like', '%Damag%')->orWhere('rl.conditionText', 'like', '%Damag%'));
+                elseif ($audit === 'none') $query->where('rr.discrepancy', false)->where(fn ($q) => $q->whereNull('rl.conditionText')->orWhere('rl.conditionText', 'not like', '%Damag%'));
+                else $query->where('rr.discrepancy', true)->where(fn ($q) => $q->whereNull('rr.discrepancyType')->orWhere('rr.discrepancyType', 'not like', '%Missing%'))->where(fn ($q) => $q->whereNull('rl.conditionText')->orWhere('rl.conditionText', 'not like', '%Damag%'))->where(fn ($q) => $q->whereNull('rr.discrepancyType')->orWhere('rr.discrepancyType', 'not like', '%Damag%'));
+            }
         } elseif ($type === 'expiry') {
             $title = 'Printable Expiration & Shelf-Life Audit';
             $query->join('inventory_batches as b', 'b.productId', '=', 'p.id')->where('b.quantityRemaining', '>', 0);
@@ -79,9 +96,14 @@ class ReportController extends Controller
             $select = array_merge($select, ['m.created_at as date', 'm.referenceType as movement', 'm.referenceId as reference', 'tn.id as numberId', 'tn.issued_date as numberDate', 'm.quantityChange as change', 'm.quantityBefore as before', 'm.quantityAfter as after']);
         }
         foreach (['category' => 'p.category', 'brandId' => 'p.brandId', 'subcategoryId' => 'p.subcategoryId', 'productId' => 'p.id', 'supplierId' => in_array($type, ['receipts', 'expiry']) ? 'b.supplierId' : 'p.supplierId'] as $key => $column) {
-            if ($request->filled($key)) {
+            if ($request->filled($key) && !($type === 'receiving' && $key === 'supplierId')) {
                 $query->where($column, $filters[$key]);
             }
+        }
+        if ($request->filled('status') && in_array($type, ['sales', 'inventory', 'receiving'])) {
+            $column = match ($type) { 'sales' => 't.status', 'receiving' => 'rr.deliveryStatus', default => 'p.status' };
+            if ($type === 'sales' && $filters['status'] === 'Completed') $query->whereIn($column, ['Unused', 'Completed']);
+            else $query->where($column, $filters['status']);
         }
         if ($dateColumn) {
             if ($request->filled('from')) {
@@ -92,7 +114,7 @@ class ReportController extends Controller
             }
             if ($type === 'expiry') { $query->orderBy($dateColumn); } else { $query->orderByDesc($dateColumn); }
             $query->orderByDesc(match ($type) {
-                'sales' => 'line.id', 'receipts', 'expiry' => 'b.id', default => 'm.id',
+                'sales' => 'line.id', 'receiving' => 'rl.id', 'receipts', 'expiry' => 'b.id', default => 'm.id',
             });
         }
         if ($request->boolean('lowStock')) {
@@ -151,6 +173,7 @@ class ReportController extends Controller
         $preparedBy = $request->user()->name;
         $generated = now()->timezone('Asia/Manila')->format('Y-m-d H:i:s').' Asia/Manila';
         $labels = ['Type' => $title];
+        foreach (['status' => 'Status', 'audit' => 'Discrepancy audit'] as $key => $label) if ($request->filled($key)) $labels[$label] = $filters[$key];
         if ($type === 'expiry' && $request->filled('expiryStatus')) $labels['Expiration status'] = $filters['expiryStatus'];
         foreach (['from' => 'From', 'to' => 'To', 'category' => 'Category'] as $key => $label) {
             if ($request->filled($key) && ! ($type === 'inventory' && in_array($key, ['from', 'to']))) {

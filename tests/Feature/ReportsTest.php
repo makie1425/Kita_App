@@ -51,6 +51,22 @@ class ReportsTest extends TestCase
         $this->getJson('/reports/data?type=inventory&category=Missing')->assertOk()->assertJsonCount(0, 'rows');
     }
 
+    public function test_receiving_audit_filters_and_exports(): void
+    {
+        DB::table('purchase_orders')->insert(['id' => 'PO-AUDIT', 'supplierId' => 1]);
+        foreach (['Missing items', 'Damaged stock', null] as $i => $type) {
+            DB::table('receiving_records')->insert(['id' => 'R-'.$i, 'poId' => 'PO-AUDIT', 'date' => '2026-10-22', 'deliveryStatus' => $type ? 'Partially Received' : 'Fully Received', 'discrepancy' => (bool) $type, 'discrepancyType' => $type]);
+            DB::table('receiving_record_lines')->insert(['receivingId' => 'R-'.$i, 'productId' => 1, 'deliveredQty' => 2, 'conditionText' => $i === 1 ? 'Damaged' : 'Accepted']);
+        }
+        foreach (['missing', 'damaged', 'none'] as $audit) {
+            $this->getJson('/reports/data?type=receiving&audit='.$audit)->assertOk()->assertJsonCount(1, 'rows')->assertJsonPath('rows.0.reportPo', 'PO-AUDIT');
+        }
+        $this->getJson('/reports/data?type=receiving&status=Fully%20Received')->assertOk()->assertJsonCount(1, 'rows');
+        $this->get('/reports/data?type=receiving&format=print')->assertOk();
+        $this->get('/reports/data?type=receiving&format=pdf')->assertOk();
+        $this->assertStringContainsString('PO-AUDIT', $this->get('/reports/data?type=receiving&format=csv')->assertOk()->streamedContent());
+    }
+
     public function test_expiration_audit_statuses_filters_and_exports(): void
     {
         $this->travelTo(\Carbon\Carbon::parse('2026-10-22 12:00:00', 'Asia/Manila'));
