@@ -1480,3 +1480,8 @@ body:has(.receiving-dialog[open]) { overflow:hidden; }
 .receiving-dialog .receive-cancel:hover { background:#1747e8!important; color:white!important; }
 
 .receiving-dialog .receive-cancel { border-color:#d9e3f5!important; }
+
+.carryover-panel,.supplier-performance { margin-top:20px; padding:18px; border:1px solid #dce6f7; border-radius:12px; background:white; }
+.carryover-panel>p { font-size:12px; color:#637796; }
+.supplier-performance-metrics { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
+@media(max-width:600px) { .supplier-performance-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); } }

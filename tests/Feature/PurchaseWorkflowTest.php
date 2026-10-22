@@ -78,6 +78,82 @@ class PurchaseWorkflowTest extends TestCase
         $this->assertDatabaseHas('products', ['id' => $replacement, 'stock' => 4]);
     }
 
+    public function test_carryover_receives_under_later_po_without_duplicate_obligation(): void
+    {
+        $original=$this->requestOrder(20); $this->approve($original);
+        $body=$this->delivery(15); $body['lines'][0]['damagedQty']=2; $body['lines'][0]['damageReason']='Broken';
+        $receipt=$this->actingAs($this->manager)->postJson('/api/purchase-orders/'.$original.'/receive',$body)->assertCreated()->json('id');
+        $this->assertDatabaseHas('receiving_inspections',['receiptId'=>$receipt,'accepted'=>15,'damaged'=>2,'missing'=>3]);
+        $sourceLine=DB::table('purchase_order_lines')->where('poId',$original)->value('id');
+        $next=$this->requestOrder(10); $this->approve($next);
+        $link=['requestKey'=>(string)Str::uuid(),'sourceLine'=>$sourceLine,'targetPo'=>$next,'quantity'=>5];
+        $this->actingAs($this->manager)->postJson('/api/purchase-orders/'.$original.'/carryovers',$link)->assertCreated();
+        $this->postJson('/api/purchase-orders/'.$original.'/carryovers',$link)->assertOk();
+        $this->assertDatabaseCount('receiving_carryovers',1);
+        $this->assertDatabaseHas('purchase_orders',['id'=>$next,'orderedValue'=>25]);
+        $this->assertDatabaseHas('purchase_order_lines',['poId'=>$next,'orderedQty'=>15,'carryoverQty'=>5,'lineTotal'=>25]);
+        $other=$link; $other['requestKey']=(string)Str::uuid();
+        $this->postJson('/api/purchase-orders/'.$original.'/carryovers',$other)->assertUnprocessable();
+        $this->postJson('/api/purchase-orders/'.$original.'/receive',$this->delivery(1,2))->assertUnprocessable();
+        $partial=$this->delivery(3,1);
+        $this->postJson('/api/purchase-orders/'.$next.'/receive',$partial)->assertCreated();
+        $this->postJson('/api/purchase-orders/'.$next.'/receive',$partial)->assertOk();
+        $this->assertDatabaseHas('products',['id'=>$this->product,'stock'=>18]);
+        $this->assertDatabaseHas('purchase_order_lines',['poId'=>$original,'deliveredQty'=>15,'resolvedQty'=>3]);
+        $this->assertDatabaseHas('purchase_orders',['id'=>$original,'deliveredValue'=>45,'outstandingValue'=>5]);
+        $this->assertDatabaseHas('purchase_orders',['id'=>$next,'deliveredValue'=>0,'outstandingValue'=>25]);
+        $this->postJson('/api/purchase-orders/'.$next.'/receive',$this->delivery(12,2))->assertCreated();
+        $this->assertDatabaseHas('purchase_orders',['id'=>$original,'status'=>'Fully Received','deliveredValue'=>50,'outstandingValue'=>0]);
+        $this->assertDatabaseHas('purchase_orders',['id'=>$next,'status'=>'Fully Received','orderedValue'=>25,'deliveredValue'=>25,'outstandingValue'=>0]);
+        $this->assertDatabaseHas('products',['id'=>$this->product,'stock'=>30]);
+        $this->assertDatabaseHas('receiving_inspections',['receiptId'=>$receipt,'accepted'=>15,'missing'=>3,'damaged'=>2]);
+        $this->assertDatabaseCount('receiving_carryover_resolutions',2);
+        $batches=DB::table('inventory_batches')->whereNotNull('receiptId')->get();
+        $this->assertCount(3,$batches);
+        $this->assertCount(3,$batches->pluck('batchNumber')->unique());
+        foreach($batches as $batch) { $this->assertStringStartsWith('BATCH-',$batch->batchNumber); $this->assertSame($batch->batchNumber,$batch->lotNumber); }
+        $this->getJson('/api/purchasing')->assertOk()->assertJsonCount(1,'carryovers')->assertJsonCount(2,'resolutions');
+    }
+
+    public function test_damaged_only_receipt_and_releasing_carryover_preserve_inventory(): void
+    {
+        $original=$this->requestOrder(4); $this->approve($original);
+        $body=$this->delivery(0); $body['lines'][0]['damagedQty']=2; $body['lines'][0]['damageReason']='Leaking';
+        $this->actingAs($this->manager)->postJson('/api/purchase-orders/'.$original.'/receive',$body)->assertCreated();
+        $this->assertDatabaseHas('products',['id'=>$this->product,'stock'=>0]);
+        $this->assertDatabaseCount('inventory_batches',0);
+        $this->assertDatabaseHas('receiving_inspections',['accepted'=>0,'damaged'=>2,'missing'=>2]);
+        $next=$this->requestOrder(10);$this->approve($next);
+        $link=['requestKey'=>(string)Str::uuid(),'sourceLine'=>DB::table('purchase_order_lines')->where('poId',$original)->value('id'),'targetPo'=>$next,'quantity'=>4];
+        $this->actingAs($this->manager)->postJson('/api/purchase-orders/'.$original.'/carryovers',$link)->assertCreated();
+        $id=DB::table('receiving_carryovers')->value('id');
+        $this->postJson('/api/receiving-carryovers/'.$id.'/release')->assertOk();
+        $this->postJson('/api/receiving-carryovers/'.$id.'/release')->assertOk();
+        $this->assertDatabaseHas('purchase_order_lines',['poId'=>$next,'orderedQty'=>10,'carryoverQty'=>0]);
+        $this->assertDatabaseHas('receiving_carryovers',['id'=>$id,'releasedQty'=>4]);
+        $this->assertDatabaseHas('purchase_order_lines',['poId'=>$original,'resolvedQty'=>0]);
+    }
+
+    public function test_carryover_rejects_wrong_supplier_unapproved_orders_and_unauthorized_users(): void
+    {
+        $original=$this->requestOrder(4);$this->approve($original);
+        $this->actingAs($this->manager)->postJson('/api/purchase-orders/'.$original.'/receive',$this->delivery(1))->assertCreated();
+        $next=$this->requestOrder(2);
+        $line=DB::table('purchase_order_lines')->where('poId',$original)->value('id');
+        $link=['requestKey'=>(string)Str::uuid(),'sourceLine'=>$line,'targetPo'=>$next,'quantity'=>3];
+        $this->postJson('/api/purchase-orders/'.$original.'/carryovers',$link)->assertUnprocessable();
+        $this->approve($next);
+        $this->postJson('/api/purchase-orders/'.$original.'/carryovers',$link)->assertForbidden();
+        $second=$this->actingAs($this->manager)->postJson('/api/suppliers',['name'=>'Other Supplier'])->assertCreated()->json('supplier.id');
+        DB::table('purchase_orders')->where('id',$next)->update(['supplierId'=>$second]);
+        $this->postJson('/api/purchase-orders/'.$original.'/carryovers',$link)->assertUnprocessable();
+        $this->assertDatabaseCount('receiving_carryovers',0);
+        DB::table('purchase_orders')->where('id',$next)->update(['supplierId'=>$this->supplier]);
+        $this->postJson('/api/purchase-orders/'.$original.'/carryovers',$link)->assertCreated();
+        $this->postJson('/api/purchase-orders/'.$next.'/receive',$this->delivery(1,0))->assertConflict();
+        $this->assertDatabaseHas('products',['id'=>$this->product,'stock'=>1]);
+    }
+
     private function requestOrder(int $qty = 10): string
     {
         return $this->actingAs($this->manager)->postJson('/api/purchase-requests', ['category' => 'Supplies', 'notes' => 'For replenishment',
@@ -98,7 +174,7 @@ class PurchaseWorkflowTest extends TestCase
         $body['lines'][0]['lotNumber'] = 'LOT-RECEIVED';
         $this->postJson('/api/purchase-orders/'.$id.'/receive', $body)->assertCreated();
         foreach (['inventory_batches', 'receiving_record_lines'] as $table) {
-            $this->assertDatabaseHas($table, ['productId' => $this->product, 'lotNumber' => 'LOT-RECEIVED', 'manufacturedDate' => $body['lines'][0]['manufacturedDate'], 'expiryDate' => $body['lines'][0]['expiryDate']]);
+            $this->assertDatabaseHas($table, ['productId' => $this->product, 'manufacturedDate' => $body['lines'][0]['manufacturedDate'], 'expiryDate' => $body['lines'][0]['expiryDate']]);
         }
         $this->postJson('/api/purchase-orders/'.$id.'/receive', $body)->assertOk();
         $this->assertDatabaseCount('inventory_batches', 1);

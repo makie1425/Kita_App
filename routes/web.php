@@ -105,3 +105,6 @@ Route::middleware('role:manager,admin,super_admin')->prefix('api/inventory/workf
     Route::post('/counts', [\App\Http\Controllers\InventoryWorkflowController::class, 'start']);
     Route::post('/counts/{id}', [\App\Http\Controllers\InventoryWorkflowController::class, 'close'])->whereNumber('id');
 });
+
+Route::post('/api/purchase-orders/{id}/carryovers', [PurchasingController::class, 'carryover'])->middleware(['auth','role:manager']);
+Route::post('/api/receiving-carryovers/{id}/release', [PurchasingController::class, 'releaseCarryover'])->middleware(['auth','role:manager']);

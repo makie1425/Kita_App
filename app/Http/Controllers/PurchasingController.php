@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Services\FifoInventory;
 use App\Services\InventoryRules;
 use App\Services\PurchaseWorkflow;
+use App\Services\ReceivingCarryover;
 use App\Services\StockMovement;
 use App\Services\WorkflowNotifications;
 use Illuminate\Http\Request;
@@ -40,8 +41,11 @@ class PurchasingController extends Controller
             $order->receipts = $receipts->where('poId', $order->id)->values();
         }
 
-        return response()->json(['requests' => $requests, 'orders' => $orders])->header('Cache-Control', 'no-store');
+        return response()->json(['requests' => $requests, 'orders' => $orders, 'carryovers'=>DB::table('receiving_carryovers')->get(), 'resolutions'=>DB::table('receiving_carryover_resolutions')->get(), 'inspections'=>DB::table('receiving_inspections')->orderBy('id')->get()])->header('Cache-Control', 'no-store');
     }
+
+    public function carryover(Request $request, string $id) { return ReceivingCarryover::allocate($request, $id); }
+    public function releaseCarryover(Request $request, int $id) { return ReceivingCarryover::release($request, $id); }
 
     public function receive(Request $request, string $id)
     {
@@ -55,7 +59,9 @@ class PurchasingController extends Controller
             'lines.*.productId' => ['required', 'integer', 'distinct'],
             'lines.*.substituteProductId' => ['nullable', 'integer'],
             'lines.*.substitutionReason' => ['nullable', 'in:missing,damaged'],
-            'lines.*.qty' => ['required', 'integer', 'between:1,1000000'],
+            'lines.*.qty' => ['required', 'integer', 'between:0,1000000'],
+            'lines.*.damagedQty' => ['sometimes','integer','between:0,1000000'],
+            'lines.*.damageReason' => ['nullable','string','max:500'],
             'lines.*.unitCost' => ['sometimes', ...InventoryRules::moneyRules()],
             'lines.*.sellingPrice' => ['sometimes', ...InventoryRules::moneyRules()],
             'lines.*.batchNumber' => ['nullable', 'string', 'max:80'],
@@ -70,7 +76,9 @@ class PurchasingController extends Controller
 
         return DB::transaction(function () use ($request, $id, $data, $hash) {
             InventoryRules::lockActor($request);
-            $order = DB::table('purchase_orders')->where('id', $id)->lockForUpdate()->first();
+            $sourceIds=DB::table('receiving_carryovers')->where('targetPo',$id)->pluck('sourcePo')->push($id)->unique()->all();
+            $lockedOrders=DB::table('purchase_orders')->whereIn('id',$sourceIds)->orderBy('id')->lockForUpdate()->get();
+            $order=$lockedOrders->firstWhere('id',$id);
             abort_unless($order, 404, 'Purchase order not found.');
             $existing = DB::table('receiving_records')->where('idempotencyKey', $data['idempotencyKey'])->first();
             if ($existing) {
@@ -98,11 +106,20 @@ class PurchasingController extends Controller
             DB::table('receiving_records')->insert(['id' => $receiptId, 'poId' => $id]);
             $receivedCents = 0;
             $replacementReasons = [];
+            $damageTotal=0;
             foreach ($data['lines'] as $line) {
                 $ordered = $orderLines->firstWhere('productId', $line['productId']);
                 if (! $ordered) {
                     throw ValidationException::withMessages(['lines' => 'A delivered item does not belong to this PO.']);
                 }
+                $damage=(int)($line['damagedQty'] ?? 0);
+                abort_if($line['qty']+$damage===0,422,'Enter an accepted or damaged quantity.');
+                abort_if($damage && !trim($line['damageReason'] ?? ''),422,'Describe the damaged items.');
+                abort_if($damage && $damage + $line['qty'] > ReceivingCarryover::remaining($ordered),422,'Damaged quantity exceeds the outstanding quantity.');
+                $reserved=ReceivingCarryover::reserved($ordered->id);
+                abort_if($reserved && $line['qty']>ReceivingCarryover::remaining($ordered)-$reserved,422,'These units are allocated to another PO. Receive them there or release the allocation first.');
+                abort_if($ordered->resolvedQty && $line['qty']>ReceivingCarryover::remaining($ordered),422,'Some units were fulfilled on a later PO. Receive only the remaining balance.');
+                $damageTotal+=$damage;
                 $substitute = ! empty($line['substituteProductId']);
                 $product = InventoryRules::product($line['substituteProductId'] ?? $line['productId'], 'lines');
                 if ($substitute) {
@@ -110,7 +127,7 @@ class PurchasingController extends Controller
                     $limit = (int) round((float) $ordered->unitCost * 100);
                     $actualCost = $line['unitCost'] ?? $product->unitPrice;
                     if ($product->id == $ordered->productId || empty($line['substitutionReason'])
-                        || $line['qty'] > $ordered->orderedQty - $ordered->deliveredQty
+                        || $line['qty'] > ReceivingCarryover::remaining($ordered)
                         || (int) round(InventoryRules::unitCost($product) * 100) > $limit
                         || (int) round((float) $actualCost * 100) > $limit) {
                         throw ValidationException::withMessages(['lines' => 'Select an equal-or-lower-cost replacement, provide its missing/damaged reason, and receive only the outstanding quantity.']);
@@ -128,7 +145,11 @@ class PurchasingController extends Controller
                     throw ValidationException::withMessages(['notes' => 'Explain the excess delivery before posting it.']);
                 }
                 $cost = (float) ($line['unitCost'] ?? ($substitute ? $product->unitPrice : $ordered->unitCost));
-                $receivedCents += (int) round(InventoryRules::lineTotal($line['qty'], $cost) * 100);
+                $carried=ReceivingCarryover::resolve($ordered,$line['qty'],$cost,$receiptId);
+                $receivedCents += (int) round(InventoryRules::lineTotal($line['qty']-$carried, $cost) * 100);
+                $batch='BATCH-'.Str::ulid();
+                $line['batchNumber']=$line['qty']>0?$batch:null; $line['lotNumber']=$line['batchNumber'];
+                if ($line['qty']>0) {
                 FifoInventory::opening($product->id, (int) $product->stock);
                 FifoInventory::receive($product->id, $line['qty'], $cost, $data['receivedDate'], $receiptId, $order->supplierId, 'purchase_receiving', $line['batchNumber'] ?? null, $line['expiryDate'] ?? null, $line['manufacturedDate'] ?? null, $line['lotNumber'] ?? null);
                 $sellingPrice = (float) ($line['sellingPrice'] ?? $product->price);
@@ -139,27 +160,32 @@ class PurchasingController extends Controller
                         json_encode(['price' => $sellingPrice, 'unitPrice' => $cost, 'receiptId' => $receiptId]));
                 }
                 StockMovement::record($product->id, $product->stock, $after, 'purchase_receiving', $receiptId, $request->user());
+                }
                 DB::table('purchase_order_lines')->where('id', $ordered->id)->update(['deliveredQty' => $received]);
                 $ordered->deliveredQty = $received;
                 DB::table('receiving_record_lines')->insert([
                     'receivingId' => $receiptId, 'productId' => $product->id, 'poQty' => $ordered->orderedQty,
                     'deliveredQty' => $line['qty'], 'name' => $product->name, 'category' => $product->category,
-                    'unit' => $ordered->unit ?? ($product->stockUnit ?: $product->unit), 'conditionText' => $substitute ? ucfirst($line['substitutionReason']).' replacement for product #'.$ordered->productId.' ('.$ordered->name.')' : 'Accepted',
-                    'unitCost' => $cost, 'batchNumber' => $line['batchNumber'] ?? null, 'expiryDate' => $line['expiryDate'] ?? null,
+                    'unit' => $ordered->unit ?? ($product->stockUnit ?: $product->unit), 'conditionText' => $substitute ? ucfirst($line['substitutionReason']).' replacement for product #'.$ordered->productId.' ('.$ordered->name.')' : ($damage ? 'Accepted; damaged units: '.$damage : 'Accepted'),
+                    'internalBatch' => $line['qty']>0 ? $batch : null, 'unitCost' => $cost, 'batchNumber' => $line['batchNumber'] ?? null, 'expiryDate' => $line['expiryDate'] ?? null,
                     'manufacturedDate' => $line['manufacturedDate'] ?? null,
                     'lotNumber' => $line['lotNumber'] ?? null,
                 ]);
             }
-            $matches = $orderLines->every(fn ($line) => (int) $line->deliveredQty === (int) $line->orderedQty);
-            $short = $orderLines->contains(fn ($line) => $line->deliveredQty < $line->orderedQty);
+            $matches = $orderLines->every(fn ($line) => (int) $line->deliveredQty + (int)$line->resolvedQty === (int) $line->orderedQty);
+            $short = $orderLines->contains(fn ($line) => $line->deliveredQty + $line->resolvedQty < $line->orderedQty);
             // Snapshot every PO line, including items absent from this delivery.
             // Later deliveries must not rewrite this inspection's missing quantities.
             $inspection = $orderLines->map(fn ($line) => [
                 'productId' => $line->productId, 'name' => $line->name, 'unit' => $line->unit,
                 'ordered' => (int) $line->orderedQty, 'received' => (int) $line->deliveredQty,
-                'missing' => max(0, (int) $line->orderedQty - (int) $line->deliveredQty),
+                'missing' => ReceivingCarryover::remaining($line),
                 'excess' => max(0, (int) $line->deliveredQty - (int) $line->orderedQty),
             ])->values()->all();
+            foreach ($orderLines as $item) {
+                $input=collect($data['lines'])->firstWhere('productId',$item->productId);
+                DB::table('receiving_inspections')->insert(['receiptId'=>$receiptId,'poId'=>$id,'orderLine'=>$item->id,'productId'=>$item->productId,'accepted'=>$input['qty'] ?? 0,'damaged'=>$input['damagedQty'] ?? 0,'missing'=>max(0,ReceivingCarryover::remaining($item)-($input['damagedQty'] ?? 0)),'newMissing'=>max(0,ReceivingCarryover::remaining($item)-($input['damagedQty'] ?? 0)-(int)DB::table('receiving_carryovers')->where('targetLine',$item->id)->selectRaw('COALESCE(SUM(quantity-receivedQty-releasedQty),0) as qty')->value('qty')),'damageReason'=>$input['damageReason'] ?? null,'created_at'=>now()]);
+            }
             $shortageSummary = collect($inspection)->filter(fn ($line) => $line['missing'] > 0)
                 ->map(fn ($line) => $line['name'].': '.$line['missing'].' '.($line['unit'] ?? 'units').' missing')->implode('; ');
             $status = $matches ? 'Fully Received' : ($short ? 'Partially Received' : 'Received with Discrepancy');
@@ -169,7 +195,7 @@ class PurchasingController extends Controller
             }
             DB::table('receiving_records')->where('id', $receiptId)->update([
                 'id' => $receiptId, 'poId' => $id, 'date' => $data['receivedDate'], 'received_at' => now(),
-                'deliveryStatus' => $status, 'discrepancy' => ! $matches || count($replacementReasons) > 0, 'discrepancyType' => implode('; ', array_unique(array_filter([$short ? 'Missing items' : ($matches ? null : 'Quantity difference'), ...$replacementReasons]))) ?: null,
+                'deliveryStatus' => $status, 'discrepancy' => ! $matches || $damageTotal>0 || count($replacementReasons) > 0, 'discrepancyType' => implode('; ', array_unique(array_filter([$short ? 'Missing items' : ($matches ? null : 'Quantity difference'), $damageTotal?'Damaged items':null, ...$replacementReasons]))) ?: null,
                 'inspection' => json_encode($inspection),
                 'outcome' => $data['notes'] ?? '', 'adminApproval' => 'Posted by Manager', 'barcodeAssignment' => 'Existing inventory barcode',
                 'idempotencyKey' => $data['idempotencyKey'], 'deliveryReference' => $data['deliveryReference'], 'payloadHash' => $hash,
@@ -231,6 +257,8 @@ class PurchasingController extends Controller
         $receiptLines = DB::table('receiving_record_lines')->whereIn('receivingId', $receipts->pluck('id'))->get()->groupBy('receivingId');
         $supplierContacts = DB::table('supplier_contacts')->whereIn('receiptId', $receipts->pluck('id'))->orderBy('id')->get()->groupBy('receiptId');
 
-        return response()->view('purchase-report', compact('order', 'purchase', 'supplier', 'lines', 'receipts', 'receiptLines', 'supplierContacts'))->header('Cache-Control', 'private, no-store');
+        $carryovers=DB::table('receiving_carryovers')->where('sourcePo',$id)->orWhere('targetPo',$id)->get();
+        $resolutions=DB::table('receiving_carryover_resolutions')->whereIn('carryoverId',$carryovers->pluck('id'))->get();
+        return response()->view('purchase-report', compact('carryovers','resolutions','order', 'purchase', 'supplier', 'lines', 'receipts', 'receiptLines', 'supplierContacts'))->header('Cache-Control', 'private, no-store');
     }
 }

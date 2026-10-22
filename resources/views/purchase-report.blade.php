@@ -31,18 +31,25 @@
     </section>
     @if($order->itemRequestId && $order->itemRequestId !== $order->id)<p class="muted">Legacy request reference: {{ $order->itemRequestId }}. Original imported identifiers are retained.</p>@endif
     <h2>Purchase items — cumulative receiving</h2>
-    <div class="table-wrap" tabindex="0" role="region" aria-label="Purchase items"><table><thead><tr><th>Item</th><th>Category</th><th>Ordered Qty</th><th>Received Qty</th><th>Difference*</th><th>Unit</th><th>Unit Cost</th><th>Ordered Value</th></tr></thead><tbody>
+    <div class="table-wrap" tabindex="0" role="region" aria-label="Purchase items"><table><thead><tr><th>Item</th><th>Category</th><th>Ordered Qty</th><th>Received Here / Resolved Later</th><th>Difference*</th><th>Unit</th><th>Unit Cost</th><th>Ordered Value</th></tr></thead><tbody>
     @foreach($lines as $line)
-        <tr><td>{{ $line->name }}</td><td>{{ $line->category ?? 'Not recorded' }}</td><td class="num">{{ $line->orderedQty }}</td><td class="num">{{ $line->deliveredQty ?? 0 }}</td><td class="num">{{ ($line->deliveredQty ?? 0) - $line->orderedQty }}</td><td>{{ $line->unit ?? 'Not recorded' }}</td><td class="num">{{ number_format($line->unitCost, 2) }}</td><td class="num">{{ number_format($line->lineTotal, 2) }}</td></tr>
+        <tr><td>{{ $line->name }}</td><td>{{ $line->category ?? 'Not recorded' }}</td><td class="num">{{ $line->orderedQty }}</td><td class="num">{{ $line->deliveredQty ?? 0 }} / {{ $line->resolvedQty ?? 0 }}</td><td class="num">{{ ($line->deliveredQty ?? 0) + ($line->resolvedQty ?? 0) - $line->orderedQty }}</td><td>{{ $line->unit ?? 'Not recorded' }}</td><td class="num">{{ number_format($line->unitCost, 2) }}</td><td class="num">{{ number_format($line->lineTotal, 2) }}</td></tr>
     @endforeach
     </tbody><tfoot><tr><th colspan="7">Total ordered value (₱)</th><td class="num">{{ number_format($order->orderedValue, 2) }}</td></tr></tfoot></table></div>
     <p class="muted">* Difference = received − ordered. Negative quantities are outstanding; positive quantities are excess. Quantities use the inventory unit shown for each item.</p>
-    @if($lines->contains(fn ($line) => (int) $line->deliveredQty !== (int) $line->orderedQty))<p class="notice">Quantity discrepancies remain. This order is not marked fully received.</p>@endif
+    @if($lines->contains(fn ($line) => (int) $line->deliveredQty + (int)($line->resolvedQty ?? 0) !== (int) $line->orderedQty))<p class="notice">Quantity discrepancies remain. This order is not marked fully received.</p>@endif
+    <p class="muted">Resolved later quantities fulfill the original obligation without rewriting its receipts. Carryover items included in a later PO do not add a new purchase charge.</p>
+    @if($carryovers->isNotEmpty())
+    <h2>Linked shortage history</h2>
+    <div class="table-wrap"><table><thead><tr><th>Original PO</th><th>Subsequent PO</th><th>Allocated</th><th>Received</th><th>Released</th><th>Resolution receipts</th></tr></thead><tbody>
+    @foreach($carryovers as $link)<tr><td>{{ $link->sourcePo }}</td><td>{{ $link->targetPo }}</td><td>{{ $link->quantity }}</td><td>{{ $link->receivedQty }}</td><td>{{ $link->releasedQty }}</td><td>@foreach($resolutions->where('carryoverId',$link->id) as $resolution){{ $resolution->receiptId }}: {{ $resolution->quantity }} units on {{ $resolution->created_at }}<br>@endforeach</td></tr>@endforeach
+    </tbody></table></div>
+    @endif
     <h2>Delivery transactions</h2>
     @forelse($receipts as $receipt)
         <section class="receipt"><strong class="mono">{{ $receipt->id }}</strong> · Supplier reference: {{ $receipt->deliveryReference ?? 'Not recorded' }}
         <p>Date received: {{ $receipt->date }} · Recorded at: {{ $receipt->received_at ?? 'Not recorded' }}<br>Received by: {{ $receipt->receivedBy ?? 'Not recorded' }} · Status after delivery: {{ $receipt->deliveryStatus }}</p>
-        <div class="table-wrap" tabindex="0" role="region" aria-label="Delivery items"><table><thead><tr><th>Item</th><th>Ordered Qty</th><th>Received Order</th><th>Unit</th><th>Actual unit cost</th><th>Batch</th><th>Expiry</th></tr></thead><tbody>
+        <div class="table-wrap" tabindex="0" role="region" aria-label="Delivery items"><table><thead><tr><th>Item</th><th>Ordered Qty</th><th>Received Order</th><th>Unit</th><th>Actual unit cost</th><th>Batch / Lot</th><th>Expiry</th></tr></thead><tbody>
         @foreach($receiptLines->get($receipt->id, collect()) as $line)<tr><td>{{ $line->name ?? 'Item #'.$line->productId }}</td><td>{{ $line->poQty }}</td><td>{{ $line->deliveredQty }}</td><td>{{ $line->unit ?? 'Not recorded' }}</td><td>{{ $line->unitCost === null ? 'Not recorded' : number_format($line->unitCost, 2) }}</td><td>{{ $line->batchNumber ?? '-' }}</td><td>{{ $line->expiryDate ?? '-' }}</td></tr>@endforeach
         </tbody></table></div>
         @php($inspection = json_decode($receipt->inspection ?? 'null', true))

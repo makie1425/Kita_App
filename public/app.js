@@ -432,7 +432,7 @@ class Component extends DCLogic {
       else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}
     }
   };
-  goScreen=key=>()=>{ this.setState({screen:key,sidebarOpen:false}); if(["mgrRequest","mgrRequestView","mgrPurchaseHistory","mgrPO","admPurchasedOrders","admForwarded","admDisapproved","admReceivingApprovals"].includes(key))this.reloadPurchasing().catch(()=>{}); if(key==="saDashboard")this.reloadSaDashboard(); if(key==="saBackup")this.reloadBackups(); if(["mgrCashiers","admManagers","saAdmins"].includes(key))this.reloadAccounts().catch(error=>this.toast(error.message,"error")); if(key==="shift") this.reloadCatalog().catch(()=>this.toast("Could not refresh shift transactions.","error")); };
+  goScreen=key=>()=>{ this.setState({screen:key,sidebarOpen:false}); if(["mgrRequest","mgrRequestView","mgrPurchaseHistory","mgrPO","mgrSupplier","admSuppliers","admPurchasedOrders","admForwarded","admDisapproved","admReceivingApprovals"].includes(key))this.reloadPurchasing().catch(()=>{}); if(key==="saDashboard")this.reloadSaDashboard(); if(key==="saBackup")this.reloadBackups(); if(["mgrCashiers","admManagers","saAdmins"].includes(key))this.reloadAccounts().catch(error=>this.toast(error.message,"error")); if(key==="shift") this.reloadCatalog().catch(()=>this.toast("Could not refresh shift transactions.","error")); };
 
   simScannerDisconnect=()=>{ this.setState({scannerConnected:false}); this.toast("Scanner disconnected â€” use manual entry.","warn"); };
   simPaymentTimeout=()=>{ if(this.state.paymentState==="processing"||this.state.paymentState==="pending"){ this.setState({paymentState:"timeout"}); this.toast("Payment timed out.","error"); } else this.toast("Start an e-wallet payment first.","warn"); };
@@ -1584,18 +1584,19 @@ class Component extends DCLogic {
       ])),!requests.length?h('p',{className:'record-empty'},'No pending requests match these filters.'):null,this.purchaseRequestDetails()
     ]);
   }
-  openPurchaseReceiving=order=>this.setState({purchaseReceivingId:order.id,receiveItemId:null,receiveQty:{},receiveSubstitutes:{},receiveReasons:{},receivePrices:{},receiveCosts:{},receiveBatches:{},receiveExpiries:{},receiveManufactured:{},receiveLots:{},receiveNotes:'',receiveReference:'',receiveDate:this.state.data?.BUSINESS_DATE||new Date().toISOString().slice(0,10),receiveKey:crypto.randomUUID(),receiveVersion:order.receivingVersion,receiveError:''});
+  openPurchaseReceiving=order=>this.setState({purchaseReceivingId:order.id,receiveItemId:null,receiveQty:{},receiveDamaged:{},receiveDamageReasons:{},receiveSubstitutes:{},receiveReasons:{},receivePrices:{},receiveCosts:{},receiveBatches:{},receiveExpiries:{},receiveManufactured:{},receiveLots:{},receiveNotes:'',receiveReference:'',receiveDate:this.state.data?.BUSINESS_DATE||new Date().toISOString().slice(0,10),receiveKey:crypto.randomUUID(),receiveVersion:order.receivingVersion,receiveError:''});
   confirmPurchaseReceiving=async()=>{
     if(this.receivingBusy)return;
     const order=this.state.purchaseData.orders.find(o=>o.id===this.state.purchaseReceivingId);
-    const entered=Object.entries(this.state.receiveQty||{}).filter(([,qty])=>String(qty).trim()!=='');
-    if(!entered.length||entered.some(([,qty])=>!Number.isInteger(Number(qty))||Number(qty)<=0)){this.setState({receiveError:'Enter positive whole quantities for delivered items. Leave undelivered items blank.'});return;}
+    if([this.state.receiveQty,this.state.receiveDamaged].some(values=>Object.values(values||{}).some(q=>String(q).trim()!==''&&(!Number.isInteger(Number(q))||Number(q)<0)))){this.setState({receiveError:'Quantities must be non-negative whole numbers.'});return;}
+    const entered=order.lines.filter(l=>Number(this.state.receiveQty?.[l.productId])>0||Number(this.state.receiveDamaged?.[l.productId])>0).map(l=>[l.productId,this.state.receiveQty?.[l.productId]||0]);
+    if(!entered.length||entered.some(([,qty])=>!Number.isInteger(Number(qty))||Number(qty)<0)){this.setState({receiveError:'Enter accepted or damaged whole quantities. Leave undelivered items blank.'});return;}
     if(entered.some(([id])=>!this.validAmount(this.receivingCost(id))||Number(this.receivingCost(id))>99999999.99)){this.setState({receiveError:'Enter a valid cost price for each delivered item (0 to 99,999,999.99, up to two decimal places).'});return;}
     if(entered.some(([id])=>!this.validAmount(this.receivingPrice(id))||Number(this.receivingPrice(id))>99999999.99)){this.setState({receiveError:'Enter a retail price for each delivered item (up to two decimal places).'});return;}
     if(!window.confirm('Confirm delivery for '+order.id+'? Quantities will be added to the selected original or replacement product stock. The retail price entered will apply to all remaining units of that product, including earlier deliveries.'))return;
     this.receivingBusy=true;this.setState({receivingSaving:true,receiveError:''});
     try{
-      const result=await this.authPost(`/api/purchase-orders/${encodeURIComponent(order.id)}/receive`,{idempotencyKey:this.state.receiveKey,version:this.state.receiveVersion,receivedDate:this.state.receiveDate,notes:this.state.receiveNotes,lines:entered.map(([productId,qty])=>({productId:Number(productId),substituteProductId:Number(this.state.receiveSubstitutes?.[productId])||null,substitutionReason:this.state.receiveReasons?.[productId]||null,qty:Number(qty),sellingPrice:this.receivingPrice(productId),unitCost:this.receivingCost(productId),batchNumber:this.state.receiveBatches?.[productId]||null,expiryDate:this.state.receiveExpiries?.[productId]||null,manufacturedDate:this.state.receiveManufactured?.[productId]||null,lotNumber:this.state.receiveLots?.[productId]||null}))});
+      const result=await this.authPost(`/api/purchase-orders/${encodeURIComponent(order.id)}/receive`,{idempotencyKey:this.state.receiveKey,version:this.state.receiveVersion,receivedDate:this.state.receiveDate,notes:this.state.receiveNotes,lines:entered.map(([productId,qty])=>({productId:Number(productId),substituteProductId:Number(this.state.receiveSubstitutes?.[productId])||null,substitutionReason:this.state.receiveReasons?.[productId]||null,qty:Number(qty),damagedQty:Number(this.state.receiveDamaged?.[productId]||0),damageReason:this.state.receiveDamageReasons?.[productId]||null,sellingPrice:this.receivingPrice(productId),unitCost:this.receivingCost(productId),batchNumber:this.state.receiveBatches?.[productId]||null,expiryDate:this.state.receiveExpiries?.[productId]||null,manufacturedDate:this.state.receiveManufactured?.[productId]||null,lotNumber:this.state.receiveLots?.[productId]||null}))});
       this.setState({purchaseReceivingId:null,lastReceivedPo:order.id});this.toast(result.message);await Promise.all([this.reloadPurchasing(),this.reloadCatalog()]);
     }catch(error){this.setState({receiveError:error.message});}finally{this.receivingBusy=false;this.setState({receivingSaving:false});}
   };
@@ -1614,7 +1615,7 @@ class Component extends DCLogic {
   }
   buildReceivingFields(line){
     const h=React.createElement,id=line.productId;
-    return [['receiveCosts','Cost price','number'],['receivePrices','Retail price','number'],['receiveBatches','Batch number','text'],['receiveExpiries','Expiry date','date'],['receiveManufactured','Manufacturing date (optional)','date'],['receiveLots','Lot number (optional)','text']].map(([field,label,type])=>td(h('input',{
+    return [['receiveCosts','Cost price','number'],['receivePrices','Retail price','number'],['receiveExpiries','Expiry date','date'],['receiveManufactured','Manufacturing date (optional)','date'],['receiveLots','Lot number (optional)','text']].map(([field,label,type])=>td(h('input',{
       'aria-label':label+' for '+line.name,type,style:{minWidth:type==='date'?145:120},
       ...(type==='number'?{min:0,step:'0.01'}:{}),...(field==='receiveManufactured'?{max:this.state.receiveDate}:field==='receiveExpiries'?{min:this.state.receiveDate}:{}),
       value:field==='receiveCosts'?this.receivingCost(id):field==='receivePrices'?this.receivingPrice(id):(this.state[field]?.[id]??''),
@@ -1627,6 +1628,48 @@ class Component extends DCLogic {
     const damaged=receipts.some(r=>/damag/i.test(r.discrepancyType||'')||(r.lines||[]).some(l=>/damag/i.test(l.conditionText||'')));
     const flagged=missing||damaged||receipts.some(r=>r.discrepancy)||order.status==='Received with Discrepancy';
     return !filter||(filter==='missing'?missing:filter==='damaged'?damaged:filter==='none'?!flagged:flagged);
+  }
+  receivingOutstanding=line=>Math.max(0,Number(line.orderedQty)-Number(line.deliveredQty||0)-Number(line.resolvedQty||0));
+  originalShortage=line=>Math.max(0,this.receivingOutstanding(line)-(this.state.purchaseData?.carryovers||[]).filter(a=>Number(a.targetLine)===Number(line.id)).reduce((sum,a)=>sum+Number(a.quantity)-Number(a.receivedQty)-Number(a.releasedQty),0));
+  carryoverAvailable=line=>Math.max(0,this.originalShortage(line)-(this.state.purchaseData?.carryovers||[]).filter(a=>Number(a.sourceLine)===Number(line.id)).reduce((sum,a)=>sum+Number(a.quantity)-Number(a.receivedQty)-Number(a.releasedQty),0));
+  saveCarryover=async()=>{
+    if(this.carryoverBusy)return;
+    const f=this.state.carryoverForm;if(!f)return;
+    this.carryoverBusy=true;this.setState({carryoverSaving:true});
+    try{const result=await this.authPost('/api/purchase-orders/'+encodeURIComponent(f.sourcePo)+'/carryovers',f);this.setState({carryoverForm:null});await this.reloadPurchasing();this.toast(result.message);}catch(e){this.toast(e.message,'error');}finally{this.carryoverBusy=false;this.setState({carryoverSaving:false});}
+  };
+  releaseCarryover=async id=>{
+    if(!window.confirm('Release only the unreceived units back to the original shortage?'))return;
+    try{const result=await this.authPost('/api/receiving-carryovers/'+id+'/release',{});await this.reloadPurchasing();this.toast(result.message);}catch(e){this.toast(e.message,'error');}
+  };
+  buildCarryoverPanel(){
+    const h=React.createElement,data=this.state.purchaseData;if(!data)return null;
+    const f=this.state.carryoverForm;
+    const shortages=data.orders.filter(o=>o.receipts?.length).flatMap(o=>o.lines.filter(l=>this.originalShortage(l)>0).map(l=>({o,l})));
+    const source=data.orders.find(o=>o.id===f?.sourcePo);
+    const targets=source?data.orders.filter(o=>o.id>source.id&&String(o.supplierId)===String(source.supplierId)&&!o.receipts?.length&&['Approved / Waiting for Delivery','Approved','Ordered'].includes(o.status)):[];
+    return h('section',{className:'carryover-panel'},[h('h3',null,'Previous shortages'),h('p',null,'Add outstanding items to a subsequent approved PO from the same supplier. No new purchase charge is created.'),
+      this.recordTable('receiving-shortages',['Original PO','Product','Outstanding','Available to link','Action'],shortages.map(({o,l})=>tr([td(o.id),td(l.name),td(this.originalShortage(l)),td(this.carryoverAvailable(l)),td(this.carryoverAvailable(l)>0?btn('Link to next PO',()=>this.setState({carryoverForm:{sourcePo:o.id,sourceLine:l.id,targetPo:'',quantity:this.carryoverAvailable(l),requestKey:crypto.randomUUID()}})):null)],l.id))),
+      f?h('div',{className:'purchase-filters'},[h('label',null,['Subsequent PO',h('select',{value:f.targetPo,onChange:e=>this.setState({carryoverForm:{...f,targetPo:e.target.value,requestKey:crypto.randomUUID()}})},[h('option',{value:''},'Choose approved PO'),...targets.map(o=>h('option',{key:o.id,value:o.id},o.id))])]),h('label',null,['Carryover quantity',h('input',{type:'number',min:1,step:1,value:f.quantity,onChange:e=>this.setState({carryoverForm:{...f,quantity:Number(e.target.value),requestKey:crypto.randomUUID()}})})]),h('button',{className:'primary-button',disabled:!!this.state.carryoverSaving||!f.targetPo,onClick:this.saveCarryover},this.state.carryoverSaving?'Saving...':'Add previous shortage'),btn('Cancel',()=>this.setState({carryoverForm:null})),!targets.length?h('p',null,'Create and approve a subsequent PO for this supplier first.'):null]):null,
+      h('details',null,[h('summary',null,'Linked delivery history'),this.recordTable('carryover-history',['Original PO','Subsequent PO','Linked','Received','Still allocated','Action'],(data.carryovers||[]).map(a=>tr([td(a.sourcePo),td(a.targetPo),td(a.quantity),td(a.receivedQty),td(Number(a.quantity)-Number(a.receivedQty)-Number(a.releasedQty)),td(Number(a.quantity)>Number(a.receivedQty)+Number(a.releasedQty)?btn('Release unreceived',()=>this.releaseCarryover(a.id)):null)],a.id)))])]);
+  }
+  buildSupplierPerformance(supplierId){
+    const h=React.createElement,data=this.state.purchaseData;if(!data)return h('p',null,['Loading supplier performance...',btn('Refresh',()=>this.reloadPurchasing().catch(()=>{}))]);
+    const orders=data.orders.filter(o=>String(o.supplierId)===String(supplierId)),ids=new Set(orders.map(o=>o.id));
+    const allocations=(data.carryovers||[]).filter(a=>ids.has(a.sourcePo));
+    const inspections=(data.inspections||[]).filter(i=>ids.has(i.poId));
+    const lines=orders.flatMap(o=>o.lines),ordered=lines.reduce((n,l)=>n+Number(l.orderedQty)-Number(l.carryoverQty||0),0);
+    const accepted=lines.reduce((n,l)=>{const carried=allocations.filter(a=>Number(a.targetLine)===Number(l.id)).reduce((v,a)=>v+Number(a.receivedQty),0);return n+Math.min(Number(l.orderedQty)-Number(l.carryoverQty||0),Math.max(0,Number(l.deliveredQty)-carried)+Number(l.resolvedQty||0));},0);
+    const first=new Map();inspections.forEach(i=>{if(!first.has(i.orderLine))first.set(i.orderLine,i);});
+    const missing=lines.reduce((n,l)=>n+Number(first.get(l.id)?.newMissing||0),0),damaged=inspections.reduce((n,i)=>n+Number(i.damaged),0);
+    const history=orders.flatMap(o=>(o.receipts||[]).flatMap(r=>(r.lines||[]).map(l=>({o,r,l}))));
+    const resolutions=(data.resolutions||[]).filter(r=>allocations.some(a=>a.id===r.carryoverId));
+    const days=(a,r)=>{const source=orders.find(o=>o.id===a.sourcePo),start=source?.receipts?.map(x=>x.received_at||x.date).sort()[0];return start?Math.max(0,Math.floor((new Date(r.created_at)-new Date(start))/86400000)):null;};
+    return h('section',{className:'supplier-performance'},[h('h3',null,'Supplier Performance'),h('div',{className:'supplier-performance-metrics'},[kpi('Ordered units',ordered),kpi('Accepted units',accepted),kpi('Fulfillment rate',ordered?(100*accepted/ordered).toFixed(1)+'%':'No orders'),kpi('Outstanding units',Math.max(0,ordered-accepted)),kpi('Initially missing (recorded)',missing),kpi('Damaged (recorded)',damaged)]),h('p',{className:'receive-compact-hint'},'Carryovers are excluded from new orders. Fulfillment includes later accepted replacements. Missing and damaged counts use recorded inspections; older receipts without inspections are not estimated.'),
+      h('h4',null,'Shortage resolution history'),this.recordTable('supplier-resolutions-'+supplierId,['Original PO','Received under PO','Quantity','Received date','Days to resolve'],resolutions.map(r=>{const a=allocations.find(a=>a.id===r.carryoverId);return tr([td(a.sourcePo),td(a.targetPo),td(r.quantity),td(String(r.created_at).slice(0,10)),td(days(a,r)??'Not recorded')],r.id);})),
+      h('h4',null,'Outstanding shortages'),this.recordTable('supplier-open-'+supplierId,['Original PO','Product','Outstanding','First receipt'],orders.flatMap(o=>o.receipts?.length?o.lines.filter(l=>this.originalShortage(l)>0).map(l=>tr([td(o.id),td(l.name),td(this.originalShortage(l)),td(o.receipts.map(r=>r.date).sort()[0])],l.id)):[])),
+      h('h4',null,'Delivery and replacement history'),this.recordTable('supplier-deliveries-'+supplierId,['PO','Receipt','Received','Product','Accepted','Batch / Lot','Condition / replacement'],history.map(({o,r,l})=>tr([td(o.id),td(r.deliveryReference||r.id),td(r.date),td(l.name),td(l.deliveredQty),td(l.internalBatch||l.batchNumber||l.lotNumber||'Not recorded'),td(l.conditionText||'Not recorded')],l.id)))
+    ]);
   }
   buildReceivingAuditFilter(){
     const h=React.createElement;
@@ -1642,10 +1685,12 @@ class Component extends DCLogic {
       h('header',{className:'receive-compact-header'},[h('div',null,[h('small',null,'STOCK RECEIVING'),h('h2',null,order.id),h('p',null,order.supplierName||this.purchaseSupplier(order.supplierId))]),h('button',{type:'button','aria-label':'Close receiving',disabled:!!this.state.receivingSaving,onClick:close},'×')]),
       h('div',{className:'receive-compact-body'},[
         h('label',null,['Product',h('select',{'aria-label':'Receiving product',value:line.productId,onChange:e=>this.setState({receiveItemId:e.target.value})},order.lines.map(l=>h('option',{key:l.productId,value:l.productId},l.name+(Number(this.state.receiveQty?.[l.productId])>0?' · '+this.state.receiveQty[l.productId]+' entered':''))))]),
-        h('div',{className:'receive-compact-summary'},[h('span',null,'Outstanding quantity'),h('strong',null,Math.max(0,Number(line.orderedQty)-Number(line.deliveredQty||0))+' '+this.purchaseUnit(line)),h('span',null,'Original unit cost'),h('strong',null,peso(line.unitCost))]),
+        h('div',{className:'receive-compact-summary'},[h('span',null,'Outstanding quantity'),h('strong',null,this.receivingOutstanding(line)+' '+this.purchaseUnit(line)),h('span',null,'Original unit cost'),h('strong',null,peso(line.unitCost))]),
         h('label',null,['Receive original or substitute product',this.buildReceivingSubstitution(line)]),
         h('label',null,['Accepted quantity',h('input',{'aria-label':'Receive '+line.name,type:'number',min:1,step:1,placeholder:'Enter quantity',value:this.state.receiveQty?.[line.productId]??'',onChange:e=>this.setState(s=>({receiveQty:{...s.receiveQty,[line.productId]:e.target.value}}))})]),
-        h('details',{className:'receive-extra-fields',key:line.productId},[h('summary',null,'Prices, batch & expiry'),h('div',{className:'receive-fields-grid'},[['receiveCosts','Cost price','number'],['receivePrices','Retail price','number'],['receiveBatches','Batch number','text'],['receiveExpiries','Expiry date','date'],['receiveManufactured','Manufactured','date'],['receiveLots','Lot number','text']].map(([field,label,type])=>h('label',{key:field},[label,h('input',{'aria-label':label+' for '+line.name,type,...(type==='number'?{min:0,step:'0.01'}:{}),...(field==='receiveExpiries'?{min:this.state.receiveDate}:field==='receiveManufactured'?{max:this.state.receiveDate}:{}),value:field==='receiveCosts'?this.receivingCost(line.productId):field==='receivePrices'?this.receivingPrice(line.productId):this.state[field]?.[line.productId]??'',onChange:e=>this.setState(s=>({[field]:{...s[field],[line.productId]:e.target.value}}))})])))]),
+        h('p',{className:'receive-compact-hint'},'Batch / Lot Number: generated automatically on confirmation.'),
+        h('details',{className:'receive-extra-fields'},[h('summary',null,'Damaged items'),h('label',null,['Rejected quantity',h('input',{type:'number',min:0,step:1,'aria-label':'Damaged quantity',value:this.state.receiveDamaged?.[line.productId]??'',onChange:e=>this.setState(s=>({receiveDamaged:{...s.receiveDamaged,[line.productId]:e.target.value}}))})]),h('label',null,['Damage reason',h('input',{type:'text',maxLength:500,value:this.state.receiveDamageReasons?.[line.productId]||'',onChange:e=>this.setState(s=>({receiveDamageReasons:{...s.receiveDamageReasons,[line.productId]:e.target.value}}))})])]),
+        h('details',{className:'receive-extra-fields',key:line.productId},[h('summary',null,'Prices, batch & expiry'),h('div',{className:'receive-fields-grid'},[['receiveCosts','Cost price','number'],['receivePrices','Retail price','number'],['receiveExpiries','Expiry date','date'],['receiveManufactured','Manufactured','date']].map(([field,label,type])=>h('label',{key:field},[label,h('input',{'aria-label':label+' for '+line.name,type,...(type==='number'?{min:0,step:'0.01'}:{}),...(field==='receiveExpiries'?{min:this.state.receiveDate}:field==='receiveManufactured'?{max:this.state.receiveDate}:{}),value:field==='receiveCosts'?this.receivingCost(line.productId):field==='receivePrices'?this.receivingPrice(line.productId):this.state[field]?.[line.productId]??'',onChange:e=>this.setState(s=>({[field]:{...s[field],[line.productId]:e.target.value}}))})])))]),
         h('details',{className:'receive-extra-fields'},[h('summary',null,'Receiving notes'),h('textarea',{'aria-label':'Receiving notes',placeholder:'Required for excess delivery',maxLength:2000,value:this.state.receiveNotes,onChange:e=>this.setState({receiveNotes:e.target.value})})]),
         h('p',{className:'receive-compact-hint'},enteredCount+' item(s) entered. Confirm posts all entered quantities. Receipt reference is assigned automatically.'),
         this.state.receiveError?h('p',{role:'alert',className:'alert'},this.state.receiveError):null,
@@ -1654,7 +1699,7 @@ class Component extends DCLogic {
     ])):null;
     const orders=this.state.purchaseData.orders;
     const canReceive=o=>['Approved / Waiting for Delivery','Partially Received','Approved','Ordered'].includes(o.status)||(o.status==='Draft'&&o.request?.status==='Approved');
-    const missing=o=>(o.lines||[]).reduce((sum,l)=>sum+Math.max(0,Number(l.orderedQty)-Number(l.deliveredQty||0)),0);
+    const missing=o=>(o.lines||[]).reduce((sum,l)=>sum+this.receivingOutstanding(l),0);
     const discrepancy=o=>o.status==='Received with Discrepancy'||(o.receipts||[]).some(r=>r.discrepancy);
     const tab=this.state.receivingTab||'active';
     const selected=this.filterPurchases(orders).filter(o=>this.matchesReceivingAudit(o,this.state.receivingAudit||'')).filter(o=>tab==='missing'?(o.receipts||[]).length&&missing(o)>0:tab==='discrepancies'?discrepancy(o):true).sort((a,b)=>Number(['Fully Received','Closed'].includes(a.status))-Number(['Fully Received','Closed'].includes(b.status)));
@@ -1675,9 +1720,9 @@ class Component extends DCLogic {
       h('div',{className:'receiving-tabs',role:'group','aria-label':'Receiving views'},[['active','Active Receiving'],['missing','Missing Items / Backorders'],['discrepancies','Discrepancies & Follow-ups']].map(([value,label])=>h('button',{type:'button',key:value,'data-action-tone':'blue','aria-pressed':tab===value,onClick:()=>{this.setState({receivingTab:value});this.setTableView('purchase-receiving',{page:1});}},label))),
       this.recordTable('purchase-receiving',['PO Number','Receipt ID','Supplier','Items / Received','Batch / Lot','Status','Actions'],selected.map(o=>{
         const receiptLines=(o.receipts||[]).flatMap(r=>r.lines||[]);
-        return tr([td(o.id,{fontWeight:700}),td((o.receipts||[]).map(r=>r.id).join(', ')||'Not received'),td(o.supplierName||this.purchaseSupplier(o.supplierId)),td(h('details',null,[h('summary',null,o.lines.length+' items'),...o.lines.map(l=>h('p',{key:l.productId},`${l.name}: ${l.deliveredQty||0} / ${l.orderedQty} ${this.purchaseUnit(l)}`))])),td([...new Set(receiptLines.map(l=>[l.batchNumber,l.lotNumber].filter(Boolean).join(' / ')).filter(Boolean))].join(', ')||'Assigned on receipt'),td(badge(o.status)),td([canReceive(o)?btn('Receive Stock',()=>this.openPurchaseReceiving(o),'primary'):null])],o.id);
+        return tr([td(o.id,{fontWeight:700}),td((o.receipts||[]).map(r=>r.id).join(', ')||'Not received'),td(o.supplierName||this.purchaseSupplier(o.supplierId)),td(h('details',null,[h('summary',null,o.lines.length+' items'),...o.lines.map(l=>h('p',{key:l.productId},`${l.name}: ${l.deliveredQty||0} / ${l.orderedQty} ${this.purchaseUnit(l)}`))])),td([...new Set(receiptLines.map(l=>[...new Set([l.batchNumber,l.lotNumber].filter(Boolean))].join(' / ')).filter(Boolean))].join(', ')||'Assigned on receipt'),td(badge(o.status)),td([canReceive(o)?btn('Receive Stock',()=>this.openPurchaseReceiving(o),'primary'):null])],o.id);
       }),{externalSearch:true}),
-      tab==='discrepancies'?this.buildSupplierContacts(selected):null,modal,
+      this.buildCarryoverPanel(),tab==='discrepancies'?this.buildSupplierContacts(selected):null,modal,
     ]);
   }
 
@@ -2186,7 +2231,7 @@ class Component extends DCLogic {
     if(!suppliersLocal) return null;
     if(supMgrScreen==="detail"){
       const sp=suppliersLocal.find(s=>s.id===supMgrDetailId); if(!sp) return null;
-      const tabs=[["products","Products"],["history","Order History"],["callback","Callback Log"]];
+      const tabs=[["products","Products"],["performance","Supplier Performance"],["history","Order History"],["callback","Callback Log"]];
       let body;
       if(supMgrDetailTab==="products"){
         body=React.createElement("div",null,[
@@ -2199,6 +2244,8 @@ class Component extends DCLogic {
               td(React.createElement("span",{onClick:this.toggleSupMgrPreferred(sp.id,pr.productId),style:{cursor:"pointer",fontSize:16,color:pr.preferred?COLORS.amber:"#ccc"}},pr.preferred?"â˜…":"â˜†")),
               td(React.createElement("button",{onClick:this.removeSupMgrProduct(sp.id,pr.productId),style:{color:COLORS.red,background:"none",border:"none",fontWeight:700,cursor:"pointer"}},"âœ•"))],i); })),
         ]);
+      } else if(supMgrDetailTab==="performance"){
+        body=this.buildSupplierPerformance(sp.id);
       } else if(supMgrDetailTab==="history"){
         const pos=(purchaseOrdersLocal||[]).filter(po=>po.supplierId===sp.id);
         body = pos.length===0 ? card(React.createElement("div",{style:{padding:16,textAlign:"center",color:COLORS.textMuted,fontSize:13}},"No purchase orders yet.")) :
@@ -2425,7 +2472,7 @@ class Component extends DCLogic {
         : s.callbackLog.map((c,i)=>React.createElement("div",{key:i,style:{fontSize:13,padding:"6px 0",borderBottom:"1px solid #eef1f6"}},c.date+" â€” "+c.note));
       return React.createElement("div",null,[
         React.createElement("button",{key:"back",onClick:this.closeSupplierDetail,style:{marginBottom:12,background:"none",border:"none",color:COLORS.brand,fontWeight:700,cursor:"pointer"}},"â† Back"),
-        sectionTitle(s.name,s.category),
+        sectionTitle(s.name,s.category),this.buildSupplierPerformance(s.id),
         card(infoRows,{marginBottom:14}),
         card([React.createElement("div",{key:"t",style:{fontWeight:800,marginBottom:8}},"Supplier Callback Log")].concat(callbackRows)),
       ]);
