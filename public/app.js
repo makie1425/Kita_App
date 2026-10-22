@@ -2417,7 +2417,7 @@ class Component extends DCLogic {
     return h('div',{className:'report-chart-grid'},[
       h('section',{className:'kita-card report-peak-panel','aria-label':'Peak sales hours'},[
         h('div',{className:'report-peak-heading'},[
-          h('div',null,[h('h3',{className:'panel-title'},'Peak Sales Hours & Shift Load'),h('p',{className:'report-filter-hint'},'Hourly order volume distribution ('+hourLabel(first)+' - '+hourLabel(last)+') for cashier shift optimization.')]),
+          h('div',null,[h('h3',{className:'panel-title'},'Peak Sales Hours & Shift Load'),h('p',{className:'report-filter-hint'},'Hourly order volume distribution ('+hourLabel(first)+' - '+(last===23?'12:00 AM (next day)':hourLabel(last+1))+') Philippine time for cashier shift optimization.')]),
           h('span',{className:'report-peak-badge',title:'Two busiest recorded hours; ties use the earlier hour.'},peakLabel),
         ]),
         h('div',{className:'report-peak-scroll'},h('svg',{viewBox:'0 0 1080 340',className:'report-peak-svg',role:'img','aria-label':'Hourly transaction volume. '+peakLabel},[
@@ -2433,7 +2433,18 @@ class Component extends DCLogic {
         ])),
         h('p',{className:'report-chart-note'},peak?'Counts include all listed transaction statuses. Hover over a bar for its count.':'No recorded transaction times for this selection.'),
       ]),
-      card([h('h3',{className:'panel-title'},'Top Product Performance'),h('p',{className:'report-filter-hint'},'Recorded line totals by product (PHP), before refunds. All listed statuses included.'),rankedSales(ranked)]),
+      card([h('h3',{className:'panel-title'},'Top Product Performance'),h('p',{className:'report-filter-hint'},'Recorded sales by product (PHP), before refunds.'),
+        ranked.length?h('svg',{viewBox:'0 0 480 270',className:'report-product-svg',role:'img','aria-label':'Product sales comparison in pesos'},[
+          ...Array.from({length:5},(_,i)=>h('g',{key:'axis'+i},[
+            h('line',{x1:125+i*82,x2:125+i*82,y1:12,y2:242,stroke:'#edf1f8',strokeDasharray:'3 4'}),
+            h('text',{x:125+i*82,y:260,textAnchor:'middle',fontSize:10,fill:'#667c9c'},(Math.max(1,...ranked.map(row=>row.rev))*i/4).toLocaleString('en-PH',{maximumFractionDigits:0})),
+          ])),
+          ...ranked.map((row,i)=>h('g',{key:row.p.id},[
+            h('text',{x:116,y:32+i*37,textAnchor:'end',fontSize:11,fill:'#526579'},[h('title',null,row.p.name),row.p.name.length>19?row.p.name.slice(0,18)+'...':row.p.name]),
+            h('rect',{x:125,y:17+i*37,width:Math.max(0,row.rev)/Math.max(1,...ranked.map(item=>item.rev))*328,height:25,rx:4,fill:'#3b82f6'},h('title',null,row.p.name+': PHP '+row.rev.toFixed(2))),
+          ])),
+        ]):h('p',{className:'record-empty'},'No sales recorded for these products yet.'),
+      ]),
     ]);
   }
   buildAdmReports(){

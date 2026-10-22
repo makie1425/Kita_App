@@ -59,6 +59,15 @@ class ReportsTest extends TestCase
             ->assertJsonPath('summary.Recorded less refunds (PHP)', '7.00');
     }
 
+    public function test_chart_time_converts_storage_timezone_and_uses_one_time_per_transaction(): void
+    {
+        config(['app.timezone' => 'UTC']);
+        DB::table('transaction_lines')->where('transaction_uuid', 'sale-1')->update(['created_at' => '2026-10-06 04:59:00']);
+        DB::table('transaction_lines')->insert(['transaction_uuid' => 'sale-1', 'productId' => 2, 'name' => 'Other', 'qty' => 1, 'unitPrice' => 10, 'lineTotal' => 10, 'created_at' => '2026-10-06 05:00:00']);
+        $this->getJson('/reports/data?type=sales&from=2026-10-06&to=2026-10-06')
+            ->assertOk()->assertJsonPath('rows.0.time', '12:59')->assertJsonPath('rows.1.time', '12:59');
+    }
+
     public function test_transaction_numbers_remain_stable_across_filters_and_exports(): void
     {
         $number = TransactionNumber::assign('sale-1', '2026-10-06');

@@ -1384,3 +1384,20 @@ body:has(.purchase-details-dialog[open]) { overflow: hidden; }
   .report-peak-heading .report-filter-hint { font-size: 12px; }
   .report-chart-grid > .report-peak-panel { padding: 16px !important; }
 }
+/* Paired report charts and compact controls from the full-page reference. */
+.report-chart-grid { grid-template-columns: minmax(0,1.4fr) minmax(0,1fr); gap: 16px; }
+.report-chart-grid > .report-peak-panel { padding: 16px !important; border-width: 1px !important; border-radius: 12px; }
+.report-peak-heading { gap: 8px; }
+.report-peak-heading .panel-title { font-size: 14px; }
+.report-peak-heading .report-filter-hint { font-size: 11px; }
+.report-peak-badge { font-size: 10px; padding: 5px 7px; border-width: 1px; border-radius: 5px; }
+.report-peak-svg { min-width: 0; min-height: 220px; }
+.report-product-svg { display: block; width: 100%; min-height: 220px; }
+.report-chart-note { font-size: 10px; }
+.reports-page .report-results-header { margin-top: 16px; }
+.reports-page .report-summary { margin: 12px 0; }
+.reports-page .report-filter-hint:empty { display: none; }
+@media(max-width:760px) {
+  .report-chart-grid { grid-template-columns: minmax(0,1fr); }
+  .report-peak-svg { min-width: 650px; }
+}
