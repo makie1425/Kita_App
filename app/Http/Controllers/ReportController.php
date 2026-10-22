@@ -26,7 +26,7 @@ class ReportController extends Controller
             'productId' => ['nullable', 'integer', 'exists:products,id'],
             'supplierId' => ['nullable', 'integer', 'exists:suppliers,id'],
             'lowStock' => ['nullable', 'boolean'],
-            'expiryStatus' => ['nullable', Rule::in(['Expired', 'Critical', 'Warning', 'Good', 'Unknown'])],
+            'expiryStatus' => ['nullable', Rule::in(['Nearly expired', 'Expired', 'Critical', 'Warning', 'Good', 'Unknown'])],
         ]);
         $type = $filters['type'];
         $query = DB::table('products as p')->leftJoin('brands as brand', 'brand.id', '=', 'p.brandId')
@@ -110,7 +110,12 @@ class ReportController extends Controller
                 $row->status = $days === null ? 'Unknown' : ($days <= 0 ? 'Expired' : ($days <= 7 ? 'Critical' : ($days <= 30 ? 'Warning' : 'Good')));
                 $row->batch = ($row->batch ?: 'Batch #'.$row->id).($row->lot ? ' / '.$row->lot : '');
             }
-            if ($request->filled('expiryStatus')) $rows = $rows->where('status', $filters['expiryStatus'])->values();
+            $rows = $rows->sortBy(fn ($row) => [in_array($row->status, ['Critical', 'Warning']) ? 0 : ($row->status === 'Expired' ? 1 : 2), $row->expiryDate ?? '9999-12-31', $row->id])->values();
+            if ($request->filled('expiryStatus')) {
+                $rows = ($filters['expiryStatus'] === 'Nearly expired'
+                    ? $rows->whereIn('status', ['Critical', 'Warning'])
+                    : $rows->where('status', $filters['expiryStatus']))->values();
+            }
         }
         if ($type === 'inventory') {
             $rows = collect(\App\Services\InventoryAvailability::products($rows->map(fn ($row) => (array) $row)->all()))->map(fn ($row) => (object) $row);

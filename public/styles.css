@@ -1407,3 +1407,5 @@ body:has(.purchase-details-dialog[open]) { overflow: hidden; }
 .expiry-status--warning { background:#fffbeb; color:#a86300; border-color:#f6dc8f; }
 .expiry-status--good { background:#ecfdf5; color:#087f5b; border-color:#99edcf; }
 .expiry-status--unknown { background:#f1f5f9; color:#526579; border-color:#dce4eb; }
+.expiry-quick-filters { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:0 0 14px; }
+.expiry-quick-filters .report-filter-hint { margin:0 0 0 8px; }
