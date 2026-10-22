@@ -51,6 +51,24 @@ class ReportsTest extends TestCase
         $this->getJson('/reports/data?type=inventory&category=Missing')->assertOk()->assertJsonCount(0, 'rows');
     }
 
+    public function test_expiration_audit_statuses_filters_and_exports(): void
+    {
+        $this->travelTo(\Carbon\Carbon::parse('2026-10-22 12:00:00', 'Asia/Manila'));
+        DB::table('inventory_batches')->delete();
+        foreach ([0, 7, 30, 31] as $days) {
+            DB::table('inventory_batches')->insert(['productId' => 1, 'supplierId' => 1, 'quantityReceived' => 2, 'quantityRemaining' => 2, 'unitCost' => 10, 'receivedDate' => '2026-10-01', 'source' => 'receiving', 'created_at' => now(), 'expiryDate' => now()->addDays($days)->toDateString()]);
+        }
+        $this->getJson('/reports/data?type=expiry')->assertOk()->assertJsonCount(4, 'rows')
+            ->assertJsonPath('rows.0.status', 'Expired')->assertJsonPath('rows.1.status', 'Critical')
+            ->assertJsonPath('rows.2.status', 'Warning')->assertJsonPath('rows.3.status', 'Good');
+        $this->getJson('/reports/data?type=expiry&expiryStatus=Critical&category=Beverages')->assertOk()->assertJsonCount(1, 'rows');
+        $this->getJson('/reports/data?type=expiry&from=2026-10-29&to=2026-10-29')->assertOk()->assertJsonCount(1, 'rows');
+        $this->get('/reports/data?type=expiry&format=print')->assertOk()->assertSee('Printable Expiration');
+        $csv = $this->get('/reports/data?type=expiry&format=csv')->assertOk()->streamedContent();
+        $this->assertStringContainsString('Critical', $csv);
+        $this->get('/reports/data?type=expiry&format=pdf')->assertOk()->assertHeader('Content-Type', 'application/pdf');
+    }
+
     public function test_sales_chart_time_and_refund_summary_use_recorded_lines(): void
     {
         DB::table('transaction_lines')->where('transaction_uuid', 'sale-1')->update(['created_at' => '2026-10-06 14:30:00', 'refundedAmount' => 3]);

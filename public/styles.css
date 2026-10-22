@@ -1401,3 +1401,9 @@ body:has(.purchase-details-dialog[open]) { overflow: hidden; }
   .report-chart-grid { grid-template-columns: minmax(0,1fr); }
   .report-peak-svg { min-width: 650px; }
 }
+.expiry-status { display:inline-block; padding:5px 8px; border:1px solid; border-radius:4px; font-size:10px; font-weight:700; text-transform:uppercase; white-space:nowrap; }
+.expiry-status--expired { background:#e95476; color:white; border-color:#e95476; }
+.expiry-status--critical { background:#fff3f5; color:#db2451; border-color:#ffc3d0; }
+.expiry-status--warning { background:#fffbeb; color:#a86300; border-color:#f6dc8f; }
+.expiry-status--good { background:#ecfdf5; color:#087f5b; border-color:#99edcf; }
+.expiry-status--unknown { background:#f1f5f9; color:#526579; border-color:#dce4eb; }

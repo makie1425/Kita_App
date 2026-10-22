@@ -16,7 +16,7 @@ class ReportController extends Controller
     {
         InventoryRules::authorize($request, ['manager', 'admin']);
         $filters = $request->validate([
-            'type' => ['required', Rule::in(['inventory', 'sales', 'receipts', 'movements'])],
+            'type' => ['required', Rule::in(['inventory', 'sales', 'receipts', 'movements', 'expiry'])],
             'format' => ['nullable', Rule::in(['json', 'print', 'csv', 'pdf'])],
             'from' => ['nullable', 'date_format:Y-m-d'],
             'to' => ['nullable', 'date_format:Y-m-d', ...($request->filled('from') ? ['after_or_equal:from'] : [])],
@@ -26,6 +26,7 @@ class ReportController extends Controller
             'productId' => ['nullable', 'integer', 'exists:products,id'],
             'supplierId' => ['nullable', 'integer', 'exists:suppliers,id'],
             'lowStock' => ['nullable', 'boolean'],
+            'expiryStatus' => ['nullable', Rule::in(['Expired', 'Critical', 'Warning', 'Good', 'Unknown'])],
         ]);
         $type = $filters['type'];
         $query = DB::table('products as p')->leftJoin('brands as brand', 'brand.id', '=', 'p.brandId')
@@ -49,6 +50,13 @@ class ReportController extends Controller
             $columns = ['Transaction No.' => 'reference', 'Sale date' => 'date'] + $columns + ['Status' => 'status', 'Quantity' => 'quantity', 'Line total (PHP)' => 'amount', 'Refunded (PHP)' => 'refunded'];
             $select[0] = 'line.name as product';
             $select = array_merge($select, ['t.date', DB::raw('(SELECT MIN(clock_line.created_at) FROM transaction_lines AS clock_line WHERE clock_line.transaction_uuid = t.uuid) as recordedAt'), 't.uuid as reference', 'tn.id as numberId', 'tn.issued_date as numberDate', 't.status', 'line.qty as quantity', 'line.lineTotal as amount', 'line.refundedAmount as refunded']);
+        } elseif ($type === 'expiry') {
+            $title = 'Printable Expiration & Shelf-Life Audit';
+            $query->join('inventory_batches as b', 'b.productId', '=', 'p.id')->where('b.quantityRemaining', '>', 0);
+            $dateColumn = 'b.expiryDate';
+            $columns = ['SKU / Code' => 'code', 'Batch / Lot' => 'batch', 'Product name' => 'product', 'Category' => 'category', 'Expiration date' => 'expiryDate', 'Stock remaining' => 'remaining', 'Unit' => 'unit', 'Expiration status' => 'status'];
+            $select = array_merge($select, ['p.id as code', 'b.id', 'b.batchNumber as batch', 'b.lotNumber as lot', 'b.expiryDate', 'b.quantityRemaining as remaining', 'p.stockUnit as unit']);
+            $note = 'Current remaining batches, including recalled stock. Dates filter expiration dates. Expired: today or earlier; critical: within 7 days; warning: within 30 days. Shelf locations are not recorded in this system.';
         } elseif ($type === 'receipts') {
             $title = 'Received Stock';
             $query->join('inventory_batches as b', 'b.productId', '=', 'p.id')->where('b.source', '<>', 'legacy_opening');
@@ -70,7 +78,7 @@ class ReportController extends Controller
             $columns += ['Recorded at' => 'date', 'Type' => 'movement', 'Reference' => 'reference', 'Change' => 'change', 'Before' => 'before', 'After' => 'after'];
             $select = array_merge($select, ['m.created_at as date', 'm.referenceType as movement', 'm.referenceId as reference', 'tn.id as numberId', 'tn.issued_date as numberDate', 'm.quantityChange as change', 'm.quantityBefore as before', 'm.quantityAfter as after']);
         }
-        foreach (['category' => 'p.category', 'brandId' => 'p.brandId', 'subcategoryId' => 'p.subcategoryId', 'productId' => 'p.id', 'supplierId' => $type === 'receipts' ? 'b.supplierId' : 'p.supplierId'] as $key => $column) {
+        foreach (['category' => 'p.category', 'brandId' => 'p.brandId', 'subcategoryId' => 'p.subcategoryId', 'productId' => 'p.id', 'supplierId' => in_array($type, ['receipts', 'expiry']) ? 'b.supplierId' : 'p.supplierId'] as $key => $column) {
             if ($request->filled($key)) {
                 $query->where($column, $filters[$key]);
             }
@@ -82,9 +90,9 @@ class ReportController extends Controller
             if ($request->filled('to')) {
                 $query->whereDate($dateColumn, '<=', $filters['to']);
             }
-            $query->orderByDesc($dateColumn);
+            if ($type === 'expiry') { $query->orderBy($dateColumn); } else { $query->orderByDesc($dateColumn); }
             $query->orderByDesc(match ($type) {
-                'sales' => 'line.id', 'receipts' => 'b.id', default => 'm.id',
+                'sales' => 'line.id', 'receipts', 'expiry' => 'b.id', default => 'm.id',
             });
         }
         if ($request->boolean('lowStock')) {
@@ -95,6 +103,15 @@ class ReportController extends Controller
             $query->orderByDesc('p.created_at');
         }
         $rows = $query->orderByDesc('p.id')->get($select);
+        if ($type === 'expiry') {
+            $today = now()->timezone('Asia/Manila')->startOfDay();
+            foreach ($rows as $row) {
+                $days = $row->expiryDate ? (int) $today->diffInDays(\Carbon\CarbonImmutable::parse($row->expiryDate, 'Asia/Manila')->startOfDay(), false) : null;
+                $row->status = $days === null ? 'Unknown' : ($days <= 0 ? 'Expired' : ($days <= 7 ? 'Critical' : ($days <= 30 ? 'Warning' : 'Good')));
+                $row->batch = ($row->batch ?: 'Batch #'.$row->id).($row->lot ? ' / '.$row->lot : '');
+            }
+            if ($request->filled('expiryStatus')) $rows = $rows->where('status', $filters['expiryStatus'])->values();
+        }
         if ($type === 'inventory') {
             $rows = collect(\App\Services\InventoryAvailability::products($rows->map(fn ($row) => (array) $row)->all()))->map(fn ($row) => (object) $row);
             foreach ($rows as $row) $row->exclusionReason = implode('; ', $row->exclusionReasons) ?: 'Eligible';
@@ -117,7 +134,7 @@ class ReportController extends Controller
         }
         $moneyKeys = ['price', 'amount', 'refunded', 'cost'];
         $numericKeys = array_merge($moneyKeys, ['stock', 'stockOnHand', 'sellableStock', 'expiredStock', 'recalledStock', 'reservedStock', 'minimum', 'quantity', 'remaining', 'change', 'before', 'after']);
-        $summary = ['Records' => number_format($rows->count())];
+        $summary = $type === 'expiry' ? [] : ['Records' => number_format($rows->count())];
         if ($type === 'sales') {
             $summary += ['Transactions' => number_format($rows->pluck('reference')->unique()->count()), 'Recorded line totals (PHP)' => number_format($rows->sum('amount'), 2), 'Cumulative refunds (PHP)' => number_format($rows->sum('refunded'), 2)];
             $summary['Recorded less refunds (PHP)'] = number_format($rows->sum('amount') - $rows->sum('refunded'), 2);
@@ -129,6 +146,7 @@ class ReportController extends Controller
         $preparedBy = $request->user()->name;
         $generated = now()->timezone('Asia/Manila')->format('Y-m-d H:i:s').' Asia/Manila';
         $labels = ['Type' => $title];
+        if ($type === 'expiry' && $request->filled('expiryStatus')) $labels['Expiration status'] = $filters['expiryStatus'];
         foreach (['from' => 'From', 'to' => 'To', 'category' => 'Category'] as $key => $label) {
             if ($request->filled($key) && ! ($type === 'inventory' && in_array($key, ['from', 'to']))) {
                 $labels[$label] = $filters[$key];

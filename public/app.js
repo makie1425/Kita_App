@@ -2377,7 +2377,7 @@ class Component extends DCLogic {
     return React.createElement("div",null,[sectionTitle("Supplier Records","Contact info, address, category, status (Active/Inactive only)"),
       this.recordTable("supplier-records",["Supplier","Category","Status","Details"],data.SUPPLIERS.map(s=>tr([td(s.name,{fontWeight:600}),td(s.category),td(badge(s.status)),td(React.createElement("button",{onClick:this.openSupplierDetail(s.id),style:{color:COLORS.brand,background:"none",border:"none",fontWeight:700,cursor:"pointer"}},"View â†’"))],s.id)))]);
   }
-  setReportFilter=(key,value)=>this.setState(s=>({reportFilters:{...(s.reportFilters||{type:'sales'}),[key]:value,...(key==='category'?{subcategoryId:'',productId:''}:['brandId','subcategoryId','supplierId','type'].includes(key)?{productId:''}:{}),...(key==='type'?{lowStock:'',...(value==='inventory'?{from:'',to:''}:{})}:{})},reportFilterOpen:['from','to'].includes(key)?s.reportFilterOpen:null}),this.generateReport);
+  setReportFilter=(key,value)=>this.setState(s=>({reportFilters:{...(s.reportFilters||{type:'sales'}),[key]:value,...(key==='category'?{subcategoryId:'',productId:''}:['brandId','subcategoryId','supplierId','type'].includes(key)?{productId:''}:{}),...(key==='type'?{expiryStatus:'',lowStock:'',...(value==='inventory'?{from:'',to:''}:{})}:{})},reportFilterOpen:['from','to'].includes(key)?s.reportFilterOpen:null}),this.generateReport);
   resetReportFilters=()=>this.setState({reportFilters:{type:this.state.reportFilters?.type||'sales'},reportFilterOpen:null},this.generateReport);
   generateReport=async()=>{
     const filters={...(this.state.reportFilters||{type:'sales'})};
@@ -2451,6 +2451,7 @@ class Component extends DCLogic {
     const h=React.createElement,s=this.state,d=s.data,f=s.reportFilters||{type:'sales'},loaded=s.reportResult;
     const common={'Product':'product','Category':'category','Brand':'brand','Subcategory':'subcategory'};
     const schemas={
+      expiry:{'SKU / Code':'code','Batch / Lot':'batch','Product name':'product','Category':'category','Expiration date':'expiryDate','Stock remaining':'remaining','Unit':'unit','Expiration status':'status'},
       sales:{'Transaction No.':'reference','Sale date':'date',...common,'Status':'status','Quantity':'quantity','Line total (PHP)':'amount','Refunded (PHP)':'refunded'},
       inventory:{...common,'Stock ID':'id','Barcode':'barcode','Unit':'unit','Stock on Hand':'stockOnHand','Sellable Quantity':'sellableStock','Expired':'expiredStock','Recalled':'recalledStock','Reserved':'reservedStock','Exclusion reasons':'exclusionReason','Reorder level':'minimum','Retail price (PHP)':'price','Status':'status'},
       receipts:{...common,'Received date':'date','Receipt':'reference','Supplier':'supplier','Quantity received':'quantity','Remaining now':'remaining','Unit cost (PHP)':'cost','Batch':'batch','Manufactured':'manufacturedDate','Expiry':'expiryDate'},
@@ -2459,11 +2460,11 @@ class Component extends DCLogic {
     const r=loaded||{title:'Report results',columns:schemas[f.type]||schemas.sales,rows:[],labels:{},summary:{}};
     const appliedLabels=Object.entries(r?.labels||{}).filter(([key])=>key!=='Type').map(([key,value])=>key+': '+value).join(', ');
     const emptyMessage=h('div',{className:'report-table-message',role:s.reportError?'alert':'status','aria-live':'polite'},s.reportLoading?'Loading report records. Please wait...':s.reportError?'Unable to update the report. '+s.reportError:!loaded?'Preparing your report...':'No results found'+(appliedLabels?' for '+appliedLabels:'')+'. Change or clear the filters and try again.');
-    const types=[['sales','Sales lines'],['inventory','Current inventory'],['receipts','Received stock'],['movements','Stock movements']];
+    const types=[['sales','Sales lines'],['inventory','Current inventory'],['receipts','Received stock'],['movements','Stock movements'],['expiry','Expiration Monitoring']];
     const products=d.PRODUCTS.filter(p=>(!f.category||p.category===f.category)&&(!f.subcategoryId||String(p.subcategoryId)===String(f.subcategoryId))&&(!f.brandId||String(p.brandId)===String(f.brandId))&&(f.type==='receipts'||!f.supplierId||String(p.supplierId)===String(f.supplierId)));
     const facets=[['category','Category',d.CATEGORIES.map(c=>[c.name,c.name])],['subcategoryId','Subcategory',this.subcategoriesFor(f.category,true).map(c=>[c.id,c.name])],['brandId','Brand',(d.BRANDS||[]).map(b=>[b.id,b.name])],['supplierId','Supplier',d.SUPPLIERS.map(p=>[p.id,p.name])],['productId','Product',products.map(p=>[p.id,this.productLabel(p)+' #'+p.id])]];
     const selected=facets.filter(([key])=>f[key]);
-    const activeCount=selected.length+(f.lowStock?1:0)+(f.from||f.to?1:0);
+    const activeCount=selected.length+(f.expiryStatus?1:0)+(f.lowStock?1:0)+(f.from||f.to?1:0);
     const open=s.reportFilterOpen,facet=facets.find(([key])=>key===open);
     const labelFor=(options,value)=>options.find(([id])=>String(id)===String(value))?.[1]||value;
     const url=format=>'/reports/data?'+new URLSearchParams({...Object.fromEntries(Object.entries(s.reportAppliedFilters||{}).filter(([,v])=>v)),format});
@@ -2474,12 +2475,12 @@ class Component extends DCLogic {
         h('div',{className:'report-filter-actions'},[h('strong',null,'Filters'+(activeCount?' ('+activeCount+')':'')),
           f.type!=='inventory'?filterButton('date','Date range: '+(f.from||f.to?((f.from||'Any')+' to '+(f.to||'Any')):'All time'),f.from||f.to):null,
           ...facets.filter(([key])=>['category','subcategoryId'].includes(key)).map(([key,label])=>filterButton(key,label+': '+(f[key]?labelFor(facets.find(item=>item[0]===key)[2],f[key]):'All'),!!f[key],key==='subcategoryId'&&!f.category)),
-          filterButton('more','More filters',!!(f.brandId||f.supplierId||f.productId||f.lowStock)),
+          filterButton('more','More filters',!!(f.brandId||f.supplierId||f.productId||f.lowStock||f.expiryStatus)),
           activeCount?h('button',{type:'button',className:'report-clear',onClick:this.resetReportFilters},'Clear all'):null,
           h('label',{className:'report-search'},[h('span',{className:'sr-only'},'Search report records'),h('input',{type:'search',placeholder:'Search transaction, product, category...',value:s.tableViews['generated-report']?.query||'',onChange:e=>this.setTableView('generated-report',{query:e.target.value,page:1})})])
         ]),
         open?h('div',{id:'report-filter-options',className:'report-filter-options',onKeyDown:e=>{if(e.key==='Escape'){this.setState({reportFilterOpen:null});e.currentTarget.parentElement.querySelector('[aria-expanded="true"]')?.focus();}}},[
-          open==='more'?h('div',{className:'report-date-options'},[...facets.filter(([key])=>!['category','subcategoryId'].includes(key)).map(([key,label,options])=>h('label',{key},[label,h('select',{value:f[key]||'',onChange:e=>this.setReportFilter(key,e.target.value)},[['','All '+label.toLowerCase()+' options'],...options].map(([value,name])=>h('option',{key:value,value},name)))])),f.type==='inventory'?h('label',null,[h('input',{type:'checkbox',checked:!!f.lowStock,onChange:e=>this.setReportFilter('lowStock',e.target.checked?'1':'')}),'Low stock only']):null]):open==='date'?h('div',{className:'report-date-options'},[
+          open==='more'?h('div',{className:'report-date-options'},[f.type==='expiry'?h('label',null,['Expiration status',h('select',{'aria-label':'Expiration status',value:f.expiryStatus||'',onChange:e=>this.setReportFilter('expiryStatus',e.target.value)},['','Expired','Critical','Warning','Good','Unknown'].map(value=>h('option',{key:value,value},value||'All statuses')))]):null,...facets.filter(([key])=>!['category','subcategoryId'].includes(key)).map(([key,label,options])=>h('label',{key},[label,h('select',{value:f[key]||'',onChange:e=>this.setReportFilter(key,e.target.value)},[['','All '+label.toLowerCase()+' options'],...options].map(([value,name])=>h('option',{key:value,value},name)))])),f.type==='inventory'?h('label',null,[h('input',{type:'checkbox',checked:!!f.lowStock,onChange:e=>this.setReportFilter('lowStock',e.target.checked?'1':'')}),'Low stock only']):null]):open==='date'?h('div',{className:'report-date-options'},[
             h('label',null,['From',h('input',{type:'date',value:f.from||'',max:f.to||undefined,onChange:e=>this.setReportFilter('from',e.target.value)})]),
             h('label',null,['To',h('input',{type:'date',value:f.to||'',min:f.from||undefined,onChange:e=>this.setReportFilter('to',e.target.value)})]),
             h('button',{type:'button',className:'report-clear',onClick:()=>this.setState({reportFilters:{...f,from:'',to:''},reportFilterOpen:null},this.generateReport)},'All dates')
@@ -2492,7 +2493,7 @@ class Component extends DCLogic {
         ]):null,
         f.type==='inventory'?h('p',{className:'report-filter-hint'},'Current stock snapshot. Use Stock movements to filter by date.'):null
       ]),
-      h('p',{role:'status','aria-live':'polite',className:'report-filter-hint'},s.reportLoading?'Updating results below...':s.reportError?'Results could not be updated.':r?r.rows.length+' matching records':'Loading report...'),
+      h('p',{role:'status','aria-live':'polite',className:'report-filter-hint'},s.reportLoading?'Updating results below...':s.reportError?'Results could not be updated.':r?r.rows.length+(f.type==='expiry'?' tracked batch items':' matching records'):'Loading report...'),
       s.reportError?h('div',{role:'alert'},[s.reportError,btn('Retry',this.generateReport)]):null,
       h('section',{key:'report-results',className:'report-results','aria-label':'Report results','aria-busy':!!s.reportLoading},[
         h('div',{className:'report-results-header'},[h('h2',null,r.title),loaded?h('div',{className:'action-group'},[h('a',{className:'kita-button',href:url('pdf'),download:true},'Download PDF Summary'),h('a',{className:'kita-button',href:url('csv'),download:true},'Export CSV'),h('a',{className:'kita-button',href:url('print'),target:'_blank',rel:'noopener'},'Print report')]):null]),
@@ -2500,7 +2501,7 @@ class Component extends DCLogic {
         h('p',{className:'report-filter-hint'},Object.entries(r.labels||{}).map(([key,value])=>key+': '+value).join(' | ')),
         h('div',{className:'report-summary'},Object.entries(r.summary||{}).map(([label,value])=>h('div',{key:label,className:'report-metric'},[h('span',null,label),h('strong',null,value)]))),
         loaded&&(s.reportAppliedFilters?.type||f.type)==='sales'?this.buildReportCharts(r.rows):null,
-        this.recordTable('generated-report',Object.keys(r.columns),r.rows.map((row,i)=>tr(Object.values(r.columns).map(key=>td(row[key]==null?'-':key==='status'?badge(row[key]):(r.moneyKeys||[]).includes(key)?Number(row[key]).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}):row[key],(r.numericKeys||[]).includes(key)?{textAlign:'right',fontVariantNumeric:'tabular-nums'}:key==='reference'?{fontFamily:'monospace'}:{})),i)),{emptyMessage,externalSearch:true}),
+        this.recordTable('generated-report',Object.keys(r.columns),r.rows.map((row,i)=>tr(Object.values(r.columns).map(key=>td(row[key]==null?'-':key==='status'?((s.reportAppliedFilters?.type||f.type)==='expiry'?h('span',{className:'expiry-status expiry-status--'+String(row[key]).toLowerCase()},row[key]):badge(row[key])):(r.moneyKeys||[]).includes(key)?Number(row[key]).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}):row[key],(r.numericKeys||[]).includes(key)?{textAlign:'right',fontVariantNumeric:'tabular-nums'}:key==='reference'?{fontFamily:'monospace'}:{})),i)),{emptyMessage,externalSearch:true}),
         !r.rows.length&&activeCount?h('div',{className:'action-group'},[h('span',null,'Try removing a filter to see more records.'),btn('Clear all filters',this.resetReportFilters)]):null,
 
         h('p',{className:'report-filter-hint'},r.note)

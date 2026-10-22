@@ -10,7 +10,7 @@ const app=context.app;
 app.state.data={PRODUCTS:[],CATEGORIES:[],SUPPLIERS:[],SUBCATEGORIES:[]};
 const nodes=(node)=>!node||typeof node!=='object'?[]:Array.isArray(node)?node.flatMap(nodes):[node,...nodes(node.props?.children)];
 const text=node=>!node?'':typeof node!=='object'?String(node):Array.isArray(node)?node.map(text).join(' '):text(node.props?.children);
-for(const type of ['sales','inventory','receipts','movements']) {
+for(const type of ['sales','inventory','receipts','movements','expiry']) {
   app.state.reportFilters={type};
   for(const state of [
     {reportResult:null,reportLoading:true,reportError:'',message:'Loading report records'},
