@@ -1368,3 +1368,19 @@ body:has(.purchase-details-dialog[open]) { overflow: hidden; }
 .reports-page .status-badge { border-radius: 4px !important; font-size: 10px !important; padding: 5px 8px !important; }
 @media(max-width:1100px) { .reports-page .report-summary { grid-template-columns: repeat(3,minmax(0,1fr)); } }
 @media(max-width:760px) { .report-chart-grid { grid-template-columns: minmax(0,1fr); } .reports-page .report-summary { grid-template-columns: repeat(2,minmax(0,1fr)); } .report-search { flex-basis: 100%; } }
+/* Hourly volume chart styled to the supplied reference. */
+.report-chart-grid { grid-template-columns: minmax(0,1fr); }
+.report-chart-grid > .report-peak-panel { padding: 24px !important; border: 2px solid #e6ecf4 !important; border-radius: 18px; background: white; }
+.report-peak-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+.report-peak-heading .panel-title { font-size: 20px; color: #101828; margin-bottom: 6px; }
+.report-peak-heading .report-filter-hint { font-size: 14px; color: #667c9c; }
+.report-peak-badge { flex-shrink: 0; padding: 8px 12px; border: 2px solid #d4e4ff; border-radius: 10px; background: #f0f7ff; color: #1747e8; font-size: 14px; }
+.report-peak-svg { display: block; width: 100%; min-width: 800px; }
+.report-peak-scroll { overflow-x: auto; }
+.report-chart-note { font-size: 11px; color: #667c9c; margin: 0; }
+@media(max-width:600px) {
+  .report-peak-heading { flex-wrap: wrap; gap: 6px; }
+  .report-peak-heading .panel-title { font-size: 17px; }
+  .report-peak-heading .report-filter-hint { font-size: 12px; }
+  .report-chart-grid > .report-peak-panel { padding: 16px !important; }
+}

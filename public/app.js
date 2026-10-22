@@ -2403,14 +2403,35 @@ class Component extends DCLogic {
       const name=row.product||'Unnamed product';
       products.set(name,(products.get(name)||0)+Number(row.amount||0));
     });
-    const peak=Math.max(1,...hours.map(set=>set.size));
+    const peak=Math.max(0,...hours.map(set=>set.size));
+    const step=Math.max(1,Math.ceil(peak/4)), ceiling=step*4;
+    const hourLabel=hour=>String(hour%12||12).padStart(2,'0')+':00 '+(hour<12?'AM':'PM');
+    const recorded=hours.map((set,hour)=>({hour,count:set.size})).filter(item=>item.count);
+    const first=Math.min(8,...recorded.map(item=>item.hour)), last=Math.max(21,...recorded.map(item=>item.hour));
+    const visible=Array.from({length:last-first+1},(_,i)=>({hour:first+i,count:hours[first+i].size}));
+    const leaders=recorded.slice().sort((a,b)=>b.count-a.count||a.hour-b.hour).slice(0,2).sort((a,b)=>a.hour-b.hour);
+    const peakLabel=leaders.length?'Peak: '+leaders.map(item=>(item.hour%12||12)+' '+(item.hour<12?'AM':'PM')).join(' & '):'No peak data';
+    const slot=980/visible.length, baseline=300, plotHeight=250;
+
     const ranked=[...products].sort((a,b)=>b[1]-a[1]).slice(0,6).map(([name,rev],i)=>({p:{id:i,name},rev}));
     return h('div',{className:'report-chart-grid'},[
-      card([h('h3',{className:'panel-title'},'Peak Sales Hours & Shift Load'),h('p',{className:'report-filter-hint'},'Distinct transactions by recorded hour. All listed statuses included.'),
-        h('div',{className:'report-hour-chart',role:'img','aria-label':'Hourly transaction counts'},hours.map((set,hour)=>h('div',{key:hour,className:'report-hour-column',title:String(hour).padStart(2,'0')+':00 - '+set.size+' transactions'},[
-          h('span',{className:'report-hour-count'},set.size||''),h('div',{className:'report-hour-track'},h('span',{style:{height:set.size/peak*100+'%'}})),h('small',null,hour%3===0?String(hour).padStart(2,'0')+':00':''),
-        ]))),
-        !hours.some(set=>set.size)?h('p',{className:'record-empty'},'No recorded transaction times for this selection.'):null,
+      h('section',{className:'kita-card report-peak-panel','aria-label':'Peak sales hours'},[
+        h('div',{className:'report-peak-heading'},[
+          h('div',null,[h('h3',{className:'panel-title'},'Peak Sales Hours & Shift Load'),h('p',{className:'report-filter-hint'},'Hourly order volume distribution ('+hourLabel(first)+' - '+hourLabel(last)+') for cashier shift optimization.')]),
+          h('span',{className:'report-peak-badge',title:'Two busiest recorded hours; ties use the earlier hour.'},peakLabel),
+        ]),
+        h('div',{className:'report-peak-scroll'},h('svg',{viewBox:'0 0 1080 340',className:'report-peak-svg',role:'img','aria-label':'Hourly transaction volume. '+peakLabel},[
+          h('title',null,'Distinct transactions per hour. All listed transaction statuses included.'),
+          ...Array.from({length:5},(_,i)=>{const value=i*step,y=baseline-i*plotHeight/4;return h('g',{key:'tick'+i},[
+            h('line',{x1:55,x2:1035,y1:y,y2:y,stroke:i?'#e8eef8':'#7c8798',strokeDasharray:i?'4 4':undefined}),
+            h('text',{x:45,y:y+4,textAnchor:'end',fontSize:12,fill:'#667c9c'},value),
+          ]);}),
+          ...visible.map(({hour,count},i)=>{const x=55+i*slot+slot*.1,width=slot*.8,height=count/ceiling*plotHeight,y=baseline-height,r=Math.min(8,height);return h('g',{key:hour,className:'report-hour-column'},[
+            h('path',{d:count?`M ${x} ${baseline} V ${y+r} Q ${x} ${y} ${x+r} ${y} H ${x+width-r} Q ${x+width} ${y} ${x+width} ${y+r} V ${baseline} Z`:'',fill:'#2864ef'},h('title',null,hourLabel(hour)+': '+count+' transactions')),
+            h('text',{x:x+width/2,y:baseline+20,textAnchor:'middle',fontSize:11,fill:'#667c9c'},hourLabel(hour)),
+          ]);}),
+        ])),
+        h('p',{className:'report-chart-note'},peak?'Counts include all listed transaction statuses. Hover over a bar for its count.':'No recorded transaction times for this selection.'),
       ]),
       card([h('h3',{className:'panel-title'},'Top Product Performance'),h('p',{className:'report-filter-hint'},'Recorded line totals by product (PHP), before refunds. All listed statuses included.'),rankedSales(ranked)]),
     ]);
