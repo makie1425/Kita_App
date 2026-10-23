@@ -69,7 +69,7 @@ class ProductFifoTest extends TestCase
     private function receive(int $qty, float $cost, ?float $retail = null): string
     {
         $this->actingAs($this->manager);
-        $id = $this->postJson('/api/purchase-requests', ['category' => 'Beverages', 'lines' => [['productId' => $this->product, 'qty' => $qty]]])->assertCreated()->json('id');
+        $id = $this->postJson('/api/purchase-requests', ['category' => 'Beverages', 'lines' => [['productId' => $this->product, 'supplierId' => $this->input['supplierId'], 'qty' => $qty]]])->assertCreated()->json('id');
         $before = DB::table('products')->where('id', $this->product)->value('stock');
         $this->actingAs($this->admin)->patchJson('/api/purchase-requests/'.$id, ['action' => 'approved', 'revision' => 0])->assertOk();
         $this->assertEquals($before, DB::table('products')->where('id', $this->product)->value('stock'));
@@ -133,7 +133,7 @@ class ProductFifoTest extends TestCase
     public function test_receiving_saves_prices_atomically_and_retry_does_not_reprice(): void
     {
         $this->receive(2, 55);
-        $id = $this->postJson('/api/purchase-requests', ['category' => 'Beverages', 'lines' => [['productId' => $this->product, 'qty' => 3]]])->assertCreated()->json('id');
+        $id = $this->postJson('/api/purchase-requests', ['category' => 'Beverages', 'lines' => [['productId' => $this->product, 'supplierId' => $this->input['supplierId'], 'qty' => 3]]])->assertCreated()->json('id');
         $this->actingAs($this->admin)->patchJson('/api/purchase-requests/'.$id, ['action' => 'approved', 'revision' => 0])->assertOk();
         $this->actingAs($this->manager);
         $payload = ['version' => 0, 'idempotencyKey' => (string) Str::uuid(), 'receivedDate' => now()->toDateString(),
@@ -216,7 +216,7 @@ class ProductFifoTest extends TestCase
 
     public function test_negative_cost_and_invalid_expiry_are_rejected_without_stock_changes(): void
     {
-        $id = $this->postJson('/api/purchase-requests', ['category' => 'Beverages', 'lines' => [['productId' => $this->product, 'qty' => 2]]])->assertCreated()->json('id');
+        $id = $this->postJson('/api/purchase-requests', ['category' => 'Beverages', 'lines' => [['productId' => $this->product, 'supplierId' => $this->input['supplierId'], 'qty' => 2]]])->assertCreated()->json('id');
         $this->actingAs($this->admin)->patchJson('/api/purchase-requests/'.$id, ['action' => 'approved', 'revision' => 0])->assertOk();
         foreach ([['unitCost' => -1], ['unitCost' => 55, 'expiryDate' => '2000-01-01']] as $invalid) {
             $this->actingAs($this->manager)->postJson('/api/purchase-orders/'.$id.'/receive', ['version' => 0, 'idempotencyKey' => (string) Str::uuid(),

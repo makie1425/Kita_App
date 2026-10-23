@@ -176,12 +176,18 @@ class PurchasingController extends Controller
             $short = $orderLines->contains(fn ($line) => $line->deliveredQty + $line->resolvedQty < $line->orderedQty);
             // Snapshot every PO line, including items absent from this delivery.
             // Later deliveries must not rewrite this inspection's missing quantities.
-            $inspection = $orderLines->map(fn ($line) => [
-                'productId' => $line->productId, 'name' => $line->name, 'unit' => $line->unit,
-                'ordered' => (int) $line->orderedQty, 'received' => (int) $line->deliveredQty,
-                'missing' => ReceivingCarryover::remaining($line),
-                'excess' => max(0, (int) $line->deliveredQty - (int) $line->orderedQty),
-            ])->values()->all();
+            $inspection = $orderLines->map(function ($line) use ($data) {
+                $input=collect($data['lines'])->firstWhere('productId',$line->productId);
+                $damaged=(int)($input['damagedQty'] ?? 0);
+                return [
+                    'productId'=>$line->productId, 'name'=>$line->name, 'unit'=>$line->unit,
+                    'ordered'=>(int)$line->orderedQty, 'received'=>(int)$line->deliveredQty,
+                    'outstanding'=>ReceivingCarryover::remaining($line),
+                    'missing'=>max(0,ReceivingCarryover::remaining($line)-$damaged),
+                    'damaged'=>$damaged, 'damageReason'=>$input['damageReason'] ?? null,
+                    'excess'=>max(0,(int)$line->deliveredQty-(int)$line->orderedQty),
+                ];
+            })->values()->all();
             foreach ($orderLines as $item) {
                 $input=collect($data['lines'])->firstWhere('productId',$item->productId);
                 DB::table('receiving_inspections')->insert(['receiptId'=>$receiptId,'poId'=>$id,'orderLine'=>$item->id,'productId'=>$item->productId,'accepted'=>$input['qty'] ?? 0,'damaged'=>$input['damagedQty'] ?? 0,'missing'=>max(0,ReceivingCarryover::remaining($item)-($input['damagedQty'] ?? 0)),'newMissing'=>max(0,ReceivingCarryover::remaining($item)-($input['damagedQty'] ?? 0)-(int)DB::table('receiving_carryovers')->where('targetLine',$item->id)->selectRaw('COALESCE(SUM(quantity-receivedQty-releasedQty),0) as qty')->value('qty')),'damageReason'=>$input['damageReason'] ?? null,'created_at'=>now()]);
@@ -195,7 +201,7 @@ class PurchasingController extends Controller
             }
             DB::table('receiving_records')->where('id', $receiptId)->update([
                 'id' => $receiptId, 'poId' => $id, 'date' => $data['receivedDate'], 'received_at' => now(),
-                'deliveryStatus' => $status, 'discrepancy' => ! $matches || $damageTotal>0 || count($replacementReasons) > 0, 'discrepancyType' => implode('; ', array_unique(array_filter([$short ? 'Missing items' : ($matches ? null : 'Quantity difference'), $damageTotal?'Damaged items':null, ...$replacementReasons]))) ?: null,
+                'deliveryStatus' => $status, 'discrepancy' => ! $matches || $damageTotal>0 || count($replacementReasons) > 0, 'discrepancyType' => implode('; ', array_unique(array_filter([collect($inspection)->sum('missing')>0 ? 'Missing items' : ($matches || $short ? null : 'Quantity difference'), $damageTotal?'Damaged items':null, ...$replacementReasons]))) ?: null,
                 'inspection' => json_encode($inspection),
                 'outcome' => $data['notes'] ?? '', 'adminApproval' => 'Posted by Manager', 'barcodeAssignment' => 'Existing inventory barcode',
                 'idempotencyKey' => $data['idempotencyKey'], 'deliveryReference' => $data['deliveryReference'], 'payloadHash' => $hash,

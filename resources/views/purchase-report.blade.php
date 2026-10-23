@@ -57,9 +57,9 @@
             <h2>{{ collect($inspection)->contains(fn ($item) => $item['missing'] > 0) ? 'MISSING ITEM / SHORTAGE REPORT' : 'RECEIVING INSPECTION REPORT' }}</h2>
             <p>Inspected by {{ $receipt->receivedBy ?? 'Not recorded' }} at {{ $receipt->received_at }}. PO {{ $order->id }}.</p>
             <p class="muted">Snapshot after this delivery: received quantities include earlier deliveries. Actual items received were added to inventory; missing items were not added. Later deliveries do not alter this report.</p>
-            <div class="table-wrap" tabindex="0" role="region" aria-label="Inspection items"><table><thead><tr><th>Item</th><th>Ordered</th><th>Total Received at Inspection</th><th>Missing</th><th>Excess</th><th>Unit</th></tr></thead><tbody>
+            <div class="table-wrap" tabindex="0" role="region" aria-label="Inspection items"><table><thead><tr><th>Item</th><th>Ordered</th><th>Total Received at Inspection</th><th>Missing</th><th>Damaged</th><th>Outstanding</th><th>Excess</th><th>Unit</th></tr></thead><tbody>
             @foreach($inspection as $item)
-                <tr><td>{{ $item['name'] }}</td><td>{{ $item['ordered'] }}</td><td>{{ $item['received'] }}</td><td>{{ $item['missing'] }}</td><td>{{ $item['excess'] }}</td><td>{{ $item['unit'] ?? 'Not recorded' }}</td></tr>
+                <tr><td>{{ $item['name'] }}</td><td>{{ $item['ordered'] }}</td><td>{{ $item['received'] }}</td><td>{{ $item['missing'] }}</td><td>{{ $item['damaged'] ?? 'Not recorded' }}</td><td>{{ $item['outstanding'] ?? $item['missing'] }}</td><td>{{ $item['excess'] }}</td><td>{{ $item['unit'] ?? 'Not recorded' }}</td></tr>
             @endforeach
             </tbody></table></div>
         @else

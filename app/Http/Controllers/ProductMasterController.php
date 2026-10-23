@@ -105,7 +105,8 @@ class ProductMasterController extends Controller
         }
         $query = DB::table('inventory_batches as b')->join('products as p', 'p.id', '=', 'b.productId')
             ->leftJoin('brands as brand', 'brand.id', '=', 'p.brandId')->leftJoin('subcategories as sub', 'sub.id', '=', 'p.subcategoryId')
-            ->leftJoin('suppliers as supplier', 'supplier.id', '=', 'b.supplierId');
+            ->leftJoin('suppliers as supplier', 'supplier.id', '=', 'b.supplierId')
+            ->leftJoin('receiving_records as receipt', 'receipt.id', '=', 'b.receiptId');
         foreach (['category' => 'p.category', 'brandId' => 'p.brandId', 'subcategoryId' => 'p.subcategoryId', 'productId' => 'p.id', 'supplierId' => 'b.supplierId'] as $key => $column) {
             if ($request->filled($key)) {
                 $query->where($column, $request->input($key));
@@ -119,7 +120,7 @@ class ProductMasterController extends Controller
         }
 
         return response()->json([
-            'batches' => \App\Services\InventoryAvailability::batches($query->orderByDesc('b.receivedDate')->orderByDesc('b.id')->get(['b.*', 'p.name', 'p.category', 'p.size', 'p.sizeUnit', 'p.stockUnit', 'p.status as productStatus', 'p.archivedAt as productArchivedAt', 'brand.name as brand', 'sub.name as subcategory', 'supplier.name as supplier'])),
+            'batches' => \App\Services\InventoryAvailability::batches($query->orderByDesc('b.receivedDate')->orderByDesc('b.id')->get(['b.*', 'p.name', 'p.category', 'p.size', 'p.sizeUnit', 'p.stockUnit', 'p.status as productStatus', 'p.archivedAt as productArchivedAt', 'brand.name as brand', 'sub.name as subcategory', 'supplier.name as supplier', 'receipt.poId', 'receipt.deliveryReference', 'receipt.receivedBy'])),
             'products' => \App\Services\InventoryAvailability::products($products->orderByDesc('p.created_at')->orderByDesc('p.id')->get(['p.*'])->map(fn ($p) => (array) $p)->all()),
             'movements' => $movements->orderByDesc('m.id')->limit(500)->get(['m.*', 'p.name']),
         ])->header('Cache-Control', 'no-store');

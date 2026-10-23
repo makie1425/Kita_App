@@ -84,6 +84,11 @@ class PurchaseWorkflowTest extends TestCase
         $body=$this->delivery(15); $body['lines'][0]['damagedQty']=2; $body['lines'][0]['damageReason']='Broken';
         $receipt=$this->actingAs($this->manager)->postJson('/api/purchase-orders/'.$original.'/receive',$body)->assertCreated()->json('id');
         $this->assertDatabaseHas('receiving_inspections',['receiptId'=>$receipt,'accepted'=>15,'damaged'=>2,'missing'=>3]);
+        $snapshot=json_decode(DB::table('receiving_records')->where('id',$receipt)->value('inspection'),true);
+        $this->assertSame(3,$snapshot[0]['missing']);
+        $this->assertSame(2,$snapshot[0]['damaged']);
+        $this->assertSame(5,$snapshot[0]['outstanding']);
+        $this->getJson('/api/inventory-history?productId='.$this->product)->assertOk()->assertJsonPath('batches.0.poId',$original)->assertJsonPath('batches.0.receiptId',$receipt)->assertJsonPath('batches.0.receivedBy','Receiving Manager');
         $sourceLine=DB::table('purchase_order_lines')->where('poId',$original)->value('id');
         $next=$this->requestOrder(10); $this->approve($next);
         $link=['requestKey'=>(string)Str::uuid(),'sourceLine'=>$sourceLine,'targetPo'=>$next,'quantity'=>5];
