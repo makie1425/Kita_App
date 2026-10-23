@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Services\InventoryRules;
+use App\Services\ReceivingRemarks;
 use App\Services\TransactionNumber;
 use Dompdf\Dompdf;
 use Dompdf\Options;
@@ -56,8 +57,8 @@ class ReportController extends Controller
             $title = 'Stock Receiving Audit';
             $query->join('receiving_record_lines as rl', 'rl.productId', '=', 'p.id')->join('receiving_records as rr', 'rr.id', '=', 'rl.receivingId')->join('purchase_orders as po', 'po.id', '=', 'rr.poId')->leftJoin('suppliers as supplier', 'supplier.id', '=', 'po.supplierId');
             $dateColumn = 'rr.date';
-            $columns = ['PO Number' => 'reportPo', 'Receipt ID' => 'reference', 'Supplier' => 'supplier', 'Product ID'=>'productId','Category'=>'category','Batch Number'=>'batch','Expiration Date'=>'expiryDate','Product' => 'product', 'Status' => 'status', 'Discrepancy' => 'discrepancyType', 'Condition' => 'condition', 'Received' => 'quantity'];
-            $select = ['p.id as productId','p.category','rl.batchNumber as batch','rl.expiryDate','p.name as product', 'rr.poId as reportPo', 'rr.id as reference', 'supplier.name as supplier', 'rr.deliveryStatus as status', 'rr.discrepancyType', 'rl.conditionText as condition', 'rl.deliveredQty as quantity', 'rr.discrepancy'];
+            $columns = ['PO Number' => 'reportPo', 'Receipt ID' => 'reference', 'Supplier' => 'supplier', 'Product ID'=>'productId','Category'=>'category','Batch Number'=>'batch','Expiration Date'=>'expiryDate','Product' => 'product', 'Remarks' => 'remarks', 'Discrepancy' => 'discrepancyType', 'Condition' => 'condition', 'Received' => 'quantity'];
+            $select = ['p.id as productId','p.category','rl.batchNumber as batch','rl.expiryDate','p.name as product', 'rr.poId as reportPo', 'rr.id as reference', 'supplier.name as supplier', 'rr.inspection', 'rr.outcome', 'rr.discrepancyType', 'rl.conditionText as condition', 'rl.deliveredQty as quantity', 'rr.discrepancy'];
             $note = 'Recorded receipt lines and inspection findings. Open a PO number to view or print the complete receiving report.';
             if ($request->filled('supplierId')) $query->where('po.supplierId', $filters['supplierId']);
             if ($request->filled('audit')) {
@@ -100,7 +101,7 @@ class ReportController extends Controller
                 $query->where($column, $filters[$key]);
             }
         }
-        if ($request->filled('status') && in_array($type, ['sales', 'inventory', 'receiving'])) {
+        if ($request->filled('status') && in_array($type, ['sales', 'inventory'])) {
             $column = match ($type) { 'sales' => 't.status', 'receiving' => 'rr.deliveryStatus', default => 'p.status' };
             if ($type === 'sales' && $filters['status'] === 'Completed') $query->whereIn($column, ['Unused', 'Completed']);
             else $query->where($column, $filters['status']);
@@ -125,6 +126,12 @@ class ReportController extends Controller
             $query->orderByDesc('p.created_at');
         }
         $rows = $query->orderByDesc('p.id')->get($select);
+        if ($type === 'receiving') {
+            foreach ($rows as $row) {
+                $row->remarks = ReceivingRemarks::forReceipt($row);
+                unset($row->inspection, $row->outcome);
+            }
+        }
         if ($type === 'movements') {
             $rows=\App\Services\BatchTrace::movements($rows);
             $note.=' Batch references identify batches linked to this transaction, not per-movement quantity allocations. Unrecorded historical links are not inferred.';
@@ -178,7 +185,7 @@ class ReportController extends Controller
         $preparedBy = $request->user()->name;
         $generated = now()->timezone('Asia/Manila')->format('Y-m-d H:i:s').' Asia/Manila';
         $labels = ['Type' => $title];
-        foreach (['status' => 'Status', 'audit' => 'Discrepancy audit'] as $key => $label) if ($request->filled($key)) $labels[$label] = $filters[$key];
+        foreach (['status' => 'Status', 'audit' => 'Discrepancy audit'] as $key => $label) if ($request->filled($key) && !($type === 'receiving' && $key === 'status')) $labels[$label] = $filters[$key];
         if ($type === 'expiry' && $request->filled('expiryStatus')) $labels['Expiration status'] = $filters['expiryStatus'];
         foreach (['from' => 'From', 'to' => 'To', 'category' => 'Category'] as $key => $label) {
             if ($request->filled($key) && ! ($type === 'inventory' && in_array($key, ['from', 'to']))) {

@@ -69,7 +69,7 @@ class PurchaseWorkflowTest extends TestCase
         $this->postJson('/api/purchase-orders/'.$id.'/receive', $body)->assertUnprocessable();
         $this->assertDatabaseCount('receiving_records', 0);
         $body['lines'][0]['qty'] = 4;
-        $this->postJson('/api/purchase-orders/'.$id.'/receive', $body)->assertCreated()->assertJsonPath('status', 'Fully Received');
+        $this->postJson('/api/purchase-orders/'.$id.'/receive', $body)->assertCreated()->assertJsonPath('status', 'Completed');
         $this->assertDatabaseHas('products', ['id' => $this->product, 'stock' => 0]);
         $this->assertDatabaseHas('products', ['id' => $replacement, 'stock' => 4]);
         $this->assertDatabaseHas('receiving_record_lines', ['productId' => $replacement, 'name' => 'Replacement', 'conditionText' => 'Damaged replacement for product #'.$this->product.' (New Item)']);
@@ -99,7 +99,7 @@ class PurchaseWorkflowTest extends TestCase
         $this->assertDatabaseHas('purchase_order_lines',['poId'=>$next,'orderedQty'=>15,'carryoverQty'=>5,'lineTotal'=>25]);
         $other=$link; $other['requestKey']=(string)Str::uuid();
         $this->postJson('/api/purchase-orders/'.$original.'/carryovers',$other)->assertUnprocessable();
-        $this->postJson('/api/purchase-orders/'.$original.'/receive',$this->delivery(1,2))->assertUnprocessable();
+        $this->postJson('/api/purchase-orders/'.$original.'/receive',$this->delivery(1,2))->assertConflict();
         $partial=$this->delivery(3,1);
         $this->postJson('/api/purchase-orders/'.$next.'/receive',$partial)->assertCreated();
         $this->postJson('/api/purchase-orders/'.$next.'/receive',$partial)->assertOk();
@@ -107,9 +107,9 @@ class PurchaseWorkflowTest extends TestCase
         $this->assertDatabaseHas('purchase_order_lines',['poId'=>$original,'deliveredQty'=>15,'resolvedQty'=>3]);
         $this->assertDatabaseHas('purchase_orders',['id'=>$original,'deliveredValue'=>45,'outstandingValue'=>5]);
         $this->assertDatabaseHas('purchase_orders',['id'=>$next,'deliveredValue'=>0,'outstandingValue'=>25]);
-        $this->postJson('/api/purchase-orders/'.$next.'/receive',$this->delivery(12,2))->assertCreated();
-        $this->assertDatabaseHas('purchase_orders',['id'=>$original,'status'=>'Fully Received','deliveredValue'=>50,'outstandingValue'=>0]);
-        $this->assertDatabaseHas('purchase_orders',['id'=>$next,'status'=>'Fully Received','orderedValue'=>25,'deliveredValue'=>25,'outstandingValue'=>0]);
+        $this->carryAndReceive($next, $this->delivery(12,2))->assertCreated();
+        $this->assertDatabaseHas('purchase_orders',['id'=>$original,'status'=>'Completed','deliveredValue'=>50,'outstandingValue'=>0]);
+        $this->assertDatabaseHas('purchase_orders',['id'=>$next,'status'=>'Completed','orderedValue'=>25,'deliveredValue'=>25,'outstandingValue'=>0]);
         $this->assertDatabaseHas('products',['id'=>$this->product,'stock'=>30]);
         $this->assertDatabaseHas('receiving_inspections',['receiptId'=>$receipt,'accepted'=>15,'missing'=>3,'damaged'=>2]);
         $this->assertDatabaseCount('receiving_carryover_resolutions',3);
@@ -140,8 +140,8 @@ class PurchaseWorkflowTest extends TestCase
         $this->assertDatabaseHas('receiving_records', ['id'=>$receipt, 'poId'=>$next]);
         $this->assertDatabaseHas('inventory_batches', ['receiptId'=>$receipt, 'quantityReceived'=>5]);
         $this->assertDatabaseHas('products', ['id'=>$this->product, 'stock'=>20]);
-        $this->assertDatabaseHas('purchase_orders', ['id'=>$original, 'status'=>'Fully Received', 'deliveredValue'=>50]);
-        $this->assertDatabaseHas('purchase_orders', ['id'=>$next, 'status'=>'Fully Received', 'orderedValue'=>0, 'deliveredValue'=>0]);
+        $this->assertDatabaseHas('purchase_orders', ['id'=>$original, 'status'=>'Completed', 'deliveredValue'=>50]);
+        $this->assertDatabaseHas('purchase_orders', ['id'=>$next, 'status'=>'Completed', 'orderedValue'=>0, 'deliveredValue'=>0]);
     }
 
     public function test_more_shortages_can_share_the_automatically_created_delivery_po(): void
@@ -160,7 +160,7 @@ class PurchaseWorkflowTest extends TestCase
         $receipt = $this->postJson('/api/purchase-orders/'.$next.'/receive', $this->delivery(5, 2))->assertCreated()->json('id');
         $this->assertDatabaseHas('receiving_records', ['id'=>$receipt, 'poId'=>$next]);
         $this->assertDatabaseHas('products', ['id'=>$this->product, 'stock'=>20]);
-        $this->assertDatabaseHas('purchase_orders', ['id'=>$original, 'status'=>'Fully Received']);
+        $this->assertDatabaseHas('purchase_orders', ['id'=>$original, 'status'=>'Completed']);
     }
 
     public function test_damaged_only_receipt_and_releasing_carryover_preserve_inventory(): void
@@ -293,6 +293,60 @@ class PurchaseWorkflowTest extends TestCase
             'receivedDate' => now()->toDateString(), 'lines' => [['productId' => $this->product, 'qty' => $qty]]];
     }
 
+    private function carryAndReceive(string $source, array $body)
+    {
+        $next = null;
+        foreach ($body['lines'] as $line) {
+            $next = $this->postJson('/api/purchase-orders/'.$source.'/carryovers', [
+                'requestKey'=>(string) Str::uuid(), 'sourceLine'=>DB::table('purchase_order_lines')->where('poId', $source)->where('productId', $line['productId'])->value('id'),
+                'targetPo'=>$next, 'quantity'=>$line['qty'] + ($line['damagedQty'] ?? 0),
+            ])->assertCreated()->json('poId');
+        }
+        $body['version'] = (int) DB::table('purchase_orders')->where('id', $next)->value('receivingVersion');
+        return $this->postJson('/api/purchase-orders/'.$next.'/receive', $body);
+    }
+
+    public function test_fifty_ordered_forty_received_completes_delivery_with_ten_missing_and_no_automatic_po(): void
+    {
+        $id = $this->requestOrder(50);
+        $this->approve($id);
+        $body = $this->delivery(40);
+        $receipt = $this->actingAs($this->manager)->postJson('/api/purchase-orders/'.$id.'/receive', $body)->assertCreated()->assertJsonPath('status', 'Completed')->json('id');
+        $this->postJson('/api/purchase-orders/'.$id.'/receive', $body)->assertOk();
+        $this->assertDatabaseHas('purchase_orders', ['id'=>$id, 'status'=>'Completed']);
+        $this->assertDatabaseHas('item_requests', ['id'=>$id, 'status'=>'Completed']);
+        $this->assertDatabaseHas('products', ['id'=>$this->product, 'stock'=>40]);
+        $this->assertDatabaseCount('purchase_orders', 1);
+        $this->assertDatabaseCount('receiving_records', 1);
+        $this->assertDatabaseCount('receiving_carryovers', 0);
+        $this->getJson('/api/purchasing')->assertOk()->assertJsonPath('orders.0.remarks', 'New Item: 10 missing')->assertJsonPath('orders.0.receipts.0.remarks', 'New Item: 10 missing');
+        $this->postJson('/api/purchase-orders/'.$id.'/receive', $this->delivery(10, 1))->assertConflict();
+        $later = $this->carryAndReceive($id, $this->delivery(10))->assertCreated()->assertJsonPath('status', 'Completed')->json('poId');
+        $this->assertNotSame($id, $later);
+        $this->assertDatabaseHas('products', ['id'=>$this->product, 'stock'=>50]);
+        $this->assertDatabaseHas('receiving_records', ['id'=>$receipt, 'deliveryStatus'=>'Completed']);
+        $this->getJson('/api/purchasing')->assertOk()->assertJsonPath('orders.1.remarks', 'New Item: 10 missing');
+        $this->get('/purchase-orders/'.$id.'/report')->assertOk()->assertSee('Remarks')->assertSee('10 missing')->assertDontSee('Status after delivery');
+    }
+
+    public function test_damaged_units_are_returned_not_stocked_and_remarks_survive_optional_replacement(): void
+    {
+        $id = $this->requestOrder(50);
+        $this->approve($id);
+        $body = $this->delivery(40);
+        $body['lines'][0] += ['damagedQty'=>3, 'damageReason'=>'Broken bottles'];
+        $this->actingAs($this->manager)->postJson('/api/purchase-orders/'.$id.'/receive', $body)->assertCreated()->assertJsonPath('status', 'Completed');
+        $remarks = 'New Item: 7 missing, 3 damaged — returned, not received';
+        $this->getJson('/api/purchasing')->assertOk()->assertJsonPath('orders.0.remarks', $remarks);
+        $this->assertDatabaseHas('products', ['id'=>$this->product, 'stock'=>40]);
+        $this->assertDatabaseHas('inventory_batches', ['productId'=>$this->product, 'quantityReceived'=>40]);
+        $this->assertDatabaseCount('purchase_orders', 1);
+        $this->carryAndReceive($id, $this->delivery(3))->assertCreated();
+        $this->assertDatabaseHas('products', ['id'=>$this->product, 'stock'=>43]);
+        $this->getJson('/api/purchasing')->assertOk()->assertJsonPath('orders.1.remarks', $remarks);
+        $this->getJson('/reports/data?type=receiving')->assertOk()->assertSee('returned, not received');
+    }
+
     public function test_complete_workflow_preserves_id_and_posts_only_actual_stock_with_printable_history(): void
     {
         $id = $this->requestOrder();
@@ -304,87 +358,19 @@ class PurchaseWorkflowTest extends TestCase
         $this->assertDatabaseHas('notifications', ['recipientId' => $this->manager->id, 'recipientRole' => 'manager', 'recordId' => $id, 'type' => 'Purchase request Approved']);
         $this->assertDatabaseHas('item_requests', ['id' => $id, 'poId' => $id, 'approvedById' => $this->admin->id, 'approvedByRole' => 'admin']);
         $this->actingAs($this->manager)->postJson('/api/purchase-orders/'.$id.'/receive', $this->delivery())
-            ->assertCreated()->assertJsonPath('poId', $id)->assertJsonPath('status', 'Partially Received');
+            ->assertCreated()->assertJsonPath('poId', $id)->assertJsonPath('status', 'Completed');
         $this->assertDatabaseHas('products', ['id' => $this->product, 'stock' => 4]);
-        $later = $this->postJson('/api/purchase-orders/'.$id.'/receive', $this->delivery(6, 1))->assertCreated()->assertJsonPath('status', 'Fully Received')->json('poId');
+        $later = $this->carryAndReceive($id, $this->delivery(6, 1))->assertCreated()->assertJsonPath('status', 'Completed')->json('poId');
         $this->assertNotSame($id, $later);
         $this->assertDatabaseHas('receiving_records', ['poId' => $id, 'deliveryReference' => $id.'-R001']);
-        $this->assertDatabaseHas('receiving_records', ['poId' => $later, 'deliveryReference' => $later.'-R001']);
+        $this->assertDatabaseHas('receiving_records', ['poId' => $later, 'deliveryReference' => $later.'-R002']);
         $this->assertDatabaseHas('products', ['id' => $this->product, 'stock' => 10]);
         $this->assertDatabaseHas('purchase_order_lines', ['poId' => $id, 'orderedQty' => 10, 'deliveredQty' => 4, 'resolvedQty'=>6, 'unit' => 'Piece']);
         $this->assertSame(2, DB::table('stock_movements')->where('referenceType', 'purchase_receiving')->count());
         $this->assertSame(2, DB::table('notifications')->where('recipientId', $this->admin->id)->where('recipientRole', 'admin')->whereIn('recordId', [$id, $later])->where('type', 'Stock received')->count());
-        $this->actingAs($this->admin)->getJson('/api/purchasing')->assertOk()->assertJsonPath('orders.0.id', $later)->assertJsonPath('orders.0.status', 'Fully Received')->assertJsonCount(1, 'orders.0.receipts')->assertJsonPath('orders.1.status', 'Fully Received');
+        $this->actingAs($this->admin)->getJson('/api/purchasing')->assertOk()->assertJsonPath('orders.0.id', $later)->assertJsonPath('orders.0.status', 'Completed')->assertJsonCount(1, 'orders.0.receipts')->assertJsonPath('orders.1.status', 'Completed');
         $this->get('/purchase-orders/'.$id.'/report')->assertOk()->assertSee('PURCHASE ORDER / RECEIVING REPORT')->assertSee($id)
             ->assertSee('Purchase Supplier')->assertSee('Approving Admin')->assertSee('Receiving Manager')->assertSee('Print Report');
-    }
-
-    public function test_receiving_remaining_two_creates_history_updates_status_and_is_retry_safe(): void
-    {
-        $id = $this->requestOrder(20);
-        $this->approve($id);
-        $this->actingAs($this->manager)->postJson('/api/purchase-orders/'.$id.'/receive', $this->delivery(18))->assertCreated();
-        $body = $this->delivery(2, 1);
-        $result = $this->postJson('/api/purchase-orders/'.$id.'/receive', $body)->assertCreated()->assertJsonPath('status', 'Fully Received')->json();
-        $this->assertNotSame($id, $result['poId']);
-        $this->postJson('/api/purchase-orders/'.$id.'/receive', $body)->assertOk()->assertJsonPath('poId', $result['poId']);
-        $changed = $body;
-        $changed['lines'][0]['qty'] = 1;
-        $this->postJson('/api/purchase-orders/'.$id.'/receive', $changed)->assertConflict();
-        $this->assertDatabaseCount('purchase_orders', 2);
-        $this->assertDatabaseCount('receiving_records', 2);
-        $this->assertDatabaseHas('products', ['id'=>$this->product, 'stock'=>20]);
-        $this->assertDatabaseHas('purchase_orders', ['id'=>$id, 'status'=>'Fully Received', 'deliveredValue'=>50, 'outstandingValue'=>0]);
-        $this->assertDatabaseHas('item_requests', ['id'=>$id, 'status'=>'Fully Received']);
-        $this->assertDatabaseHas('purchase_orders', ['id'=>$result['poId'], 'status'=>'Fully Received', 'orderedValue'=>0]);
-        $this->getJson('/api/purchasing')->assertOk()->assertJsonPath('orders.0.id', $result['poId'])->assertJsonPath('orders.0.receipts.0.id', $result['id'])->assertJsonPath('orders.0.lines.0.deliveredQty', 2);
-    }
-
-    public function test_all_items_in_a_later_delivery_share_one_po_and_other_shortages_stay_open(): void
-    {
-        $second = $this->postJson('/api/products', [
-            'name'=>'Second Item', 'category'=>'Supplies', 'barcode'=>'SECOND-DELIVERY', 'stock'=>0,
-            'unitPrice'=>2.50, 'price'=>5, 'purchaseUnit'=>'Piece', 'stockUnit'=>'Piece', 'conversionFactor'=>1, 'supplierId'=>$this->supplier,
-        ])->assertCreated()->json('product.id');
-        $id = $this->postJson('/api/purchase-requests', ['category'=>'Supplies', 'lines'=>[
-            ['productId'=>$this->product, 'qty'=>20, 'supplierId'=>$this->supplier],
-            ['productId'=>$second, 'qty'=>10, 'supplierId'=>$this->supplier],
-        ]])->assertCreated()->json('id');
-        $this->approve($id);
-        $this->actingAs($this->manager)->postJson('/api/purchase-orders/'.$id.'/receive', $this->delivery(18))->assertCreated();
-        $body = $this->delivery(2, 1);
-        $body['lines'][] = ['productId'=>$second, 'qty'=>5];
-        $result = $this->postJson('/api/purchase-orders/'.$id.'/receive', $body)->assertCreated()->json();
-        $this->assertDatabaseCount('purchase_orders', 2);
-        $this->assertSame(2, DB::table('receiving_record_lines')->where('receivingId', $result['id'])->count());
-        $this->assertSame(2, DB::table('purchase_order_lines')->where('poId', $result['poId'])->count());
-        $this->assertDatabaseHas('purchase_orders', ['id'=>$id, 'status'=>'Partially Received']);
-        $this->assertDatabaseHas('item_requests', ['id'=>$id, 'status'=>'Partially Received']);
-        $this->assertDatabaseHas('purchase_order_lines', ['poId'=>$id, 'productId'=>$second, 'resolvedQty'=>5, 'orderedQty'=>10]);
-        $last = $this->delivery(5, (int) DB::table('purchase_orders')->where('id', $id)->value('receivingVersion'));
-        $last['lines'][0]['productId'] = $second;
-        $third = $this->postJson('/api/purchase-orders/'.$id.'/receive', $last)->assertCreated()->json('poId');
-        $this->assertNotSame($result['poId'], $third);
-        $this->assertDatabaseHas('purchase_orders', ['id'=>$id, 'status'=>'Fully Received', 'deliveredValue'=>75]);
-        $this->assertDatabaseHas('products', ['id'=>$this->product, 'stock'=>20]);
-        $this->assertDatabaseHas('products', ['id'=>$second, 'stock'=>10]);
-    }
-
-    public function test_failed_later_delivery_rolls_back_new_po_and_shortage_allocation(): void
-    {
-        $id = $this->requestOrder(20);
-        $this->approve($id);
-        $this->actingAs($this->manager)->postJson('/api/purchase-orders/'.$id.'/receive', $this->delivery(18))->assertCreated();
-        $body = $this->delivery(1, 1);
-        $body['lines'][0]['damagedQty'] = 1;
-        // Missing damage reason fails after creating the temporary delivery PO.
-        $this->postJson('/api/purchase-orders/'.$id.'/receive', $body)->assertUnprocessable();
-        $this->postJson('/api/purchase-orders/'.$id.'/receive', $this->delivery(3, 1))->assertUnprocessable();
-        $this->assertDatabaseCount('purchase_orders', 1);
-        $this->assertDatabaseCount('receiving_records', 1);
-        $this->assertDatabaseCount('receiving_carryovers', 0);
-        $this->assertDatabaseHas('products', ['id'=>$this->product, 'stock'=>18]);
-        $this->assertDatabaseHas('purchase_orders', ['id'=>$id, 'receivingVersion'=>1, 'status'=>'Partially Received']);
     }
 
     public function test_receiving_retry_and_stale_version_cannot_double_stock_and_reference_is_generated(): void
@@ -436,9 +422,9 @@ class PurchaseWorkflowTest extends TestCase
         $body = $this->delivery(3);
         $this->actingAs($this->manager)->postJson('/api/purchase-orders/'.$id.'/receive', $body)->assertUnprocessable();
         $body['notes'] = 'Supplier delivered one extra piece, accepted by manager.';
-        $this->postJson('/api/purchase-orders/'.$id.'/receive', $body)->assertCreated()->assertJsonPath('status', 'Received with Discrepancy');
+        $this->postJson('/api/purchase-orders/'.$id.'/receive', $body)->assertCreated()->assertJsonPath('status', 'Completed');
         $this->assertDatabaseHas('products', ['id' => $this->product, 'stock' => 3]);
-        $this->get('/purchase-orders/'.$id.'/report')->assertOk()->assertSee('Quantity discrepancies remain.');
+        $this->get('/purchase-orders/'.$id.'/report')->assertOk()->assertSee('Quantity discrepancies are recorded as remarks.');
     }
 
     public function test_invalid_delivery_rolls_back_stock_and_receipt_and_rejects_invalid_quantities(): void
@@ -560,13 +546,13 @@ class PurchaseWorkflowTest extends TestCase
         $receipt = $this->actingAs($this->manager)->postJson('/api/purchase-orders/'.$id.'/receive', $this->delivery(15))
             ->assertCreated()->assertJsonPath('inspection.0.missing', 5)->assertJsonPath('inspection.0.received', 15)->json('id');
         $this->assertDatabaseHas('products', ['id' => $this->product, 'stock' => 15]);
-        $this->assertDatabaseHas('purchase_orders', ['id' => $id, 'status' => 'Partially Received']);
+        $this->assertDatabaseHas('purchase_orders', ['id' => $id, 'status' => 'Completed']);
         $this->get('/purchase-orders/'.$id.'/report')->assertOk()->assertSee('MISSING ITEM / SHORTAGE REPORT');
         $notification = DB::table('notifications')->where('recipientId', $this->admin->id)->where('recipientRole', 'admin')->where('type', 'Stock received')->value('message');
-        $this->assertStringContainsString('5 Piece missing', $notification);
-        $later = $this->postJson('/api/purchase-orders/'.$id.'/receive', $this->delivery(5, 1))->assertCreated()->assertJsonPath('inspection.0.missing', 0)->json('poId');
+        $this->assertStringContainsString('5 missing', $notification);
+        $later = $this->carryAndReceive($id, $this->delivery(5, 1))->assertCreated()->assertJsonPath('inspection.0.missing', 0)->json('poId');
         $this->assertDatabaseHas('products', ['id' => $this->product, 'stock' => 20]);
-        $this->assertDatabaseHas('purchase_orders', ['id' => $id, 'status' => 'Fully Received']);
+        $this->assertDatabaseHas('purchase_orders', ['id' => $id, 'status' => 'Completed']);
         $snapshot = json_decode(DB::table('receiving_records')->where('id', $receipt)->value('inspection'), true);
         $this->assertSame(5, $snapshot[0]['missing']);
         $this->get('/purchase-orders/'.$id.'/report')->assertOk()->assertSee('MISSING ITEM / SHORTAGE REPORT')->assertSee($later);

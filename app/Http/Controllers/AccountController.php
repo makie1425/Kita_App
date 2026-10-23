@@ -202,7 +202,7 @@ class AccountController extends Controller
             return true;
         }
 
-        $orders = DB::table('purchase_orders')->whereNotIn('status', ['Closed', 'Cancelled', 'Fully Received', 'Received with Discrepancy']);
+        $orders = DB::table('purchase_orders')->whereNotIn('status', ['Closed', 'Cancelled', 'Completed', 'Fully Received', 'Received with Discrepancy']);
         $orders->where(function (Builder $query) use ($user) {
             if (Schema::hasColumn('purchase_orders', 'createdById')) {
                 $query->where(fn (Builder $owner) => $owner->where('createdById', $user->id)->where('createdByRole', $user->role));

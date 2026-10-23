@@ -61,7 +61,7 @@ class ReportsTest extends TestCase
         foreach (['missing', 'damaged', 'none'] as $audit) {
             $this->getJson('/reports/data?type=receiving&audit='.$audit)->assertOk()->assertJsonCount(1, 'rows')->assertJsonPath('rows.0.reportPo', 'PO-AUDIT');
         }
-        $this->getJson('/reports/data?type=receiving&status=Fully%20Received')->assertOk()->assertJsonCount(1, 'rows');
+        $this->getJson('/reports/data?type=receiving&status=Fully%20Received')->assertOk()->assertJsonCount(3, 'rows')->assertJsonPath('columns.Remarks', 'remarks')->assertJsonPath('rows.0.remarks', 'Received as ordered');
         $this->get('/reports/data?type=receiving&format=print')->assertOk();
         $this->get('/reports/data?type=receiving&format=pdf')->assertOk();
         $this->assertStringContainsString('PO-AUDIT', $this->get('/reports/data?type=receiving&format=csv')->assertOk()->streamedContent());

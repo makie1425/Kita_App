@@ -21,7 +21,7 @@
     <header><img src="{{ asset('images/kita-logo.jpg') }}" alt="KITA"><div><h1>PURCHASE ORDER / RECEIVING REPORT</h1><div>KITA — Retail Management</div><strong class="mono">PO ID: {{ $order->id }}</strong></div></header>
     <section class="meta">
         <div><strong>Supplier</strong>{{ $order->supplierName ?? $supplier?->name ?? 'Not recorded' }}</div>
-        <div><strong>Status</strong>{{ $order->status }}</div>
+        <div><strong>Remarks</strong>{{ $receipts->map(fn ($receipt) => \App\Services\ReceivingRemarks::forReceipt($receipt))->implode(" | ") ?: "Awaiting delivery" }}</div>
         <div><strong>Request date</strong>{{ $purchase?->requested_at ?? $purchase?->dateRequested ?? 'Not recorded' }}</div>
         <div><strong>Approval date</strong>{{ $purchase?->approved_at ?? 'Not recorded' }}</div>
         <div><strong>Requested by</strong>{{ $purchase?->requestedBy ?? 'Not recorded' }}</div>
@@ -37,7 +37,7 @@
     @endforeach
     </tbody><tfoot><tr><th colspan="7">Total ordered value (₱)</th><td class="num">{{ number_format($order->orderedValue, 2) }}</td></tr></tfoot></table></div>
     <p class="muted">* Difference = received − ordered. Negative quantities are outstanding; positive quantities are excess. Quantities use the inventory unit shown for each item.</p>
-    @if($lines->contains(fn ($line) => (int) $line->deliveredQty + (int)($line->resolvedQty ?? 0) !== (int) $line->orderedQty))<p class="notice">Quantity discrepancies remain. This order is not marked fully received.</p>@endif
+    @if($lines->contains(fn ($line) => (int) $line->deliveredQty + (int)($line->resolvedQty ?? 0) !== (int) $line->orderedQty))<p class="notice">Quantity discrepancies are recorded as remarks. This delivery is completed; further receipt of missing or returned items is optional.</p>@endif
     <p class="muted">Resolved later quantities fulfill the original obligation without rewriting its receipts. Carryover items included in a later PO do not add a new purchase charge.</p>
     @if($carryovers->isNotEmpty())
     <h2>Linked shortage history</h2>
@@ -48,7 +48,7 @@
     <h2>Delivery transactions</h2>
     @forelse($receipts as $receipt)
         <section class="receipt"><strong class="mono">{{ $receipt->id }}</strong> · Supplier reference: {{ $receipt->deliveryReference ?? 'Not recorded' }}
-        <p>Date received: {{ $receipt->date }} · Recorded at: {{ $receipt->received_at ?? 'Not recorded' }}<br>Received by: {{ $receipt->receivedBy ?? 'Not recorded' }} · Status after delivery: {{ $receipt->deliveryStatus }}</p>
+        <p>Date received: {{ $receipt->date }} · Recorded at: {{ $receipt->received_at ?? 'Not recorded' }}<br>Received by: {{ $receipt->receivedBy ?? 'Not recorded' }} · Remarks: {{ \App\Services\ReceivingRemarks::forReceipt($receipt) }}</p>
         <div class="table-wrap" tabindex="0" role="region" aria-label="Delivery items"><table><thead><tr><th>Product ID</th><th>Item / Category</th><th>Manufacturer</th><th>Ordered Qty</th><th>Received Order</th><th>Unit</th><th>Actual unit cost</th><th>Batch / Lot</th><th>Expiry</th></tr></thead><tbody>
         @foreach($receiptLines->get($receipt->id, collect()) as $line)<tr><td>{{ $line->productId }}</td><td>{{ $line->name ?? 'Item #'.$line->productId }}<br>{{ $line->category ?? 'Not recorded' }}</td><td>{{ $line->manufacturer ?? 'Not recorded' }}</td><td>{{ $line->poQty }}</td><td>{{ $line->deliveredQty }}</td><td>{{ $line->unit ?? 'Not recorded' }}</td><td>{{ $line->unitCost === null ? 'Not recorded' : number_format($line->unitCost, 2) }}</td><td>{{ $line->batchNumber ?? '-' }}</td><td>{{ $line->expiryDate ?? '-' }}</td></tr>@endforeach
         </tbody></table></div>
@@ -57,7 +57,7 @@
             <h2>{{ collect($inspection)->contains(fn ($item) => $item['missing'] > 0) ? 'MISSING ITEM / SHORTAGE REPORT' : 'RECEIVING INSPECTION REPORT' }}</h2>
             <p>Inspected by {{ $receipt->receivedBy ?? 'Not recorded' }} at {{ $receipt->received_at }}. PO {{ $order->id }}.</p>
             <p class="muted">Snapshot after this delivery: received quantities include earlier deliveries. Actual items received were added to inventory; missing items were not added. Later deliveries do not alter this report.</p>
-            <div class="table-wrap" tabindex="0" role="region" aria-label="Inspection items"><table><thead><tr><th>Item</th><th>Ordered</th><th>Total Received at Inspection</th><th>Missing</th><th>Damaged</th><th>Outstanding</th><th>Excess</th><th>Unit</th></tr></thead><tbody>
+            <div class="table-wrap" tabindex="0" role="region" aria-label="Inspection items"><table><thead><tr><th>Item</th><th>Ordered</th><th>Total Received at Inspection</th><th>Missing</th><th>Damaged / Returned</th><th>Outstanding</th><th>Excess</th><th>Unit</th></tr></thead><tbody>
             @foreach($inspection as $item)
                 <tr><td>{{ $item['name'] }}</td><td>{{ $item['ordered'] }}</td><td>{{ $item['received'] }}</td><td>{{ $item['missing'] }}</td><td>{{ $item['damaged'] ?? 'Not recorded' }}</td><td>{{ $item['outstanding'] ?? $item['missing'] }}</td><td>{{ $item['excess'] }}</td><td>{{ $item['unit'] ?? 'Not recorded' }}</td></tr>
             @endforeach
