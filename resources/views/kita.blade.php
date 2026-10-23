@@ -20,7 +20,7 @@
       <div class="auth-header">
         @endverbatim<img src="{{ asset('images/kita-logo.jpg') }}" alt="KITA - Money. Managed. Smarter." class="kita-logo" width="200" height="200">@verbatim
         <div class="auth-eyebrow">YOUR RETAIL WORKSPACE</div>
-        <h1 class="auth-title">Welcome back</h1>
+        <h1 class="auth-title">Welcome</h1>
         <div class="auth-subtitle">Sign in with your email and password to open your dashboard.</div>
       </div>
 
