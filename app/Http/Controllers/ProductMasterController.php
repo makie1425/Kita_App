@@ -81,7 +81,7 @@ class ProductMasterController extends Controller
     public function inventory(Request $request)
     {
         InventoryRules::authorize($request);
-        $request->validate(['from' => ['nullable', 'date_format:Y-m-d'], 'to' => ['nullable', 'date_format:Y-m-d', ...($request->filled('from') ? ['after_or_equal:from'] : [])]]);
+        $request->validate(['from' => ['nullable', 'date_format:Y-m-d'], 'to' => ['nullable', 'date_format:Y-m-d', ...($request->filled('from') ? ['after_or_equal:from'] : [])], 'movementType'=>['nullable', Rule::in(array_keys(\App\Services\InventoryLedger::TYPES))]]);
         $products = DB::table('products as p');
         $movements = DB::table('stock_movements as m')->join('products as p', 'p.id', '=', 'm.productId');
         foreach (['category' => 'p.category', 'brandId' => 'p.brandId', 'subcategoryId' => 'p.subcategoryId', 'productId' => 'p.id'] as $key => $column) {
@@ -100,9 +100,7 @@ class ProductMasterController extends Controller
         if ($request->filled('to')) {
             $movements->whereDate('m.created_at', '<=', $request->input('to'));
         }
-        if ($request->boolean('lowStock')) {
-            $products->whereColumn('p.stock', '<=', 'p.minStock');
-        }
+        if ($request->filled('movementType')) $movements->where('m.referenceType', $request->input('movementType'));
         $query = DB::table('inventory_batches as b')->join('products as p', 'p.id', '=', 'b.productId')
             ->leftJoin('brands as brand', 'brand.id', '=', 'p.brandId')->leftJoin('subcategories as sub', 'sub.id', '=', 'p.subcategoryId')
             ->leftJoin('suppliers as supplier', 'supplier.id', '=', 'b.supplierId')
@@ -119,10 +117,17 @@ class ProductMasterController extends Controller
             $query->where('b.receivedDate', '<=', $request->date('to')->format('Y-m-d'));
         }
 
+        $current = collect(\App\Services\InventoryAvailability::products($products->orderByDesc('p.created_at')->orderByDesc('p.id')->get(['p.*'])->map(fn ($p) => (array) $p)->all()));
+        if ($request->boolean('lowStock')) $current = $current->where('needsReorder', true)->values();
+        $movementCount = (clone $movements)->count();
+        $movements->leftJoin('users as actor', fn ($join) => $join->on('actor.id', '=', 'm.userId')->on('actor.role', '=', 'm.userRole'))
+            ->leftJoin('receiving_records as receipt', fn ($join) => $join->on('receipt.id', '=', 'm.referenceId')->where('m.referenceType', 'purchase_receiving'));
         return response()->json([
             'batches' => \App\Services\InventoryAvailability::batches($query->orderByDesc('b.receivedDate')->orderByDesc('b.id')->get(['b.*', 'p.name', 'p.category', 'p.size', 'p.sizeUnit', 'p.stockUnit', 'p.status as productStatus', 'p.archivedAt as productArchivedAt', 'brand.name as brand', 'sub.name as subcategory', 'supplier.name as supplier', 'receipt.poId', 'receipt.deliveryReference', 'receipt.receivedBy'])),
-            'products' => \App\Services\InventoryAvailability::products($products->orderByDesc('p.created_at')->orderByDesc('p.id')->get(['p.*'])->map(fn ($p) => (array) $p)->all()),
-            'movements' => \App\Services\BatchTrace::movements($movements->orderByDesc('m.id')->limit(500)->get(['m.*', 'p.name'])),
+            'products' => $current,
+            'movements' => \App\Services\InventoryLedger::describe(\App\Services\BatchTrace::movements($movements->orderByDesc('m.id')->limit(500)->get(['m.*', 'p.name', 'p.stockUnit', 'p.barcode', 'p.category', 'actor.name as recordedBy', 'receipt.poId']))),
+            'movementCount'=>$movementCount, 'movementLimit'=>500, 'movementTypes'=>\App\Services\InventoryLedger::TYPES,
+            'checkedAt'=>now()->toIso8601String(),
         ])->header('Cache-Control', 'no-store');
     }
 }

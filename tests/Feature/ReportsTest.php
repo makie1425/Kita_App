@@ -47,6 +47,9 @@ class ReportsTest extends TestCase
     public function test_current_inventory_filter_and_admin_access(): void
     {
         $this->actingAs(User::factory()->create(['role' => 'admin', 'status' => 'Active']));
+        DB::table('categories')->insert(['name' => 'Beverages', 'status' => 'Active']);
+        // Keep the book balance consistent with the three two-unit batches.
+        DB::table('products')->where('id', 1)->update(['stock' => 6, 'minStock' => 7]);
         $this->getJson('/reports/data?type=inventory&lowStock=1&brandId=1')->assertOk()->assertJsonCount(1, 'rows')->assertJsonPath('rows.0.id', 1);
         $this->getJson('/reports/data?type=inventory&category=Missing')->assertOk()->assertJsonCount(0, 'rows');
     }

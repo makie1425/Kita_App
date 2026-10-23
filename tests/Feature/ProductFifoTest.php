@@ -66,6 +66,27 @@ class ProductFifoTest extends TestCase
         $this->assertDatabaseHas('inventory_batches', ['productId' => $this->product, 'unitCost' => 7, 'quantityRemaining' => 3]);
     }
 
+    public function test_inventory_ledger_shows_receipt_and_sale_effects_with_item_drilldown(): void
+    {
+        $po = $this->receive(10, 6, 10);
+        $this->postJson('/api/transactions', ['uuid'=>'LEDGER-SALE', 'items'=>[['productId'=>$this->product, 'qty'=>3]], 'paymentMode'=>'Cash', 'tendered'=>30])->assertCreated();
+        $this->getJson('/api/inventory-history?productId='.$this->product)->assertOk()
+            ->assertJsonPath('movementCount', 2)->assertJsonPath('movements.0.transactionType', 'Sale')
+            ->assertJsonPath('movements.0.quantityOut', 3)->assertJsonPath('movements.0.quantityIn', 0)
+            ->assertJsonPath('movements.0.quantityBefore', 10)->assertJsonPath('movements.0.quantityAfter', 7)
+            ->assertJsonPath('movements.1.transactionType', 'Purchase receipt')->assertJsonPath('movements.1.quantityIn', 10)
+            ->assertJsonPath('movements.1.poId', $po)->assertJsonPath('products.0.inventoryValue', 42);
+        $this->getJson('/api/inventory-history?movementType=purchase_receiving')->assertOk()->assertJsonCount(1, 'movements')->assertJsonPath('movementCount', 1);
+        $this->getJson('/api/inventory-history?movementType=unknown')->assertUnprocessable();
+    }
+
+    public function test_inventory_ledger_exposes_its_limit_instead_of_silently_truncating(): void
+    {
+        $rows = array_fill(0, 501, ['productId'=>$this->product, 'quantityChange'=>0, 'quantityBefore'=>0, 'quantityAfter'=>0, 'referenceType'=>'recall', 'referenceId'=>'TEST-RECALL', 'created_at'=>now()]);
+        DB::table('stock_movements')->insert($rows);
+        $this->getJson('/api/inventory-history')->assertOk()->assertJsonPath('movementCount', 501)->assertJsonPath('movementLimit', 500)->assertJsonCount(500, 'movements');
+    }
+
     private function receive(int $qty, float $cost, ?float $retail = null): string
     {
         $this->actingAs($this->manager);

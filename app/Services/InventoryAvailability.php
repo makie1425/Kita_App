@@ -22,6 +22,7 @@ class InventoryAvailability
             ->select('b.productId')->selectRaw('SUM(b.quantityRemaining) as onHand, SUM(COALESCE(r.reserved, 0)) as reserved, SUM(CASE WHEN b.recalled = 0 AND (b.expiryDate IS NULL OR b.expiryDate > ?) THEN b.quantityRemaining ELSE 0 END) as sellable', [$today])
             ->selectRaw('SUM(CASE WHEN b.expiryDate <= ? THEN b.quantityRemaining + COALESCE(r.reserved, 0) ELSE 0 END) as expired, SUM(CASE WHEN b.recalled = 1 THEN b.quantityRemaining + COALESCE(r.reserved, 0) ELSE 0 END) as recalled', [$today])
             ->selectRaw('SUM(CASE WHEN b.recalled = 1 AND b.expiryDate <= ? THEN b.quantityRemaining + COALESCE(r.reserved, 0) ELSE 0 END) as expiredAndRecalled', [$today])
+            ->selectRaw('SUM((b.quantityRemaining + COALESCE(r.reserved, 0)) * b.unitCost) as inventoryValue')
             ->get()->keyBy('productId');
         $categories = DB::table('categories')->where('status', 'Active')->whereNull('archivedAt')->pluck('name')->all();
 
@@ -58,6 +59,12 @@ class InventoryAvailability
             $product['sellableStock'] = max(0, $sellable);
             $product['unavailableStock'] = max(0, $product['stockOnHand'] - $product['sellableStock']);
             $product['exclusionReasons'] = $reasons;
+            $active = ($product['status'] ?? 'Active') === 'Active' && empty($product['archivedAt']) && in_array($product['category'] ?? '', $categories, true);
+            $product['needsReorder'] = $active && ! $product['stockMismatch'] && $product['sellableStock'] <= (int) ($product['minStock'] ?? 0);
+            $product['reorderShortfall'] = max(0, (int) ($product['minStock'] ?? 0) - $product['sellableStock']);
+            $product['stockCondition'] = ! $active ? 'Inactive' : ($product['stockMismatch'] ? 'Review balance' : ($product['stockOnHand'] === 0 ? 'Out of stock' : ($product['sellableStock'] === 0 ? 'Unavailable' : ($product['needsReorder'] ? 'Reorder level reached' : 'In stock'))));
+            $product['inventoryValue'] = round($balance ? (float) $balance->inventoryValue : $product['stockOnHand'] * (float) ($product['unitPrice'] ?? 0), 2);
+            $product['valuationBasis'] = $balance ? 'Recorded batch costs' : 'Estimated opening cost';
 
             return $product;
         }, $products);
@@ -94,6 +101,7 @@ class InventoryAvailability
             $batch->sellableQuantity = $reasons ? 0 : max(0, (int) $batch->quantityRemaining);
             $batch->reservedQuantity = (int) ($reservations->get($batch->id)?->reserved ?? 0);
             $batch->stockOnHand = (int) $batch->quantityRemaining + $batch->reservedQuantity;
+            $batch->inventoryValue = round($batch->stockOnHand * (float) $batch->unitCost, 2);
             if ($batch->reservedQuantity) {
                 $batch->exclusionReasons[] = 'Reserved for pending payment: '.$batch->reservedQuantity;
             }

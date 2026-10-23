@@ -154,6 +154,21 @@ class SellableStockTest extends TestCase
         $this->sale(1)->assertUnprocessable();
     }
 
+    public function test_reorder_alerts_use_available_quantity_and_value_uses_each_batch_cost(): void
+    {
+        $this->batch(8, '2026-10-12', false, '2026-10-01', 10);
+        $this->batch(2, '2026-11-01', false, '2026-10-02', 20);
+        DB::table('products')->where('id', 1)->update(['minStock'=>3, 'unitPrice'=>999]);
+        $this->getJson('/api/inventory/availability')->assertOk()
+            ->assertJsonPath('products.0.stockOnHand', 10)->assertJsonPath('products.0.sellableStock', 2)
+            ->assertJsonPath('products.0.needsReorder', true)->assertJsonPath('products.0.stockCondition', 'Reorder level reached')
+            ->assertJsonPath('products.0.inventoryValue', 120)->assertJsonPath('products.0.reorderShortfall', 1);
+        $this->getJson('/api/inventory-history?lowStock=1')->assertOk()->assertJsonCount(1, 'products')->assertJsonPath('products.0.inventoryValue', 120);
+        $this->getJson('/reports/data?type=inventory&lowStock=1')->assertOk()->assertJsonCount(1, 'rows')->assertJsonPath('rows.0.inventoryValue', 120);
+        DB::table('products')->where('id', 1)->update(['status'=>'Inactive']);
+        $this->getJson('/api/inventory-history?lowStock=1')->assertOk()->assertJsonCount(0, 'products');
+    }
+
     public function test_pending_wallet_stock_is_physically_present_and_recall_blocks_late_payment_confirmation(): void
     {
         config(['services.paymongo.secret' => 'sk_test_example', 'services.paymongo.webhook_secret' => 'secret']);
@@ -161,6 +176,10 @@ class SellableStockTest extends TestCase
         Http::fake(['*/checkout_sessions' => Http::response(['data' => ['id' => 'cs_test', 'attributes' => ['checkout_url' => 'https://checkout.paymongo.com/test']]])]);
         $this->postJson('/api/payments/paymongo/checkout', ['uuid' => 'WALLET', 'provider' => 'GCash', 'stockItems' => [['productId' => 1, 'qty' => 2]]])->assertOk();
         $this->getJson('/api/inventory/availability')->assertJsonPath('products.0.stockOnHand', 2)->assertJsonPath('products.0.reservedStock', 2)->assertJsonPath('products.0.sellableStock', 0);
+        $this->getJson('/api/inventory-history')->assertOk()->assertJsonPath('products.0.inventoryValue', 20)
+            ->assertJsonPath('batches.0.inventoryValue', 20)->assertJsonPath('movements.0.transactionType', 'Payment reservation')
+            ->assertJsonPath('movements.0.quantityOut', 2)->assertJsonPath('movements.0.quantityIn', 0)
+            ->assertJsonPath('movements.0.balanceBasis', 'Unreserved book quantity')->assertSee('physical stock has not left');
         $this->postJson('/api/inventory/workflows/counts', ['mode' => 'Full'])->assertConflict();
         $this->event($batch, 'Recall', 0)->assertCreated();
         $this->getJson('/api/inventory/availability')->assertJsonPath('products.0.recalledStock', 2);

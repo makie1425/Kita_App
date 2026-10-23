@@ -41,8 +41,8 @@ class ReportController extends Controller
         if ($type === 'inventory') {
             $title = 'Current Inventory';
             $note .= ' This is current stock, not a historical balance. Date filters do not apply.';
-            $columns += ['Stock ID' => 'id', 'Barcode' => 'barcode', 'Unit' => 'unit', 'Stock on Hand' => 'stockOnHand', 'Sellable Quantity' => 'sellableStock', 'Expired' => 'expiredStock', 'Recalled' => 'recalledStock', 'Reserved' => 'reservedStock', 'Exclusion reasons' => 'exclusionReason', 'Reorder level' => 'minimum', 'Retail price (PHP)' => 'price', 'Status' => 'status'];
-            $select = array_merge($select, ['p.id', 'p.barcode', 'p.stockUnit as unit', 'p.stock', 'p.expiry', 'p.minStock as minimum', 'p.price', 'p.status', 'p.archivedAt']);
+            $columns += ['Item Code' => 'id', 'Barcode' => 'barcode', 'Stock Unit' => 'unit', 'Qty on Hand' => 'stockOnHand', 'Available Qty' => 'sellableStock', 'Expired Qty' => 'expiredStock', 'Recalled Qty' => 'recalledStock', 'Reserved Qty' => 'reservedStock', 'Availability Remarks' => 'exclusionReason', 'Reorder Level' => 'minimum', 'Stock Condition'=>'stockCondition', 'Inventory Value (PHP)'=>'inventoryValue', 'Valuation Basis'=>'valuationBasis', 'Selling Price (PHP)' => 'price', 'Item Status' => 'status'];
+            $select = array_merge($select, ['p.id', 'p.barcode', 'p.stockUnit as unit', 'p.stock', 'p.expiry', 'p.minStock', 'p.minStock as minimum', 'p.unitPrice', 'p.price', 'p.status', 'p.archivedAt']);
             $note .= ' On-hand stock includes expired units awaiting disposal; sellable quantities exclude expired and recalled batches.';
         } elseif ($type === 'sales') {
             $title = 'Sales Transaction Detail';
@@ -118,7 +118,7 @@ class ReportController extends Controller
                 'sales' => 'line.id', 'receiving' => 'rl.id', 'receipts', 'expiry' => 'b.id', default => 'm.id',
             });
         }
-        if ($request->boolean('lowStock')) {
+        if ($request->boolean('lowStock') && $type !== 'inventory') {
             $query->whereColumn('p.stock', '<=', 'p.minStock');
             $note .= ' Restricted to products currently at or below their reorder level.';
         }
@@ -152,6 +152,10 @@ class ReportController extends Controller
         }
         if ($type === 'inventory') {
             $rows = collect(\App\Services\InventoryAvailability::products($rows->map(fn ($row) => (array) $row)->all()))->map(fn ($row) => (object) $row);
+            if ($request->boolean('lowStock')) {
+                $rows = $rows->where('needsReorder', true)->values();
+                $note .= ' Restricted to active items whose available quantity is at or below the reorder level.';
+            }
             foreach ($rows as $row) $row->exclusionReason = implode('; ', $row->exclusionReasons) ?: 'Eligible';
         }
         foreach ($rows as $row) {
@@ -171,14 +175,14 @@ class ReportController extends Controller
                 unset($row->numberId, $row->numberDate);
             }
         }
-        $moneyKeys = ['price', 'amount', 'refunded', 'cost'];
+        $moneyKeys = ['price', 'amount', 'refunded', 'cost', 'inventoryValue'];
         $numericKeys = array_merge($moneyKeys, ['stock', 'stockOnHand', 'sellableStock', 'expiredStock', 'recalledStock', 'reservedStock', 'minimum', 'quantity', 'remaining', 'change', 'before', 'after']);
         $summary = $type === 'expiry' ? [] : ['Records' => number_format($rows->count())];
         if ($type === 'sales') {
             $summary += ['Transactions' => number_format($rows->pluck('reference')->unique()->count()), 'Recorded line totals (PHP)' => number_format($rows->sum('amount'), 2), 'Cumulative refunds (PHP)' => number_format($rows->sum('refunded'), 2)];
             $summary['Recorded less refunds (PHP)'] = number_format($rows->sum('amount') - $rows->sum('refunded'), 2);
         } elseif ($type === 'inventory') {
-            $summary += ['Products at reorder level' => number_format($rows->filter(fn ($row) => $row->stock <= $row->minimum)->count())];
+            $summary += ['Items at reorder level' => number_format($rows->where('needsReorder', true)->count()), 'Inventory value (PHP)'=>number_format($rows->sum('inventoryValue'), 2)];
         } elseif ($type === 'receipts') {
             $summary += ['Received value (PHP)' => number_format($rows->sum(fn ($row) => round($row->quantity * $row->cost, 2)), 2)];
         }
