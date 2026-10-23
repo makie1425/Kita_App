@@ -120,6 +120,49 @@ class PurchaseWorkflowTest extends TestCase
         $this->getJson('/api/purchasing')->assertOk()->assertJsonCount(1,'carryovers')->assertJsonCount(2,'resolutions');
     }
 
+    public function test_shortage_automatically_creates_delivery_po_and_retry_does_not_duplicate_it(): void
+    {
+        $original = $this->requestOrder(20);
+        $this->approve($original);
+        $this->actingAs($this->manager)->postJson('/api/purchase-orders/'.$original.'/receive', $this->delivery(15))->assertCreated();
+        $link = ['requestKey'=>(string) Str::uuid(), 'sourceLine'=>DB::table('purchase_order_lines')->where('poId', $original)->value('id'), 'quantity'=>5];
+        $next = $this->postJson('/api/purchase-orders/'.$original.'/carryovers', $link)->assertCreated()->json('poId');
+        $this->assertNotSame($original, $next);
+        $this->postJson('/api/purchase-orders/'.$original.'/carryovers', $link)->assertOk()->assertJsonPath('poId', $next);
+        $this->assertDatabaseCount('purchase_orders', 2);
+        $this->assertDatabaseCount('receiving_carryovers', 1);
+        $this->assertDatabaseHas('purchase_orders', ['id'=>$next, 'orderedValue'=>0, 'status'=>PurchaseWorkflow::WAITING]);
+        $this->assertDatabaseHas('purchase_order_lines', ['poId'=>$next, 'orderedQty'=>5, 'carryoverQty'=>5, 'lineTotal'=>0]);
+        $this->postJson('/api/purchase-orders/'.$original.'/carryovers', array_replace($link, ['quantity'=>4]))->assertConflict();
+        $this->postJson('/api/purchase-orders/'.$original.'/carryovers', array_replace($link, ['requestKey'=>(string) Str::uuid()]))->assertUnprocessable();
+        $this->assertDatabaseCount('purchase_orders', 2);
+        $receipt = $this->postJson('/api/purchase-orders/'.$next.'/receive', $this->delivery(5, 1))->assertCreated()->json('id');
+        $this->assertDatabaseHas('receiving_records', ['id'=>$receipt, 'poId'=>$next]);
+        $this->assertDatabaseHas('inventory_batches', ['receiptId'=>$receipt, 'quantityReceived'=>5]);
+        $this->assertDatabaseHas('products', ['id'=>$this->product, 'stock'=>20]);
+        $this->assertDatabaseHas('purchase_orders', ['id'=>$original, 'status'=>'Fully Received', 'deliveredValue'=>50]);
+        $this->assertDatabaseHas('purchase_orders', ['id'=>$next, 'status'=>'Fully Received', 'orderedValue'=>0, 'deliveredValue'=>0]);
+    }
+
+    public function test_more_shortages_can_share_the_automatically_created_delivery_po(): void
+    {
+        $original = $this->requestOrder(20);
+        $this->approve($original);
+        $this->actingAs($this->manager)->postJson('/api/purchase-orders/'.$original.'/receive', $this->delivery(15))->assertCreated();
+        $link = ['requestKey'=>(string) Str::uuid(), 'sourceLine'=>DB::table('purchase_order_lines')->where('poId', $original)->value('id'), 'quantity'=>2, 'targetPo'=>''];
+        $this->actingAs($this->admin)->postJson('/api/purchase-orders/'.$original.'/carryovers', $link)->assertForbidden();
+        $this->assertDatabaseCount('purchase_orders', 1);
+        $next = $this->actingAs($this->manager)->postJson('/api/purchase-orders/'.$original.'/carryovers', $link)->assertCreated()->json('poId');
+        $link = array_replace($link, ['requestKey'=>(string) Str::uuid(), 'targetPo'=>$next, 'quantity'=>3]);
+        $this->postJson('/api/purchase-orders/'.$original.'/carryovers', $link)->assertCreated()->assertJsonPath('poId', $next);
+        $this->assertDatabaseCount('purchase_orders', 2);
+        $this->assertDatabaseHas('purchase_order_lines', ['poId'=>$next, 'orderedQty'=>5, 'carryoverQty'=>5]);
+        $receipt = $this->postJson('/api/purchase-orders/'.$next.'/receive', $this->delivery(5, 2))->assertCreated()->json('id');
+        $this->assertDatabaseHas('receiving_records', ['id'=>$receipt, 'poId'=>$next]);
+        $this->assertDatabaseHas('products', ['id'=>$this->product, 'stock'=>20]);
+        $this->assertDatabaseHas('purchase_orders', ['id'=>$original, 'status'=>'Fully Received']);
+    }
+
     public function test_damaged_only_receipt_and_releasing_carryover_preserve_inventory(): void
     {
         $original=$this->requestOrder(4); $this->approve($original);
