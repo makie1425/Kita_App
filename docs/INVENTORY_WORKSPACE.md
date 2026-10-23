@@ -4,8 +4,8 @@ Reference: https://www.ecount.com/ph/ecount/product/inventory_inventory-manageme
 ECOUNT informed the stock balance, item history, batch traceability, configurable columns and export organization. KITA remains a single-store system.
 
 ## Flow
-Purchase request ? approval ? receive and inspect ? completed delivery with remarks ? stock balance ? sales / stock issues ? inventory ledger and stock count.
-Only accepted goods enter inventory. Missing quantities and damaged goods returned at delivery remain in the completed delivery remarks. The manager chooses whether to carry these to another delivery; this update preserves that workflow.
+Purchase request ? approval ? receive and inspect ? posted delivery with inspection remarks ? stock balance ? sales / stock issues ? inventory ledger and stock count.
+Only accepted goods enter inventory. Missing quantities and damaged goods returned at delivery remain in that receipt?s remarks. Outstanding quantities are received later against the same PO; see DELIVERY_PO_HISTORY.md.
 
 ## Quantities and value
 - Qty on Hand includes reservations and blocked batches still physically held.

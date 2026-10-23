@@ -17,7 +17,7 @@ class ReportController extends Controller
     {
         InventoryRules::authorize($request, ['manager', 'admin']);
         $filters = $request->validate([
-            'type' => ['required', Rule::in(['inventory', 'sales', 'receipts', 'movements', 'expiry', 'receiving'])],
+            'type' => ['required', Rule::in(['inventory', 'sales', 'receipts', 'movements', 'expiry', 'receiving', ...\App\Services\PurchasingReports::TYPES])],
             'format' => ['nullable', Rule::in(['json', 'print', 'csv', 'pdf'])],
             'from' => ['nullable', 'date_format:Y-m-d'],
             'to' => ['nullable', 'date_format:Y-m-d', ...($request->filled('from') ? ['after_or_equal:from'] : [])],
@@ -27,11 +27,13 @@ class ReportController extends Controller
             'productId' => ['nullable', 'integer', 'exists:products,id'],
             'supplierId' => ['nullable', 'integer', 'exists:suppliers,id'],
             'lowStock' => ['nullable', 'boolean'],
+            'manager' => ['nullable', 'string', 'max:120'],
             'status' => ['nullable', 'string', 'max:60'],
             'audit' => ['nullable', Rule::in(['missing', 'damaged', 'flagged', 'none'])],
             'expiryStatus' => ['nullable', Rule::in(['Nearly expired', 'Expired', 'Critical', 'Warning', 'Good', 'Unknown'])],
         ]);
         $type = $filters['type'];
+        if (in_array($type, \App\Services\PurchasingReports::TYPES)) return $this->respond($request, $type, \App\Services\PurchasingReports::data($request));
         $query = DB::table('products as p')->leftJoin('brands as brand', 'brand.id', '=', 'p.brandId')
             ->leftJoin('subcategories as sub', 'sub.id', '=', 'p.subcategoryId');
         $columns = ['Product' => 'product', 'Category' => 'category', 'Brand' => 'brand', 'Subcategory' => 'subcategory'];
@@ -201,6 +203,12 @@ class ReportController extends Controller
                 $labels[$label] = DB::table($table)->where('id', $filters[$key])->value('name');
             }
         }
+        return $this->respond($request, $type, compact('title', 'columns', 'rows', 'note', 'generated', 'labels', 'summary', 'moneyKeys', 'numericKeys', 'preparedBy'));
+    }
+
+    public function respond(Request $request, string $type, array $data)
+    {
+        extract($data);
         if ($request->input('format') === 'csv') {
             return response()->streamDownload(function () use ($rows, $columns) {
                 $out = fopen('php://output', 'w');

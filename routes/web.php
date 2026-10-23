@@ -80,6 +80,8 @@ Route::get('/api/super-admin/dashboard', SuperAdminDashboardController::class)->
 Route::middleware('role:manager,admin')->group(function () {
     Route::get('/api/purchasing', [PurchasingController::class, 'index']);
     Route::post('/api/suppliers', [PurchasingController::class, 'supplier']);
+    Route::get('/purchase-orders/{id}/order', [PurchasingController::class, 'supplierOrder']);
+    Route::get('/receipts/{id}/report', [PurchasingController::class, 'receiptReport']);
     Route::get('/purchase-orders/{id}/report', [PurchasingController::class, 'report']);
 });
 Route::post('/api/purchase-orders/{id}/receive', [PurchasingController::class, 'receive'])->middleware('role:manager');
@@ -108,3 +110,14 @@ Route::middleware('role:manager,admin,super_admin')->prefix('api/inventory/workf
 
 Route::post('/api/purchase-orders/{id}/carryovers', [PurchasingController::class, 'carryover'])->middleware(['auth','role:manager']);
 Route::post('/api/receiving-carryovers/{id}/release', [PurchasingController::class, 'releaseCarryover'])->middleware(['auth','role:manager']);
+
+Route::middleware('role:manager,admin')->group(function () {
+    Route::patch('/api/purchase-orders/{id}/plan', [\App\Http\Controllers\PurchasingWorkflowController::class, 'plan']);
+    Route::get('/api/supplier-accounts', [\App\Http\Controllers\PurchasingWorkflowController::class, 'accounts']);
+});
+Route::middleware('role:admin')->group(function () {
+    Route::post('/api/receipts/{id}/settlements', [\App\Http\Controllers\PurchasingWorkflowController::class, 'settlement']);
+    Route::post('/api/supplier-settlements/{id}/void', [\App\Http\Controllers\PurchasingWorkflowController::class, 'voidSettlement'])->whereNumber('id');
+});
+
+Route::post('/api/purchase-orders/{id}/cancel-remainder', [\App\Http\Controllers\PurchasingWorkflowController::class, 'cancelRemainder'])->middleware('role:admin');

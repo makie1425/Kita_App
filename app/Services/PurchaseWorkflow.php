@@ -19,13 +19,16 @@ class PurchaseWorkflow
             'submissionKey' => ['sometimes', 'required', 'uuid'],
             'category' => ['required', 'string', Rule::exists('categories', 'name')->where('status', 'Active')],
             'notes' => ['nullable', 'string', 'max:2000'],
+            'expectedDeliveryDate' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:today'],
             'lines' => ['required', 'array', 'min:1', 'max:500'],
             'lines.*.productId' => ['required', 'integer', 'min:1'],
             'lines.*.qty' => ['required', 'integer', 'between:1,1000000'],
             'lines.*.supplierId' => ['required', 'integer', 'min:1'],
+            'lines.*.unitCost' => ['sometimes', ...InventoryRules::moneyRules()],
             'lines.*.orderUnit' => ['sometimes', 'string', 'max:40'],
             'lines.*.piecesPerBox' => ['nullable', 'integer', 'between:1,1000000'],
         ]);
+        if (!empty($data['expectedDeliveryDate'])) SupplierAccounts::requireReady();
         $hash = hash('sha256', json_encode($data));
 
         return DB::transaction(function () use ($request, $data, $hash) {
@@ -82,15 +85,21 @@ class PurchaseWorkflow
                 if (! $unit) {
                     throw ValidationException::withMessages(['lines' => 'Set the inventory unit before requesting this item.']);
                 }
+                $unitCost = $line['unitCost'] ?? InventoryRules::unitCost($product);
+                if (isset($lines[$product->id]) && (float)$lines[$product->id]['unitCost'] !== (float)$unitCost) {
+                    throw ValidationException::withMessages(['lines'=>'Use the same unit cost for duplicate item lines.']);
+                }
+                InventoryRules::lineTotal($qty, $unitCost);
                 $lines[$product->id] = ['requestId' => $id, 'productId' => $product->id, 'name' => InventoryRules::productLabel($product),
                     'category' => $product->category, 'unit' => $unit, 'qty' => $qty, 'supplierId' => $supplierId,
-                    'unitCost' => InventoryRules::unitCost($product), 'orderUnit' => $orderUnit,
+                    'unitCost' => $unitCost, 'orderUnit' => $orderUnit,
                     'piecesPerBox' => $orderUnit === 'Box' && $pieceStock ? $factor : null];
             }
             DB::table('item_requests')->insert([
                 'id' => $id, 'category' => $data['category'], 'status' => 'Pending Approval', 'dateRequested' => now()->toDateString(),
                 'requested_at' => now(), 'requestedBy' => $request->user()->name, 'requestedById' => $request->user()->id,
                 'requestedByRole' => $request->user()->role, 'supplierName' => $supplier->name, 'notes' => $data['notes'] ?? null,
+                ...(SupplierAccounts::ready() ? ['expectedDeliveryDate' => $data['expectedDeliveryDate'] ?? null] : []),
                 'submissionKey' => $data['submissionKey'] ?? null, 'submissionHash' => $hash,
             ]);
             DB::table('item_request_lines')->insert(array_values($lines));
@@ -173,6 +182,7 @@ class PurchaseWorkflow
                 }
                 DB::table('purchase_orders')->insert([
                     'id' => $poId, 'itemRequestId' => $id, 'supplierId' => $supplier->id, 'supplierName' => $record->supplierName ?? $supplier->name,
+                    ...(SupplierAccounts::ready() ? ['expectedDeliveryDate' => $record->expectedDeliveryDate ?? null] : []),
                     'status' => self::WAITING, 'orderedValue' => round($total, 2), 'outstandingValue' => round($total, 2),
                     'deliveredValue' => 0, 'invoicedValue' => 0, 'paidValue' => 0, 'cancelledValue' => 0,
                     'receivingRecordIds' => '[]', 'created' => now()->toDateString(), 'createdById' => $request->user()->id, 'createdByRole' => $request->user()->role,

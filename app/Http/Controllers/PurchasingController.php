@@ -41,6 +41,7 @@ class PurchasingController extends Controller
             $order->lines = $lines->get($order->id, collect());
             $order->request = $requests->firstWhere('id', $order->itemRequestId);
             $order->receipts = $receipts->where('poId', $order->id)->values();
+            $order->fulfillmentStatus = $order->status === 'Cancelled' ? 'Cancelled' : ($order->receipts->isEmpty() ? 'Awaiting delivery' : ($order->lines->contains(fn ($l) => ReceivingCarryover::remaining($l) > 0) ? 'Partially Received' : 'Fully Received'));
             $order->remarks = $order->receipts->isEmpty() ? 'Awaiting delivery' : $order->receipts->pluck('remarks')->implode(' | ');
         }
 
@@ -58,6 +59,8 @@ class PurchasingController extends Controller
             'version' => ['required', 'integer', 'min:0'],
             'receivedDate' => ['required', 'date_format:Y-m-d', 'before_or_equal:today'],
             'notes' => ['nullable', 'string', 'max:2000'],
+            'paymentDueDate' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:receivedDate'],
+            'supplierDocument' => ['nullable', 'string', 'max:100'],
             'lines' => ['required', 'array', 'min:1', 'max:500'],
             'lines.*.productId' => ['required', 'integer', 'distinct'],
             'lines.*.substituteProductId' => ['nullable', 'integer'],
@@ -72,10 +75,11 @@ class PurchasingController extends Controller
             'lines.*.lotNumber' => ['nullable', 'string', 'max:40'],
             'lines.*.manufacturedDate' => ['nullable', 'date_format:Y-m-d', 'before_or_equal:receivedDate'],
         ]);
+        if (!empty($data['paymentDueDate']) || !empty($data['supplierDocument'])) \App\Services\SupplierAccounts::requireReady();
         // Generated from the PO and receiving version; ignore client-supplied references.
         $data['deliveryReference'] = $id.'-R'.str_pad((string) ($data['version'] + 1), 3, '0', STR_PAD_LEFT);
         $data['lines'] = collect($data['lines'])->sortBy('productId')->values()->all();
-        $hash = hash('sha256', json_encode([$id, $data['deliveryReference'], $data['receivedDate'], $data['notes'] ?? '', $data['lines']]));
+        $hash = hash('sha256', json_encode([$id, $data['deliveryReference'], $data['receivedDate'], $data['notes'] ?? '', $data['lines'], ...(!empty($data['paymentDueDate']) || !empty($data['supplierDocument']) ? [$data['paymentDueDate'] ?? null, $data['supplierDocument'] ?? null] : [])]));
 
         return DB::transaction(function () use ($request, $id, $data, $hash) {
             InventoryRules::lockActor($request);
@@ -91,12 +95,12 @@ class PurchasingController extends Controller
 
                 return response()->json(['message' => 'Delivery was already recorded; inventory was not added again.', 'id' => $existing->id, 'poId' => $existing->poId, 'status'=>DB::table('purchase_orders')->where('id', $existing->poId)->value('status')]);
             }
-            abort_if(DB::table('receiving_records')->where('poId', $id)->exists(), 409, 'This delivery is completed. Choose Carry to next delivery for any missing or returned items you want to receive later.');
+            abort_unless(DB::table('purchase_order_lines')->where('poId', $id)->get()->contains(fn ($line) => ReceivingCarryover::remaining($line) > 0), 409, 'This purchase order is fully received.');
             $purchaseRequest = DB::table('item_requests')->where('id', $order->itemRequestId)->first();
-            abort_unless($purchaseRequest && in_array($purchaseRequest->status, [PurchaseWorkflow::WAITING, 'Partially Received', 'Approved']), 409, 'The linked purchase request is not approved.');
+            abort_unless($purchaseRequest && in_array($purchaseRequest->status, [PurchaseWorkflow::WAITING, 'Partially Received', 'Approved', 'Completed', 'Received with Discrepancy']), 409, 'The linked purchase request is not approved.');
             // The previous approval endpoint created Draft orders from approved requests.
             $approvedLegacyDraft = $order->status === 'Draft' && $purchaseRequest->status === 'Approved';
-            abort_unless($approvedLegacyDraft || in_array($order->status, [PurchaseWorkflow::WAITING, 'Partially Received', 'Approved', 'Ordered']), 409, 'Only an approved PO awaiting delivery can receive stock.');
+            abort_unless($approvedLegacyDraft || in_array($order->status, [PurchaseWorkflow::WAITING, 'Partially Received', 'Approved', 'Ordered', 'Completed', 'Received with Discrepancy']), 409, 'Only an approved PO awaiting delivery can receive stock.');
             abort_unless((int) $order->receivingVersion === $data['version'], 409, 'Another delivery was recorded. Refresh this PO before receiving again.');
             // Imported receipts may already use this format. Allocate the next free suffix.
             $number = $data['version'] + 1;
@@ -199,17 +203,18 @@ class PurchasingController extends Controller
                 DB::table('receiving_inspections')->insert(['receiptId'=>$receiptId,'poId'=>$id,'orderLine'=>$item->id,'productId'=>$item->productId,'accepted'=>$input['qty'] ?? 0,'damaged'=>$input['damagedQty'] ?? 0,'missing'=>max(0,ReceivingCarryover::remaining($item)-($input['damagedQty'] ?? 0)),'newMissing'=>max(0,ReceivingCarryover::remaining($item)-($input['damagedQty'] ?? 0)-(int)DB::table('receiving_carryovers')->where('targetLine',$item->id)->selectRaw('COALESCE(SUM(quantity-receivedQty-releasedQty),0) as qty')->value('qty')),'damageReason'=>$input['damageReason'] ?? null,'created_at'=>now()]);
             }
             $remarks = ReceivingRemarks::forReceipt((object) ['inspection'=>$inspection, 'outcome'=>$data['notes'] ?? '']);
-            $status = 'Completed';
+            $status = $short ? 'Partially Received' : 'Fully Received';
             $deliveredValue = ((int) round((float) $order->deliveredValue * 100) + $receivedCents) / 100;
             if ($deliveredValue > 9999999999.99) {
                 throw ValidationException::withMessages(['lines' => 'Received value exceeds the supported amount.']);
             }
             DB::table('receiving_records')->where('id', $receiptId)->update([
                 'id' => $receiptId, 'poId' => $id, 'date' => $data['receivedDate'], 'received_at' => now(),
-                'deliveryStatus' => $status, 'discrepancy' => ! $matches || $damageTotal>0 || count($replacementReasons) > 0, 'discrepancyType' => implode('; ', array_unique(array_filter([collect($inspection)->sum('missing')>0 ? 'Missing items' : ($matches || $short ? null : 'Quantity difference'), $damageTotal?'Damaged items':null, ...$replacementReasons]))) ?: null,
+                'deliveryStatus' => 'Completed', 'discrepancy' => ! $matches || $damageTotal>0 || count($replacementReasons) > 0, 'discrepancyType' => implode('; ', array_unique(array_filter([collect($inspection)->sum('missing')>0 ? 'Missing items' : ($matches || $short ? null : 'Quantity difference'), $damageTotal?'Damaged items':null, ...$replacementReasons]))) ?: null,
                 'inspection' => json_encode($inspection),
                 'outcome' => $data['notes'] ?? '', 'adminApproval' => 'Posted by Manager', 'barcodeAssignment' => 'Existing inventory barcode',
                 'idempotencyKey' => $data['idempotencyKey'], 'deliveryReference' => $data['deliveryReference'], 'payloadHash' => $hash,
+                ...(\App\Services\SupplierAccounts::ready() ? ['paymentDueDate' => $data['paymentDueDate'] ?? null, 'supplierDocument' => $data['supplierDocument'] ?? null] : []),
                 'receivedById' => $request->user()->id, 'receivedByRole' => $request->user()->role, 'receivedBy' => $request->user()->name,
                 'supplierName' => $order->supplierName ?? DB::table('suppliers')->where('id', $order->supplierId)->value('name'),
             ]);
@@ -225,9 +230,9 @@ class PurchasingController extends Controller
             WorkflowNotifications::send([
                 ...($approver ? [$approver] : WorkflowNotifications::reviewers()),
                 WorkflowNotifications::owner($purchaseRequest->requestedById, $purchaseRequest->requestedByRole), $request->user(),
-            ], $request->user(), 'Stock received', 'PO '.$id.': delivery completed. Receipt '.$data['deliveryReference'].' recorded by '.$request->user()->name.'. Remarks: '.$remarks, 'receiving', $id);
+            ], $request->user(), 'Stock received', 'PO '.$id.': '.$status.'. Receipt '.$data['deliveryReference'].' recorded by '.$request->user()->name.'. Remarks: '.$remarks, 'receiving', $id);
 
-            return response()->json(['message' => 'Delivery completed under '.$id.'. Only accepted quantities were added to inventory. Remarks: '.$remarks, 'id' => $receiptId, 'poId' => $id, 'status' => $status, 'remarks'=>$remarks, 'inspection' => $inspection], 201);
+            return response()->json(['message' => 'Receipt posted under '.$id.'. PO: '.$status.'. Only accepted quantities were added to inventory. Remarks: '.$remarks, 'id' => $receiptId, 'poId' => $id, 'status' => $status, 'remarks'=>$remarks, 'inspection' => $inspection], 201);
         }, 3);
     }
 
@@ -256,6 +261,23 @@ class PurchasingController extends Controller
         }, 3);
     }
 
+    public function receiptReport(Request $request, string $id)
+    {
+        $receipt = DB::table('receiving_records')->where('id', $id)->first();
+        abort_unless($receipt, 404);
+        $request->query->set('receipt', $id);
+        return $this->report($request, $receipt->poId);
+    }
+
+    public function supplierOrder(Request $request, string $id)
+    {
+        $order = DB::table('purchase_orders')->where('id', $id)->first();
+        abort_unless($order, 404);
+        $supplier = DB::table('suppliers')->where('id', $order->supplierId)->first();
+        $lines = DB::table('purchase_order_lines')->where('poId', $id)->get();
+        return response()->view('supplier-order', compact('order', 'supplier', 'lines'))->header('Cache-Control', 'private, no-store');
+    }
+
     public function report(Request $request, string $id)
     {
         InventoryRules::authorize($request);
@@ -264,7 +286,7 @@ class PurchasingController extends Controller
         $purchase = DB::table('item_requests')->where('id', $order->itemRequestId)->first();
         $supplier = DB::table('suppliers')->where('id', $order->supplierId)->first();
         $lines = DB::table('purchase_order_lines')->where('poId', $id)->orderBy('id')->get();
-        $receipts = DB::table('receiving_records')->where('poId', $id)->orderBy('received_at')->orderBy('id')->get();
+        $receipts = DB::table('receiving_records')->where('poId', $id)->when($request->filled('receipt'), fn ($q) => $q->where('id', $request->input('receipt')))->orderBy('received_at')->orderBy('id')->get();
         $receiptLines = DB::table('receiving_record_lines')->whereIn('receivingId', $receipts->pluck('id'))->get()->groupBy('receivingId');
         $batchDetails=DB::table('inventory_batches')->whereIn('receiptId',$receipts->pluck('id'))->get()->keyBy(fn($b)=>$b->receiptId.'|'.$b->productId.'|'.$b->batchNumber);
         foreach($receiptLines as $group) foreach($group as $line) {

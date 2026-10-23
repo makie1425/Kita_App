@@ -1,11 +1,11 @@
-# Delivery PO numbers and receiving history
+# Purchase orders and delivery receipts
 
-Recording a receipt completes that delivery, even when some items are missing or damaged. The receipt uses the approved PO. Receive Stock cannot post a second delivery against that completed PO; retrying the same submission returns the saved receipt without adding stock again.
+The current workflow follows the supplied ECOUNT reference: the same PO stays open until its outstanding quantities have been accepted. Each delivery produces a distinct receipt ID and inspection snapshot. This replaces the former one-delivery-per-PO policy.
 
-For example, order 50 and receive 40 under PO A. The transaction is completed and its remarks say "10 missing." If 3 of the remaining 10 arrived damaged, the remarks instead say "7 missing, 3 damaged — returned, not received." Only the 40 accepted units enter inventory.
+Example: order 50, accept 40. Stock increases by 40 and PO progress becomes Partially Received. Its receipt records 10 missing. Accept the remaining 10 on the same PO: stock increases by 10 and progress becomes Fully Received. Both receipt rows remain in Transaction History; the first receipt still says 10 missing.
 
-The manager may choose Carry to next delivery in the optional follow-up panel. Select an existing approved delivery PO from the same supplier, or create a new one automatically when confirming that choice. Nothing is carried or created merely because a receipt has missing or damaged items. These carried quantities do not add another purchase charge. Damaged units must be returned and are never accepted into inventory; optional replacements are received separately on the selected future PO.
+Damaged units are returned, never stocked or charged as accepted goods. Replacement deliveries use the outstanding balance of the same PO. Excess acceptance requires manager notes. Each submission uses an idempotency key and receiving version to prevent duplicate stock.
 
-Stock Receiving, Transaction History, and receiving reports display Remarks instead of receiving status. Remarks use the saved inspection and never change when a later delivery fulfills the shortage. Purchase approval statuses remain separate from delivery remarks. Transaction History displays one row per receipt.
+Older Completed orders with an outstanding quantity can receive on the original PO. Existing receipt identifiers, inspection snapshots and linked carryover allocations are retained. Allocated legacy quantities must be received on their linked order or released before receipt on the source PO; they cannot be received twice. Legacy allocation endpoints remain compatible, but the normal interface no longer creates carryover POs.
 
-Existing receipts are not renumbered or reposted. Historical deliveries recorded under the same PO appear as separate receipt rows under that existing number. Do not receive those units again to obtain a new number: doing so would risk duplicating inventory.
+Admins may cancel an outstanding remainder with a reason. Cancellation preserves stock already accepted, receipts, and payable balances. Existing unreceived carryover allocations must first be released.

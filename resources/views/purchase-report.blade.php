@@ -23,6 +23,7 @@
         <div><strong>Supplier</strong>{{ $order->supplierName ?? $supplier?->name ?? 'Not recorded' }}</div>
         <div><strong>Remarks</strong>{{ $receipts->map(fn ($receipt) => \App\Services\ReceivingRemarks::forReceipt($receipt))->implode(" | ") ?: "Awaiting delivery" }}</div>
         <div><strong>Request date</strong>{{ $purchase?->requested_at ?? $purchase?->dateRequested ?? 'Not recorded' }}</div>
+        <div><strong>Expected delivery</strong>{{ ($order->expectedDeliveryDate ?? null) ?: "Not scheduled" }}</div>
         <div><strong>Approval date</strong>{{ $purchase?->approved_at ?? 'Not recorded' }}</div>
         <div><strong>Requested by</strong>{{ $purchase?->requestedBy ?? 'Not recorded' }}</div>
         <div><strong>Approved by</strong>{{ $purchase?->approvedBy ?? 'Not recorded' }}</div>
@@ -37,7 +38,7 @@
     @endforeach
     </tbody><tfoot><tr><th colspan="7">Total ordered value (₱)</th><td class="num">{{ number_format($order->orderedValue, 2) }}</td></tr></tfoot></table></div>
     <p class="muted">* Difference = received − ordered. Negative quantities are outstanding; positive quantities are excess. Quantities use the inventory unit shown for each item.</p>
-    @if($lines->contains(fn ($line) => (int) $line->deliveredQty + (int)($line->resolvedQty ?? 0) !== (int) $line->orderedQty))<p class="notice">Quantity discrepancies are recorded as remarks. This delivery is completed; further receipt of missing or returned items is optional.</p>@endif
+    @if($lines->contains(fn ($line) => (int) $line->deliveredQty + (int)($line->resolvedQty ?? 0) !== (int) $line->orderedQty))<p class="notice">Quantity discrepancies are recorded as remarks. The PO remains open for outstanding goods. Post later accepted deliveries against this same PO.</p>@endif
     <p class="muted">Resolved later quantities fulfill the original obligation without rewriting its receipts. Carryover items included in a later PO do not add a new purchase charge.</p>
     @if($carryovers->isNotEmpty())
     <h2>Linked shortage history</h2>
@@ -45,9 +46,10 @@
     @foreach($carryovers as $link)<tr><td>{{ $link->sourcePo }}</td><td>{{ $link->targetPo }}</td><td>{{ $link->quantity }}</td><td>{{ $link->receivedQty }}</td><td>{{ $link->releasedQty }}</td><td>@foreach($resolutions->where('carryoverId',$link->id) as $resolution){{ $resolution->receiptId }}: {{ $resolution->quantity }} units on {{ $resolution->created_at }}<br>@endforeach</td></tr>@endforeach
     </tbody></table></div>
     @endif
-    <h2>Delivery transactions</h2>
+    <h2>Receiving slips</h2>
     @forelse($receipts as $receipt)
-        <section class="receipt"><strong class="mono">{{ $receipt->id }}</strong> · Supplier reference: {{ $receipt->deliveryReference ?? 'Not recorded' }}
+        <section class="receipt"><strong class="mono">{{ $receipt->id }}</strong> · Receipt reference: {{ $receipt->deliveryReference ?? 'Not recorded' }}
+        <p>Supplier document: {{ ($receipt->supplierDocument ?? null) ?: "Not recorded" }} ? Payment due: {{ ($receipt->paymentDueDate ?? null) ?: "Not recorded" }}</p>
         <p>Date received: {{ $receipt->date }} · Recorded at: {{ $receipt->received_at ?? 'Not recorded' }}<br>Received by: {{ $receipt->receivedBy ?? 'Not recorded' }} · Remarks: {{ \App\Services\ReceivingRemarks::forReceipt($receipt) }}</p>
         <div class="table-wrap" tabindex="0" role="region" aria-label="Delivery items"><table><thead><tr><th>Product ID</th><th>Item / Category</th><th>Manufacturer</th><th>Ordered Qty</th><th>Received Order</th><th>Unit</th><th>Actual unit cost</th><th>Batch / Lot</th><th>Expiry</th></tr></thead><tbody>
         @foreach($receiptLines->get($receipt->id, collect()) as $line)<tr><td>{{ $line->productId }}</td><td>{{ $line->name ?? 'Item #'.$line->productId }}<br>{{ $line->category ?? 'Not recorded' }}</td><td>{{ $line->manufacturer ?? 'Not recorded' }}</td><td>{{ $line->poQty }}</td><td>{{ $line->deliveredQty }}</td><td>{{ $line->unit ?? 'Not recorded' }}</td><td>{{ $line->unitCost === null ? 'Not recorded' : number_format($line->unitCost, 2) }}</td><td>{{ $line->batchNumber ?? '-' }}</td><td>{{ $line->expiryDate ?? '-' }}</td></tr>@endforeach
