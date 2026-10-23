@@ -207,7 +207,7 @@ function salesHistoryChart(sales,period){
   const interval=Math.max(1,Math.ceil(points.length/8));
   const unit=period==="daily"?"Hour":period==="yearly"?"Month":"Date (MM-DD)";
   return card([
-    h("h2",{key:"title",className:"panel-title"},"Sales History"),
+    h("div",{className:"dashboard-panel-heading"},[h("h2",{key:"title",className:"panel-title"},"Sales History"),h("span",{className:"dashboard-period-badge"},period+" breakdown")]),
     h("p",{key:"range",className:"helper-text"},"Sales (PHP) • "+sales.range),
     !sales.rows.length?h("p",{key:"empty",role:"status"},"No sales recorded for this period."):null,
     points.length?h("div",{key:"chart",className:"sales-history-scroll"},h("svg",{viewBox:"0 0 800 295",className:"sales-history-chart",role:"img","aria-label":"Sales history line graph, "+sales.range},[
@@ -216,11 +216,13 @@ function salesHistoryChart(sales,period){
         h("line",{x1:110,x2:760,y1:y(value),y2:y(value),stroke:"#e4e7ec"}),
         h("text",{x:100,y:y(value)+4,textAnchor:"end",fontSize:11,fill:COLORS.textSoft},value.toLocaleString("en-PH",{maximumFractionDigits:2})),
       ]);}),
+      h("polygon",{key:"area",points:x(0)+","+y(0)+" "+points.map((point,i)=>x(i)+","+y(point.value)).join(" ")+" "+x(points.length-1)+","+y(0),fill:"#2864f514"}),
       h("polyline",{key:"line",points:points.map((point,i)=>x(i)+","+y(point.value)).join(" "),fill:"none",stroke:COLORS.brand,strokeWidth:3,strokeLinejoin:"round"}),
       ...points.map((point,i)=>h("circle",{key:point.key,cx:x(i),cy:y(point.value),r:4,fill:COLORS.brand},h("title",null,point.label+": PHP "+point.value.toFixed(2)))),
       ...points.filter((point,i)=>i%interval===0||i===points.length-1).map(point=>h("text",{key:"label"+point.key,x:x(points.indexOf(point)),y:255,textAnchor:"middle",fontSize:11,fill:COLORS.textSoft},point.label)),
       h("text",{key:"axis",x:435,y:283,textAnchor:"middle",fontSize:12,fill:COLORS.textSoft},unit),
     ])):null,
+    h("div",{className:"sales-peak"},"Peak: "+peso(Math.max(0,...points.map(p=>p.value)))),
     points.length?h("details",{key:"values"},[h("summary",null,"View sales history values"),table([unit,"Sales (PHP)"],points.map(point=>tr([td(point.label),td(peso(point.value))],point.key)))]):null,
   ],{marginBottom:16});
 }
@@ -1399,32 +1401,44 @@ class Component extends DCLogic {
       h("span",{key:"range",role:"status"},sales.range+(this.state.dashboardPeriod==="weekly"?" (Monday–Sunday)":"")),
     ]);
   }
+  buildProductComparison(sales){
+    const h=React.createElement, quantities=new Map();
+    sales.rows.forEach(row=>quantities.set(String(row.productId),(quantities.get(String(row.productId))||0)+Number(row.qty)));
+    const ranked=[...quantities].map(([id,qty])=>({id,qty,name:this.state.data.PRODUCTS.find(p=>String(p.id)===id)?.name||'Product #'+id})).filter(p=>p.qty>0).sort((a,b)=>b.qty-a.qty||a.name.localeCompare(b.name));
+    const top=ranked.slice(0,Math.min(3,Math.ceil(ranked.length/2))),topIds=new Set(top.map(p=>p.id));
+    const least=ranked.filter(p=>!topIds.has(p.id)).sort((a,b)=>a.qty-b.qty||a.name.localeCompare(b.name)).slice(0,3);
+    return card([
+      h('div',{className:'dashboard-panel-heading'},[h('div',null,[h('h2',{className:'panel-title'},'Product Comparison'),h('p',null,'Units sold: top products vs. least-selling products')]),h('div',{className:'comparison-legend'},[h('span',{className:'comparison-top'},'Top selling'),h('span',{className:'comparison-least'},'Least selling')])]),
+      h('div',{className:'product-comparison-bars'},top.length?top.map((a,i)=>{const b=least[i],share=a.qty/(a.qty+(b?.qty||0))*100;return h('div',{key:a.id,className:'comparison-pair'},[
+        h('div',{className:'comparison-labels'},[h('span',null,a.name+' ('+a.qty+')'),h('span',null,b?b.name+' ('+b.qty+')':'No comparison product')]),
+        h('div',{className:'comparison-track',role:'img','aria-label':a.name+': '+a.qty+' units'+(b?'; '+b.name+': '+b.qty+' units':'' )},[h('span',{className:'comparison-top-bar',style:{width:share+'%'}},Math.round(share)+'%'),b?h('span',{className:'comparison-least-bar',style:{width:(100-share)+'%'}}):null])
+      ]);}):h('p',{className:'record-empty'},'No sales recorded for this period.')),
+      h('div',{className:'comparison-footer'},[h('span',null,'Units sold in selected period'),h('span',null,least.length+' pairs compared')])
+    ]);
+  }
   buildMgrDashboard(){ return this.buildOperationsDashboard(true); }
   buildOperationsDashboard(manager){
     const {data}=this.state; if(!data)return null;
     const h=React.createElement;
     const sales=dashboardSales(data,this.state.dashboardPeriod,this.state.dashboardDate);
-    const byProduct={};sales.rows.forEach(row=>{byProduct[row.productId]=(byProduct[row.productId]||0)+row.qty*row.amount;});
-    const ranked=Object.entries(byProduct).map(([id,rev])=>({p:data.PRODUCTS.find(p=>String(p.id)===id),rev})).filter(row=>row.p).sort((a,b)=>b.rev-a.rev);
     const lowStock=this.managerLowStock();
     const heading=(title,description,extra)=>h('div',{className:'dashboard-panel-heading'},[h('div',null,[h('h2',{className:'panel-title'},title),h('p',null,description)]),extra]);
     return h('div',{className:'operations-dashboard'},[
       h('header',{key:'header',className:'dashboard-header'},[
-        sectionTitle('Sales & Operations Dashboard',manager?'Manager overview of sales, stock and expiry alerts':'Sales performance, stock and expiry alerts'),
+        sectionTitle('Analytics Overview','Filter metrics, sales history, and product comparisons'),
         this.buildDashboardSalesFilter(sales),
         h('button',{type:'button',className:'kita-button',disabled:!!this.state.pendingLoads,onClick:()=>this.reloadCatalog().catch(error=>this.toast(error.message,'error'))},this.state.pendingLoads?'Refreshing...':'Refresh dashboard'),
       ]),
       h('div',{key:'metrics',className:'dashboard-metrics'},[
         kpi('Recorded Sales',peso(sales.total),sales.range,COLORS.brand),
         kpi('Units Sold',sales.units,'For the selected sales period'),
-        kpi('Active Products',data.PRODUCTS.filter(p=>p.status==='Active'&&!p.archivedAt).length,'Current product catalog'),
         kpi('Low Stock Items',lowStock.length,lowStock.length?'At or below minimum stock':'Stock levels above minimum',lowStock.length?COLORS.red:COLORS.green),
       ]),
       h('div',{key:'charts',className:'dashboard-chart-grid'},[
         salesHistoryChart(sales,this.state.dashboardPeriod),
-        card([heading('Top Performing Products','Sales by product (PHP)',h('span',{className:'dashboard-period-badge'},this.state.dashboardPeriod)),rankedSales(ranked.slice(0,5))]),
+        this.buildProductComparison(sales),
       ]),
-      h('div',{key:'operations',className:'dashboard-operations-grid'},[
+      h('div',{key:'operations',className:'dashboard-operations-grid'+(manager?' dashboard-operations-manager':'')},[
         card([heading('Low Stock Products','Current inventory at or below the reorder threshold',badge(lowStock.length+' items')),
           h('div',{className:'dashboard-records',tabIndex:0,'aria-label':'Low stock products'},lowStock.length?lowStock.map(p=>h('div',{key:p.id,className:'dashboard-record'},[
             h('div',{className:'dashboard-record-main'},[h('strong',null,p.name),h('p',null,['Stock: ',h('b',{className:'dashboard-stock-alert'},String(p.stock)),' / Minimum: '+p.minStock+' '+(p.stockUnit||p.unit||'')]),h('small',null,(data.SUPPLIERS||[]).find(s=>String(s.id)===String(p.supplierId))?.name||'Supplier not assigned')]),
@@ -1432,10 +1446,8 @@ class Component extends DCLogic {
           ])):h('p',{role:'status',className:'record-empty'},'No low-stock products.')),
         ]),
         this.buildNearExpiredWidget(manager),
+        manager?h('section',{className:'dashboard-pin-panel'},[h('div',{className:'dashboard-pin-caption'},'Manager approval PIN settings'),this.buildManagerPin()]):null,
       ]),
-      manager?h('details',{key:'manager-settings',className:'dashboard-manager-tools dashboard-more'},[
-        h('summary',null,'Manager approval PIN settings'),this.buildManagerPin(),
-      ]):null,
     ]);
   }
   expiringBatches=()=> (this.state.data?.EXPIRING_BATCHES||[]).map(b=>({p:{...b,id:b.productId,batch:b.batchNumber||b.id,lot:b.lotNumber||'-',stock:b.quantityRemaining},days:Math.round((new Date(b.expiryDate)-new Date(this.state.data.BUSINESS_DATE))/86400000)}));
@@ -1450,7 +1462,7 @@ class Component extends DCLogic {
         h('div',{className:'dashboard-record-main'},[
           h('strong',null,x.p.name),
           h('p',null,'Stock: '+x.p.stock+' / Expiry: '+x.p.expiryDate),
-          h('small',null,'Batch: '+x.p.batch+' / Lot: '+x.p.lot),
+          h('small',null,'Batch / Lot: '+x.p.batch),
           h('p',{className:x.days<=0?'dashboard-stock-alert':null},x.days<=0?'Expired - blocked from sale':x.days+' day(s) left'),
         ]),
         manager&&x.days>0?btn('Create promotion',this.quickPromoFromNearExpiry(x.p.id),'primary'):badge(x.days<=0?'Expired':'Near expiry'),
