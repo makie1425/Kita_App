@@ -76,15 +76,17 @@ class PurchasingController extends Controller
 
         return DB::transaction(function () use ($request, $id, $data, $hash) {
             InventoryRules::lockActor($request);
+            DB::table('inventory_sequences')->where('name', 'purchase_orders')->lockForUpdate()->first();
             $sourceIds=DB::table('receiving_carryovers')->where('targetPo',$id)->pluck('sourcePo')->push($id)->unique()->all();
             $lockedOrders=DB::table('purchase_orders')->whereIn('id',$sourceIds)->orderBy('id')->lockForUpdate()->get();
             $order=$lockedOrders->firstWhere('id',$id);
             abort_unless($order, 404, 'Purchase order not found.');
             $existing = DB::table('receiving_records')->where('idempotencyKey', $data['idempotencyKey'])->first();
             if ($existing) {
-                abort_unless($existing->poId === $id && $existing->payloadHash === $hash, 409, 'This receiving key was already used for another submission.');
+                $linkedDelivery = DB::table('receiving_carryovers')->where('sourcePo', $id)->where('targetPo', $existing->poId)->exists();
+                abort_unless(($existing->poId === $id || $linkedDelivery) && $existing->payloadHash === $hash, 409, 'This receiving key was already used for another submission.');
 
-                return response()->json(['message' => 'Delivery was already recorded; inventory was not added again.', 'id' => $existing->id, 'poId' => $id]);
+                return response()->json(['message' => 'Delivery was already recorded; inventory was not added again.', 'id' => $existing->id, 'poId' => $existing->poId, 'status'=>DB::table('purchase_orders')->where('id', $existing->poId)->value('status')]);
             }
             $purchaseRequest = DB::table('item_requests')->where('id', $order->itemRequestId)->first();
             abort_unless($purchaseRequest && in_array($purchaseRequest->status, [PurchaseWorkflow::WAITING, 'Partially Received', 'Approved']), 409, 'The linked purchase request is not approved.');
@@ -102,6 +104,28 @@ class PurchasingController extends Controller
             }
             $orderLines = DB::table('purchase_order_lines')->where('poId', $id)->orderBy('productId')->lockForUpdate()->get();
             abort_if($orderLines->pluck('productId')->duplicates()->isNotEmpty(), 409, 'This legacy PO has duplicate item lines and requires reconciliation before receiving.');
+            // Receive Stock on a previously received PO is a new physical delivery.
+            // Put every submitted item under one new PO, atomically with the receipt.
+            if (DB::table('receiving_records')->where('poId', $id)->exists()) {
+                $deliveryPo = null;
+                foreach ($data['lines'] as $input) {
+                    $sourceLine = $orderLines->firstWhere('productId', $input['productId']);
+                    $quantity = $input['qty'] + ($input['damagedQty'] ?? 0);
+                    abort_unless($sourceLine && $quantity > 0, 422, 'Enter an accepted or damaged quantity for an item on this PO.');
+                    $allocationRequest = Request::create('/', 'POST', [
+                        'requestKey'=>(string) Str::uuid(), 'sourceLine'=>$sourceLine->id,
+                        'targetPo'=>$deliveryPo, 'quantity'=>$quantity,
+                    ]);
+                    $allocationRequest->setUserResolver($request->getUserResolver());
+                    $allocation = ReceivingCarryover::allocate($allocationRequest, $id, true)->getData(true);
+                    $deliveryPo = $allocation['poId'];
+                }
+                $id = $deliveryPo;
+                $order = DB::table('purchase_orders')->where('id', $id)->lockForUpdate()->first();
+                $purchaseRequest = DB::table('item_requests')->where('id', $order->itemRequestId)->first();
+                $orderLines = DB::table('purchase_order_lines')->where('poId', $id)->orderBy('productId')->lockForUpdate()->get();
+                $data['deliveryReference'] = $id.'-R001';
+            }
             $receiptId = 'RCV-'.Str::ulid();
             DB::table('receiving_records')->insert(['id' => $receiptId, 'poId' => $id]);
             $receivedCents = 0;
@@ -222,7 +246,7 @@ class PurchasingController extends Controller
                 WorkflowNotifications::owner($purchaseRequest->requestedById, $purchaseRequest->requestedByRole), $request->user(),
             ], $request->user(), 'Stock received', 'PO '.$id.': '.$status.'. Delivery '.$data['deliveryReference'].' recorded by '.$request->user()->name.'.'.($short ? ' Shortage report: '.$shortageSummary.'. Actual received items have been added to inventory.' : ''), 'receiving', $id);
 
-            return response()->json(['message' => 'Delivery recorded and actual quantities added to inventory.'.($short ? ' A shortage report has been saved.' : ''), 'id' => $receiptId, 'poId' => $id, 'status' => $status, 'inspection' => $inspection], 201);
+            return response()->json(['message' => 'Delivery recorded under '.$id.' and actual quantities added to inventory.'.($short ? ' A shortage report has been saved.' : ''), 'id' => $receiptId, 'poId' => $id, 'status' => $status, 'inspection' => $inspection], 201);
         }, 3);
     }
 

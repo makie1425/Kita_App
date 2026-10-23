@@ -25,11 +25,11 @@ class ReceivingCarryover
             ->selectRaw('COALESCE(SUM(quantity - receivedQty - releasedQty), 0) as qty')->value('qty');
     }
 
-    public static function allocate(Request $request, string $id)
+    public static function allocate(Request $request, string $id, bool $includeIncoming = false)
     {
         InventoryRules::authorize($request, ['manager', 'superadmin', 'super_admin']);
         $data = $request->validate(['requestKey'=>['required','uuid'], 'sourceLine'=>['required','integer'], 'targetPo'=>['nullable','string'], 'quantity'=>['required','integer','between:1,1000000']]);
-        return DB::transaction(function () use ($request, $id, $data) {
+        return DB::transaction(function () use ($request, $id, $data, $includeIncoming) {
             InventoryRules::lockActor($request);
             // Serialize automatic numbering and retries before locking the orders.
             if (empty($data['targetPo'])) {
@@ -42,7 +42,7 @@ class ReceivingCarryover
                 $source = DB::table('purchase_orders')->where('id', $id)->lockForUpdate()->first();
                 abort_unless($source && DB::table('receiving_records')->where('poId', $id)->exists(), 422, 'Choose a PO with a recorded shortage.');
                 $line = DB::table('purchase_order_lines')->where('poId', $id)->where('id', $data['sourceLine'])->lockForUpdate()->first();
-                abort_unless($line && $data['quantity'] <= self::originalRemaining($line)-self::reserved($line->id), 422, 'The shortage quantity is already allocated or no longer outstanding.');
+                abort_unless($line && $data['quantity'] <= ($includeIncoming ? self::remaining($line) : self::originalRemaining($line))-self::reserved($line->id), 422, 'The shortage quantity is already allocated or no longer outstanding.');
                 $data['targetPo'] = self::createDeliveryOrder($request, $source);
             }
             $orders = DB::table('purchase_orders')->whereIn('id', [$id,$data['targetPo']])->orderBy('id')->lockForUpdate()->get();
@@ -56,7 +56,7 @@ class ReceivingCarryover
             abort_unless(in_array($target->status, [PurchaseWorkflow::WAITING,'Approved','Ordered']) && !DB::table('receiving_records')->where('poId',$target->id)->exists(), 422, 'Choose an approved subsequent PO before its first receipt.');
             abort_unless(DB::table('receiving_records')->where('poId',$id)->exists() && $target->created >= $source->created && strcmp($target->id, $source->id) > 0, 422, 'Choose a subsequent PO for a recorded shortage.');
             $line = DB::table('purchase_order_lines')->where('poId',$id)->where('id',$data['sourceLine'])->lockForUpdate()->first();
-            abort_unless($line && $data['quantity'] <= self::originalRemaining($line)-self::reserved($line->id),422,'The shortage quantity is already allocated or no longer outstanding.');
+            abort_unless($line && $data['quantity'] <= ($includeIncoming ? self::remaining($line) : self::originalRemaining($line))-self::reserved($line->id),422,'The shortage quantity is already allocated or no longer outstanding.');
             $targetLine = DB::table('purchase_order_lines')->where('poId',$target->id)->where('productId',$line->productId)->lockForUpdate()->first();
             if ($targetLine) {
                 abort_unless($targetLine->unit === $line->unit && (float)$targetLine->unitCost === (float)$line->unitCost,422,'The target product must use the same stock unit and purchase cost as the original shortage.');
@@ -137,11 +137,14 @@ class ReceivingCarryover
             if ($take<=0) continue;
             $source=DB::table('purchase_order_lines')->where('id',$a->sourceLine)->lockForUpdate()->first();
             abort_if($take>self::remaining($source),409,'The original shortage changed. Refresh receiving.');
+            // A shortage may pass through several deliveries. Settle its original
+            // obligation once, while retaining every intermediate delivery link.
+            $forwarded = self::resolve($source, $take, $cost, $receipt);
             DB::table('purchase_order_lines')->where('id',$source->id)->increment('resolvedQty',$take);
             DB::table('receiving_carryovers')->where('id',$a->id)->increment('receivedQty',$take);
             DB::table('receiving_carryover_resolutions')->insert(['carryoverId'=>$a->id,'receiptId'=>$receipt,'quantity'=>$take,'unitCost'=>$cost,'created_at'=>now()]);
             $po=DB::table('purchase_orders')->where('id',$a->sourcePo)->lockForUpdate()->first();
-            $value=round($po->deliveredValue+$take*$cost,2);
+            $value=round($po->deliveredValue+($take-$forwarded)*$cost,2);
             abort_if($value>9999999999.99,422,'Received value exceeds the supported amount.');
             $complete=DB::table('purchase_order_lines')->where('poId',$po->id)->get()->every(fn($l)=>self::remaining($l)===0);
             $status=$complete?'Fully Received':'Partially Received';

@@ -1610,11 +1610,11 @@ class Component extends DCLogic {
     if(!entered.length||entered.some(([,qty])=>!Number.isInteger(Number(qty))||Number(qty)<0)){this.setState({receiveError:'Enter accepted or damaged whole quantities. Leave undelivered items blank.'});return;}
     if(entered.some(([id])=>!this.validAmount(this.receivingCost(id))||Number(this.receivingCost(id))>99999999.99)){this.setState({receiveError:'Enter a valid cost price for each delivered item (0 to 99,999,999.99, up to two decimal places).'});return;}
     if(entered.some(([id])=>!this.validAmount(this.receivingPrice(id))||Number(this.receivingPrice(id))>99999999.99)){this.setState({receiveError:'Enter a retail price for each delivered item (up to two decimal places).'});return;}
-    if(!window.confirm('Confirm delivery for '+order.id+'? Quantities will be added to the selected original or replacement product stock. The retail price entered will apply to all remaining units of that product, including earlier deliveries.'))return;
+    if(!window.confirm('Confirm delivery for '+order.id+'? '+(order.receipts?.length?'This delivery will receive a new PO number. ':'')+'Quantities will be added to the selected original or replacement product stock. The retail price entered will apply to all remaining units of that product, including earlier deliveries.'))return;
     this.receivingBusy=true;this.setState({receivingSaving:true,receiveError:''});
     try{
       const result=await this.authPost(`/api/purchase-orders/${encodeURIComponent(order.id)}/receive`,{idempotencyKey:this.state.receiveKey,version:this.state.receiveVersion,receivedDate:this.state.receiveDate,notes:this.state.receiveNotes,lines:entered.map(([productId,qty])=>({productId:Number(productId),substituteProductId:Number(this.state.receiveSubstitutes?.[productId])||null,substitutionReason:this.state.receiveReasons?.[productId]||null,qty:Number(qty),damagedQty:Number(this.state.receiveDamaged?.[productId]||0),damageReason:this.state.receiveDamageReasons?.[productId]||null,sellingPrice:this.receivingPrice(productId),unitCost:this.receivingCost(productId),batchNumber:this.state.receiveBatches?.[productId]||null,expiryDate:this.state.receiveExpiries?.[productId]||null,manufacturedDate:this.state.receiveManufactured?.[productId]||null,lotNumber:this.state.receiveLots?.[productId]||null}))});
-      this.setState({purchaseReceivingId:null,lastReceivedPo:order.id});this.toast(result.message);await Promise.all([this.reloadPurchasing(),this.reloadCatalog()]);
+      this.setState({purchaseReceivingId:null,lastReceivedPo:result.poId||order.id});this.toast(result.message);await Promise.all([this.reloadPurchasing(),this.reloadCatalog()]);
     }catch(error){this.setState({receiveError:error.message});}finally{this.receivingBusy=false;this.setState({receivingSaving:false});}
   };
   receivingTarget=id=>this.state.receiveSubstitutes?.[id]||id;
@@ -1733,7 +1733,7 @@ class Component extends DCLogic {
         kpi('Discrepancies',orders.filter(discrepancy).length+' POs'),
         kpi('Completed Receipts',orders.filter(o=>o.status==='Fully Received').length+' POs'),
       ]),
-      this.state.lastReceivedPo?h('div',{className:'sa-panel',role:'status'},'Receipt saved. View or print its report from Reports.'):null,
+      this.state.lastReceivedPo?h('div',{className:'sa-panel',role:'status'},'Delivery saved under '+this.state.lastReceivedPo+'. View it in Transaction History.'):null,
       h('div',{className:'receiving-tabs',role:'group','aria-label':'Receiving views'},[['active','Active Receiving'],['missing','Missing Items / Backorders'],['discrepancies','Discrepancies & Follow-ups']].map(([value,label])=>h('button',{type:'button',key:value,'data-action-tone':'blue','aria-pressed':tab===value,onClick:()=>{this.setState({receivingTab:value});this.setTableView('purchase-receiving',{page:1});}},label))),
       this.recordTable('purchase-receiving',['PO Number','Receipt ID','Supplier','Items / Received','Batch / Lot','Status','Actions'],selected.map(o=>{
         const receiptLines=(o.receipts||[]).flatMap(r=>r.lines||[]);
@@ -1746,8 +1746,9 @@ class Component extends DCLogic {
   buildPurchaseHistory(){
     const h=React.createElement,state=this.purchasingState();if(state)return state;
     const orders=this.filterPurchases(this.state.purchaseData.orders).filter(o=>o.receipts.length>0);
-    return h('div',null,[sectionTitle('Purchase Transaction History','Persisted receiving transactions, including partial deliveries. Open the report for delivery details and signatures.'),this.purchaseFilters(),this.buildSupplierContacts(orders),
-      this.recordTable('purchase-history',['PO ID','Supplier','Items / ordered / received / unit','Request date','Approval date','Received date','Status','Requested by','Received by','Approving Admin','Report'],orders.map(o=>tr([td(o.id),td(o.supplierName||this.purchaseSupplier(o.supplierId)),td(o.lines.map(l=>`${l.name}: ${l.orderedQty} / ${l.deliveredQty||0} ${this.purchaseUnit(l)}`).join('; ')),td(o.request?.requested_at||o.request?.dateRequested||'Not recorded'),td(o.request?.approved_at||'Not recorded'),td(o.receipts.map(r=>r.date).join(', ')),td(badge(o.status)),td(o.request?.requestedBy||'Not recorded'),td([...new Set(o.receipts.map(r=>r.receivedBy||'Not recorded'))].join(', ')),td(o.request?.approvedBy||'Not recorded'),td(this.purchaseReportLink(o.id))],o.id)))
+    const deliveries=orders.flatMap(o=>o.receipts.map(r=>({o,r}))).sort((a,b)=>String(b.r.received_at||b.r.date).localeCompare(String(a.r.received_at||a.r.date))||String(b.r.id).localeCompare(String(a.r.id)));
+    return h('div',null,[sectionTitle('Purchase Transaction History','One row per recorded delivery, including partial deliveries. PO status shows whether all outstanding items have been fulfilled.'),this.purchaseFilters(),this.buildSupplierContacts(orders),
+      this.recordTable('purchase-history',['PO ID','Receipt ID','Supplier','Items / received / unit','Received date','Delivery status','Current PO status','Received by','Approving Admin','Report'],deliveries.map(({o,r})=>tr([td(o.id),td(r.id),td(o.supplierName||this.purchaseSupplier(o.supplierId)),td((r.lines||[]).map(l=>`${l.name||o.lines.find(p=>Number(p.productId)===Number(l.productId))?.name||l.productId}: ${l.deliveredQty||0} ${this.purchaseUnit(l)}`).join('; ')),td(r.received_at||r.date),td(badge(r.deliveryStatus)),td(badge(o.status)),td(r.receivedBy||'Not recorded'),td(o.request?.approvedBy||'Not recorded'),td(this.purchaseReportLink(o.id))],r.id)))
     ]);
   }
   buildPurchaseStatusList(declined=false){
