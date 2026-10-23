@@ -261,6 +261,10 @@ class PurchasingController extends Controller
         $lines = DB::table('purchase_order_lines')->where('poId', $id)->orderBy('id')->get();
         $receipts = DB::table('receiving_records')->where('poId', $id)->orderBy('received_at')->orderBy('id')->get();
         $receiptLines = DB::table('receiving_record_lines')->whereIn('receivingId', $receipts->pluck('id'))->get()->groupBy('receivingId');
+        $batchDetails=DB::table('inventory_batches')->whereIn('receiptId',$receipts->pluck('id'))->get()->keyBy(fn($b)=>$b->receiptId.'|'.$b->productId.'|'.$b->batchNumber);
+        foreach($receiptLines as $group) foreach($group as $line) {
+            $line->manufacturer=$batchDetails->get($line->receivingId.'|'.$line->productId.'|'.$line->batchNumber)?->manufacturer;
+        }
         $supplierContacts = DB::table('supplier_contacts')->whereIn('receiptId', $receipts->pluck('id'))->orderBy('id')->get()->groupBy('receiptId');
 
         $carryovers=DB::table('receiving_carryovers')->where('sourcePo',$id)->orWhere('targetPo',$id)->get();

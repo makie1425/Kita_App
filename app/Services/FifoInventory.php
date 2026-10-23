@@ -20,7 +20,7 @@ class FifoInventory
     {
         DB::table('inventory_batches')->insert(['productId' => $id, 'quantityReceived' => $qty, 'quantityRemaining' => $qty,
             'unitCost' => $cost, 'receivedDate' => $date, 'receiptId' => $receipt, 'supplierId' => $supplier, 'source' => $source,
-            'batchNumber' => $batch, 'expiryDate' => $expiry, 'manufacturedDate' => $manufactured, 'lotNumber' => $lot, 'created_at' => now()]);
+            'manufacturer'=>DB::table('products')->where('id',$id)->value('manufacturer'), 'batchNumber' => $batch, 'expiryDate' => $expiry, 'manufacturedDate' => $manufactured, 'lotNumber' => $lot, 'created_at' => now()]);
     }
 
     public static function consume(int $id, int $qty, string $type, string $reference): void

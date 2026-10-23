@@ -122,7 +122,7 @@ class ProductMasterController extends Controller
         return response()->json([
             'batches' => \App\Services\InventoryAvailability::batches($query->orderByDesc('b.receivedDate')->orderByDesc('b.id')->get(['b.*', 'p.name', 'p.category', 'p.size', 'p.sizeUnit', 'p.stockUnit', 'p.status as productStatus', 'p.archivedAt as productArchivedAt', 'brand.name as brand', 'sub.name as subcategory', 'supplier.name as supplier', 'receipt.poId', 'receipt.deliveryReference', 'receipt.receivedBy'])),
             'products' => \App\Services\InventoryAvailability::products($products->orderByDesc('p.created_at')->orderByDesc('p.id')->get(['p.*'])->map(fn ($p) => (array) $p)->all()),
-            'movements' => $movements->orderByDesc('m.id')->limit(500)->get(['m.*', 'p.name']),
+            'movements' => \App\Services\BatchTrace::movements($movements->orderByDesc('m.id')->limit(500)->get(['m.*', 'p.name'])),
         ])->header('Cache-Control', 'no-store');
     }
 }

@@ -85,7 +85,7 @@ class KitaDataController extends Controller
     {
         return \App\Services\InventoryAvailability::products($this->numericRows(
             $pdo,
-            'SELECT brandId, subcategoryId, size, sizeUnit, id, name, category, vatClass, price, cost, unitPrice, registrationQuantity, stock, minStock, unit, status, batch, lot, expiry, barcode, supplierId, parentId, variantLabel, purchaseUnit, stockUnit, conversionFactor, barcodeStatus, archivedAt, archivedBy FROM products ORDER BY created_at DESC, id DESC',
+            'SELECT manufacturer, brandId, subcategoryId, size, sizeUnit, id, name, category, vatClass, price, cost, unitPrice, registrationQuantity, stock, minStock, unit, status, batch, lot, expiry, barcode, supplierId, parentId, variantLabel, purchaseUnit, stockUnit, conversionFactor, barcodeStatus, archivedAt, archivedBy FROM products ORDER BY created_at DESC, id DESC',
             ['id', 'price', 'cost', 'unitPrice', 'registrationQuantity', 'stock', 'minStock', 'supplierId', 'parentId', 'conversionFactor']
         ));
     }

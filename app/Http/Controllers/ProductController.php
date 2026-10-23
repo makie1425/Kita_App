@@ -68,7 +68,7 @@ class ProductController extends Controller
                 }
                 $validated['stock'] = (int) $existing->stock;
                 $values = $this->productValues($validated);
-                foreach (['brandId', 'subcategoryId', 'size', 'sizeUnit', 'minStock', 'parentId', 'variantLabel'] as $field) {
+                foreach (['manufacturer', 'brandId', 'subcategoryId', 'size', 'sizeUnit', 'minStock', 'parentId', 'variantLabel'] as $field) {
                     if (! array_key_exists($field, $validated)) {
                         $values[$field] = $existing->{$field};
                     }
@@ -131,6 +131,7 @@ class ProductController extends Controller
         $validated = $request->validate([
             'id' => ['nullable', 'integer', 'min:1', 'max:2147483647', Rule::unique('products', 'id')->ignore($id)],
             'name' => ['required', 'string', 'max:160'],
+            'manufacturer'=>['nullable','string','max:160'],
             'parentId' => ['nullable', 'integer', 'exists:products,id'],
             'variantLabel' => ['nullable', 'string', 'max:80'],
             'category' => ['required', 'string', Rule::exists('categories', 'name')->where('status', 'Active')->whereNull('archivedAt')],
@@ -170,6 +171,7 @@ class ProductController extends Controller
     private function productValues(array $validated): array
     {
         return [
+            'manufacturer'=>filled($validated['manufacturer'] ?? null)?trim($validated['manufacturer']):null,
             'name' => $validated['name'], 'category' => $validated['category'], 'vatClass' => $validated['vatClass'],
             'parentId' => $validated['parentId'] ?? null, 'variantLabel' => trim($validated['variantLabel'] ?? ''),
             'price' => $validated['price'], 'unitPrice' => $validated['unitPrice'], 'cost' => $validated['cost'],

@@ -56,8 +56,8 @@ class ReportController extends Controller
             $title = 'Stock Receiving Audit';
             $query->join('receiving_record_lines as rl', 'rl.productId', '=', 'p.id')->join('receiving_records as rr', 'rr.id', '=', 'rl.receivingId')->join('purchase_orders as po', 'po.id', '=', 'rr.poId')->leftJoin('suppliers as supplier', 'supplier.id', '=', 'po.supplierId');
             $dateColumn = 'rr.date';
-            $columns = ['PO Number' => 'reportPo', 'Receipt ID' => 'reference', 'Supplier' => 'supplier', 'Product' => 'product', 'Status' => 'status', 'Discrepancy' => 'discrepancyType', 'Condition' => 'condition', 'Received' => 'quantity'];
-            $select = ['p.name as product', 'rr.poId as reportPo', 'rr.id as reference', 'supplier.name as supplier', 'rr.deliveryStatus as status', 'rr.discrepancyType', 'rl.conditionText as condition', 'rl.deliveredQty as quantity', 'rr.discrepancy'];
+            $columns = ['PO Number' => 'reportPo', 'Receipt ID' => 'reference', 'Supplier' => 'supplier', 'Product ID'=>'productId','Category'=>'category','Batch Number'=>'batch','Expiration Date'=>'expiryDate','Product' => 'product', 'Status' => 'status', 'Discrepancy' => 'discrepancyType', 'Condition' => 'condition', 'Received' => 'quantity'];
+            $select = ['p.id as productId','p.category','rl.batchNumber as batch','rl.expiryDate','p.name as product', 'rr.poId as reportPo', 'rr.id as reference', 'supplier.name as supplier', 'rr.deliveryStatus as status', 'rr.discrepancyType', 'rl.conditionText as condition', 'rl.deliveredQty as quantity', 'rr.discrepancy'];
             $note = 'Recorded receipt lines and inspection findings. Open a PO number to view or print the complete receiving report.';
             if ($request->filled('supplierId')) $query->where('po.supplierId', $filters['supplierId']);
             if ($request->filled('audit')) {
@@ -71,17 +71,17 @@ class ReportController extends Controller
             $title = 'Printable Expiration & Shelf-Life Audit';
             $query->join('inventory_batches as b', 'b.productId', '=', 'p.id')->where('b.quantityRemaining', '>', 0);
             $dateColumn = 'b.expiryDate';
-            $columns = ['SKU / Code' => 'code', 'Batch / Lot' => 'batch', 'Product name' => 'product', 'Category' => 'category', 'Expiration date' => 'expiryDate', 'Stock remaining' => 'remaining', 'Unit' => 'unit', 'Expiration status' => 'status'];
-            $select = array_merge($select, ['p.id as code', 'b.id', 'b.batchNumber as batch', 'b.lotNumber as lot', 'b.expiryDate', 'b.quantityRemaining as remaining', 'p.stockUnit as unit']);
+            $columns = ['Product ID' => 'code', 'Batch / Lot' => 'batch', 'Product name' => 'product', 'Category' => 'category', 'Manufacturer'=>'manufacturer', 'Expiration date' => 'expiryDate', 'Stock remaining' => 'remaining', 'Unit' => 'unit', 'Expiration status' => 'status'];
+            $select = array_merge($select, ['p.id as code', 'b.id', 'b.manufacturer', 'b.batchNumber as batch', 'b.lotNumber as lot', 'b.expiryDate', 'b.quantityRemaining as remaining', 'p.stockUnit as unit']);
             $note = 'Current remaining batches, including recalled stock. Dates filter expiration dates. Expired: today or earlier; critical: within 7 days; warning: within 30 days. Shelf locations are not recorded in this system.';
         } elseif ($type === 'receipts') {
             $title = 'Received Stock';
             $query->join('inventory_batches as b', 'b.productId', '=', 'p.id')->where('b.source', '<>', 'legacy_opening');
             $dateColumn = 'b.receivedDate';
             $note = 'Actual stock batches received; legacy opening balances are excluded. Supplier filter uses the receipt supplier.';
-            $columns += ['Received date' => 'date', 'Receipt' => 'reference', 'Supplier' => 'supplier', 'Quantity received' => 'quantity', 'Remaining now' => 'remaining', 'Unit cost (PHP)' => 'cost', 'Batch' => 'batch'];
-            $query->leftJoin('suppliers as s', 's.id', '=', 'b.supplierId');
-            $select = array_merge($select, ['b.receivedDate as date', 'b.receiptId as reference', 's.name as supplier', 'b.quantityReceived as quantity', 'b.quantityRemaining as remaining', 'b.unitCost as cost', 'b.batchNumber as batch']);
+            $columns += ['Product ID'=>'productId','Manufacturer'=>'manufacturer','PO Number'=>'poId','Received date' => 'date', 'Receipt' => 'reference', 'Supplier' => 'supplier', 'Quantity received' => 'quantity', 'Remaining now' => 'remaining', 'Unit cost (PHP)' => 'cost', 'Batch' => 'batch'];
+            $query->leftJoin('suppliers as s', 's.id', '=', 'b.supplierId')->leftJoin('receiving_records as receipt','receipt.id','=','b.receiptId');
+            $select = array_merge($select, ['p.id as productId','b.manufacturer','receipt.poId','b.receivedDate as date', 'b.receiptId as reference', 's.name as supplier', 'b.quantityReceived as quantity', 'b.quantityRemaining as remaining', 'b.unitCost as cost', 'b.batchNumber as batch']);
             $columns += ['Manufactured' => 'manufacturedDate', 'Expiry' => 'expiryDate'];
             $select = array_merge($select, ['b.manufacturedDate', 'b.expiryDate']);
         } else {
@@ -92,8 +92,8 @@ class ReportController extends Controller
                     ->whereIn('m.referenceType', ['checkout', 'payment_reservation', 'payment_release', 'refund', 'void', 'exchange', 'exchange_replacement']);
             });
             $dateColumn = 'm.created_at';
-            $columns += ['Recorded at' => 'date', 'Type' => 'movement', 'Reference' => 'reference', 'Change' => 'change', 'Before' => 'before', 'After' => 'after'];
-            $select = array_merge($select, ['m.created_at as date', 'm.referenceType as movement', 'm.referenceId as reference', 'tn.id as numberId', 'tn.issued_date as numberDate', 'm.quantityChange as change', 'm.quantityBefore as before', 'm.quantityAfter as after']);
+            $columns += ['Product ID'=>'productId','Batch references'=>'batchNumbers','Recorded at' => 'date', 'Type' => 'movement', 'Reference' => 'reference', 'Change' => 'change', 'Before' => 'before', 'After' => 'after'];
+            $select = array_merge($select, ['m.productId','m.referenceType','m.referenceId','m.created_at as date', 'm.referenceType as movement', 'm.referenceId as reference', 'tn.id as numberId', 'tn.issued_date as numberDate', 'm.quantityChange as change', 'm.quantityBefore as before', 'm.quantityAfter as after']);
         }
         foreach (['category' => 'p.category', 'brandId' => 'p.brandId', 'subcategoryId' => 'p.subcategoryId', 'productId' => 'p.id', 'supplierId' => in_array($type, ['receipts', 'expiry']) ? 'b.supplierId' : 'p.supplierId'] as $key => $column) {
             if ($request->filled($key) && !($type === 'receiving' && $key === 'supplierId')) {
@@ -125,12 +125,16 @@ class ReportController extends Controller
             $query->orderByDesc('p.created_at');
         }
         $rows = $query->orderByDesc('p.id')->get($select);
+        if ($type === 'movements') {
+            $rows=\App\Services\BatchTrace::movements($rows);
+            $note.=' Batch references identify batches linked to this transaction, not per-movement quantity allocations. Unrecorded historical links are not inferred.';
+        }
         if ($type === 'expiry') {
             $today = now()->timezone('Asia/Manila')->startOfDay();
             foreach ($rows as $row) {
                 $days = $row->expiryDate ? (int) $today->diffInDays(\Carbon\CarbonImmutable::parse($row->expiryDate, 'Asia/Manila')->startOfDay(), false) : null;
                 $row->status = $days === null ? 'Unknown' : ($days <= 0 ? 'Expired' : ($days <= 7 ? 'Critical' : ($days <= 30 ? 'Warning' : 'Good')));
-                $row->batch = ($row->batch ?: 'Batch #'.$row->id).($row->lot ? ' / '.$row->lot : '');
+                $row->batch = ($row->batch ?: 'Batch #'.$row->id).($row->lot && $row->lot!==$row->batch ? ' / '.$row->lot : '');
             }
             $rows = $rows->sortBy(fn ($row) => [in_array($row->status, ['Critical', 'Warning']) ? 0 : ($row->status === 'Expired' ? 1 : 2), $row->expiryDate ?? '9999-12-31', $row->id])->values();
             if ($request->filled('expiryStatus')) {
@@ -144,6 +148,7 @@ class ReportController extends Controller
             foreach ($rows as $row) $row->exclusionReason = implode('; ', $row->exclusionReasons) ?: 'Eligible';
         }
         foreach ($rows as $row) {
+            if (in_array($type,['expiry','receipts']) && !filled($row->manufacturer ?? null)) $row->manufacturer='Not recorded';
             if (in_array($type, ['sales', 'movements'])) {
                 $row->transactionId = $row->reference;
                 if ($type === 'sales') {

@@ -159,6 +159,27 @@ class PurchaseWorkflowTest extends TestCase
         $this->assertDatabaseHas('products',['id'=>$this->product,'stock'=>1]);
     }
 
+    public function test_received_batches_trace_to_orders_movements_and_printed_expiration_report(): void
+    {
+        DB::table('products')->where('id',$this->product)->update(['manufacturer'=>'Original Factory']);
+        $id=$this->requestOrder(4);$this->approve($id);
+        $body=$this->delivery(4);$body['lines'][0]['expiryDate']=now()->addDays(5)->toDateString();
+        $receipt=$this->actingAs($this->manager)->postJson('/api/purchase-orders/'.$id.'/receive',$body)->assertCreated()->json('id');
+        $batch=DB::table('inventory_batches')->where('receiptId',$receipt)->first();
+        DB::table('products')->where('id',$this->product)->update(['manufacturer'=>'New Factory']);
+        $this->getJson('/api/inventory-history')->assertOk()->assertJsonPath('batches.0.manufacturer','Original Factory')->assertJsonPath('batches.0.poId',$id)->assertJsonPath('movements.0.batchNumbers',$batch->batchNumber);
+        $this->getJson('/reports/data?type=movements')->assertOk()->assertJsonPath('rows.0.batchNumbers',$batch->batchNumber);
+        $this->getJson('/reports/data?type=receipts')->assertOk()->assertJsonPath('rows.0.manufacturer','Original Factory')->assertJsonPath('rows.0.poId',$id);
+        $this->get('/reports/data?type=expiry&format=print')->assertOk()->assertSee('Original Factory')->assertSee($batch->batchNumber)->assertSee('Product ID')->assertSee('Expiration date');
+        $this->get('/purchase-orders/'.$id.'/report')->assertOk()->assertSee('Original Factory')->assertSee($batch->batchNumber)->assertSee('Product ID');
+        $this->getJson('/reports/data?type=expiry')->assertOk()->assertJsonPath('rows.0.batch',$batch->batchNumber);
+        DB::transaction(function () use($batch) {
+            \App\Services\StockMovement::record($this->product,4,2,'checkout','BATCH-SALE',$this->manager);
+            DB::table('products')->where('id',$this->product)->update(['stock'=>2]);
+        });
+        $this->getJson('/api/inventory-history')->assertOk()->assertJsonPath('movements.0.batchNumbers',$batch->batchNumber);
+    }
+
     private function requestOrder(int $qty = 10): string
     {
         return $this->actingAs($this->manager)->postJson('/api/purchase-requests', ['category' => 'Supplies', 'notes' => 'For replenishment',
