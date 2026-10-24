@@ -52,7 +52,7 @@ return new class extends Migration {
     }
     public function down(): void
     {
-        Schema::table('receiving_record_lines', fn (Blueprint $t) => $t->dropColumn('internalBatch'));
+        Schema::table('receiving_record_lines', function (Blueprint $t) { $t->dropUnique(['internalBatch']); $t->dropColumn('internalBatch'); });
         Schema::dropIfExists('receiving_inspections');
         Schema::dropIfExists('receiving_carryover_resolutions');
         Schema::dropIfExists('receiving_carryovers');

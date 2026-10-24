@@ -126,3 +126,8 @@ Route::post('/api/purchase-orders/{id}/budget-requests', [\App\Services\Purchase
 Route::patch('/api/purchase-budget-requests/{id}', [\App\Services\PurchaseBudget::class, 'review'])->middleware(['auth','role:admin']);
 
 Route::post('/api/receiving-deliveries', [\App\Services\ReceivingDelivery::class, 'store'])->middleware(['auth','role:manager']);
+
+Route::post('/api/stock-receipts', [\App\Services\StockReceiptWorkflow::class, 'submit'])->middleware(['auth','role:manager']);
+Route::patch('/api/stock-receipts/{id}/review', [\App\Services\StockReceiptWorkflow::class, 'review'])->middleware(['auth','role:admin']);
+Route::post('/api/stock-receipts/{id}/post', [\App\Services\StockReceiptWorkflow::class, 'post'])->middleware(['auth','role:manager']);
+Route::get('/stock-receipts/{id}/report', [\App\Services\StockReceiptWorkflow::class, 'report'])->middleware(['auth','role:manager,admin']);

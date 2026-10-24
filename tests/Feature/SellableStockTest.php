@@ -108,7 +108,7 @@ class SellableStockTest extends TestCase
         $this->getJson('/api/inventory/availability')->assertJsonPath('products.0.sellableStock', 0)->assertJsonPath('products.0.expiredStock', 3);
     }
 
-    public function test_checkout_rechecks_after_selection_and_fifo_skips_ineligible_batches(): void
+    public function test_checkout_rechecks_after_selection_and_fefo_skips_ineligible_batches(): void
     {
         $this->batch(3, '2026-10-12');
         $this->batch(3, '2026-11-01', true);
@@ -123,8 +123,8 @@ class SellableStockTest extends TestCase
         $this->actingAs($this->manager);
         $this->event($newer, 'Release recall', 3)->assertCreated();
         $this->sale(4)->assertCreated();
-        $this->assertDatabaseHas('inventory_allocations', ['batchId' => $older, 'quantity' => 2, 'unitCost' => 9]);
-        $this->assertDatabaseHas('inventory_allocations', ['batchId' => $newer, 'quantity' => 2, 'unitCost' => 12]);
+        $this->assertDatabaseHas('inventory_allocations', ['batchId' => $older, 'quantity' => 1, 'unitCost' => 9]);
+        $this->assertDatabaseHas('inventory_allocations', ['batchId' => $newer, 'quantity' => 3, 'unitCost' => 12]);
         $this->getJson('/api/inventory/availability')->assertJsonPath('products.0.stockOnHand', 7)->assertJsonPath('products.0.sellableStock', 1);
         $this->sale(2, 'SECOND')->assertUnprocessable();
     }

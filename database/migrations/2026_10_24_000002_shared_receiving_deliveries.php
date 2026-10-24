@@ -27,7 +27,7 @@ return new class extends Migration {
             throw new \RuntimeException('Shared deliveries exist. Preserve their batch references before reverting this migration.');
         }
         Schema::table('receiving_record_lines', fn (Blueprint $t) => $t->unique('internalBatch'));
-        Schema::table('receiving_records', fn (Blueprint $t) => $t->dropColumn('deliveryBatch'));
+        Schema::table('receiving_records', function (Blueprint $t) { $t->dropIndex(['deliveryBatch']); $t->dropColumn('deliveryBatch'); });
         Schema::table('receiving_record_lines', fn (Blueprint $t) => $t->dropColumn('followupNote'));
         Schema::dropIfExists('receiving_deliveries');
     }

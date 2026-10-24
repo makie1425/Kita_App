@@ -43,19 +43,20 @@ class PurchasingController extends Controller
             $order->receivingBalance = max(0, PurchaseBudget::limit($order) - (float)$order->deliveredValue);
             $order->budgetRequests = DB::table('purchase_budget_requests')->where('poId',$order->id)->orderByDesc('id')->get();
             $order->lines = $lines->get($order->id, collect());
+            foreach ($order->lines as $line) { $line->obligation = \App\Services\StockReceiptWorkflow::obligation($line); }
             $order->request = $requests->firstWhere('id', $order->itemRequestId);
             $order->receipts = $receipts->where('poId', $order->id)->values();
             $order->fulfillmentStatus = $order->status === 'Cancelled' ? 'Cancelled' : ($order->receipts->isEmpty() ? 'Awaiting delivery' : ($order->lines->contains(fn ($l) => ReceivingCarryover::remaining($l) > 0) ? 'Partially Received' : 'Fully Received'));
             $order->remarks = $order->receipts->isEmpty() ? 'Awaiting delivery' : $order->receipts->pluck('remarks')->implode(' | ');
         }
 
-        return response()->json(['requests' => $requests, 'orders' => $orders, 'carryovers'=>DB::table('receiving_carryovers')->get(), 'resolutions'=>DB::table('receiving_carryover_resolutions')->get(), 'inspections'=>DB::table('receiving_inspections')->orderBy('id')->get()])->header('Cache-Control', 'no-store');
+        return response()->json(['stockReceipts'=>\App\Services\StockReceiptWorkflow::listing(), 'requests' => $requests, 'orders' => $orders, 'carryovers'=>DB::table('receiving_carryovers')->get(), 'resolutions'=>DB::table('receiving_carryover_resolutions')->get(), 'inspections'=>DB::table('receiving_inspections')->orderBy('id')->get()])->header('Cache-Control', 'no-store');
     }
 
     public function carryover(Request $request, string $id) { return ReceivingCarryover::allocate($request, $id); }
     public function releaseCarryover(Request $request, int $id) { return ReceivingCarryover::release($request, $id); }
 
-    public function receive(Request $request, string $id, ?string $deliveryBatch = null)
+    public function receive(Request $request, string $id, ?string $deliveryBatch = null, ?array $inspectionLots = null)
     {
         InventoryRules::authorize($request, ['manager', 'superadmin', 'super_admin']);
         $data = $request->validate([
@@ -85,7 +86,7 @@ class PurchasingController extends Controller
         $data['lines'] = collect($data['lines'])->sortBy('productId')->values()->all();
         $hash = hash('sha256', json_encode([$id, $data['deliveryReference'], $data['receivedDate'], $data['notes'] ?? '', $data['lines'], ...(!empty($data['paymentDueDate']) || !empty($data['supplierDocument']) ? [$data['paymentDueDate'] ?? null, $data['supplierDocument'] ?? null] : [])]));
 
-        return DB::transaction(function () use ($request, $id, $data, $hash, $deliveryBatch) {
+        return DB::transaction(function () use ($request, $id, $data, $hash, $deliveryBatch, $inspectionLots) {
             InventoryRules::lockActor($request);
             DB::table('inventory_sequences')->where('name', 'purchase_orders')->lockForUpdate()->first();
             $sourceIds=DB::table('receiving_carryovers')->where('targetPo',$id)->pluck('sourcePo')->push($id)->unique()->all();
@@ -116,6 +117,7 @@ class PurchasingController extends Controller
             }
             $orderLines = DB::table('purchase_order_lines')->where('poId', $id)->orderBy('productId')->lockForUpdate()->get();
             abort_if($orderLines->pluck('productId')->duplicates()->isNotEmpty(), 409, 'This legacy PO has duplicate item lines and requires reconciliation before receiving.');
+            abort_if($inspectionLots === null && $orderLines->contains(fn ($l) => $l->damageOutstanding !== null),422,'Use the Stock Receipt inspection form for this PO.');
             $receiptId = 'RCV-'.Str::ulid();
             DB::table('receiving_records')->insert(['id' => $receiptId, 'poId' => $id]);
             $batch = $deliveryBatch ?? 'BATCH-'.Str::ulid();
@@ -166,9 +168,10 @@ class PurchasingController extends Controller
                 $previousNote=$line['qty']>0 && $previousInspection && ($previousInspection->missing>0 || $previousInspection->damaged>0)
                     ? '; Follow-up for '.implode(' and ',array_filter([$previousInspection->missing>0?'missing items':null,$previousInspection->damaged>0?'damaged items':null])).' from previous delivery '.$previousInspection->receiptId.' under original PO '.$id : '';
                 $line['batchNumber']=$line['qty']>0?$batch:null; $line['lotNumber']=$line['batchNumber'];
+                $lots = $inspectionLots[$ordered->productId] ?? [['quantity'=>$line['qty'],'batchNumber'=>$line['batchNumber'],'expiryDate'=>$line['expiryDate'] ?? null,'manufacturedDate'=>$line['manufacturedDate'] ?? null,'supplierLot'=>$line['lotNumber']]];
                 if ($line['qty']>0) {
                 FifoInventory::opening($product->id, (int) $product->stock);
-                FifoInventory::receive($product->id, $line['qty'], $cost, $data['receivedDate'], $receiptId, $order->supplierId, 'purchase_receiving', $line['batchNumber'] ?? null, $line['expiryDate'] ?? null, $line['manufacturedDate'] ?? null, $line['lotNumber'] ?? null);
+                foreach ($lots as $lot) FifoInventory::receive($product->id, $lot['quantity'], $cost, $data['receivedDate'], $receiptId, $order->supplierId, 'purchase_receiving', $lot['batchNumber'], $lot['expiryDate'] ?? null, $lot['manufacturedDate'] ?? null, $lot['supplierLot'] ?? null, $lot['physicalLotId'] ?? null);
                 $sellingPrice = (float) ($line['sellingPrice'] ?? $product->price);
                 DB::table('products')->where('id', $product->id)->update(['stock' => $after, 'unitPrice' => $cost, 'price' => $sellingPrice]);
                 if ((float) $product->price !== $sellingPrice || (float) $product->unitPrice !== $cost) {
@@ -180,34 +183,35 @@ class PurchasingController extends Controller
                 }
                 DB::table('purchase_order_lines')->where('id', $ordered->id)->update(['deliveredQty' => $received]);
                 $ordered->deliveredQty = $received;
-                DB::table('receiving_record_lines')->insert([
+                foreach ($lots ?: [['quantity'=>0,'batchNumber'=>null]] as $lot) DB::table('receiving_record_lines')->insert([
                     'receivingId' => $receiptId, 'productId' => $product->id, 'poQty' => $ordered->orderedQty,
-                    'deliveredQty' => $line['qty'], 'name' => $product->name, 'category' => $product->category,
+                    'deliveredQty' => $lot['quantity'], 'name' => $product->name, 'category' => $product->category,
                     'unit' => $ordered->unit ?? ($product->stockUnit ?: $product->unit), 'conditionText' => ($substitute ? ucfirst($line['substitutionReason']).' replacement for product #'.$ordered->productId.' ('.$ordered->name.')' : ($damage ? 'Damaged units returned, not received: '.$damage : 'Accepted')), 'followupNote' => ltrim($previousNote, '; ') ?: null,
-                    'internalBatch' => $line['qty']>0 ? $batch : null, 'unitCost' => $cost, 'batchNumber' => $line['batchNumber'] ?? null, 'expiryDate' => $line['expiryDate'] ?? null,
-                    'manufacturedDate' => $line['manufacturedDate'] ?? null,
-                    'lotNumber' => $line['lotNumber'] ?? null,
+                    'originalProductId'=>$ordered->productId, 'physicalLotId'=>$lot['physicalLotId'] ?? null, 'internalBatch' => $lot['batchNumber'], 'unitCost' => $cost, 'batchNumber' => $lot['batchNumber'] ?? null, 'expiryDate' => $lot['expiryDate'] ?? null,
+                    'manufacturedDate' => $lot['manufacturedDate'] ?? null,
+                    'lotNumber' => $lot['supplierLot'] ?? null,
                 ]);
             }
             $matches = $orderLines->every(fn ($line) => (int) $line->deliveredQty + (int)$line->resolvedQty === (int) $line->orderedQty);
             $short = $orderLines->contains(fn ($line) => $line->deliveredQty + $line->resolvedQty < $line->orderedQty);
             // Snapshot every PO line, including items absent from this delivery.
             // Later deliveries must not rewrite this inspection's missing quantities.
-            $inspection = $orderLines->map(function ($line) use ($data) {
+            $inspection = $orderLines->map(function ($line) use ($data, $inspectionLots) {
                 $input=collect($data['lines'])->firstWhere('productId',$line->productId);
                 $damaged=(int)($input['damagedQty'] ?? 0);
                 return [
                     'productId'=>$line->productId, 'name'=>$line->name, 'unit'=>$line->unit,
                     'ordered'=>(int)$line->orderedQty, 'received'=>(int)$line->deliveredQty,
                     'outstanding'=>ReceivingCarryover::remaining($line),
-                    'missing'=>max(0,ReceivingCarryover::remaining($line)-$damaged),
+                    'missing'=>max(0,ReceivingCarryover::remaining($line)-($inspectionLots !== null ? (int)$line->damageOutstanding : $damaged)),
+                    'damageDue'=>$inspectionLots !== null ? (int)$line->damageOutstanding : $damaged,
                     'damaged'=>$damaged, 'damageReason'=>$input['damageReason'] ?? null,
                     'excess'=>max(0,(int)$line->deliveredQty-(int)$line->orderedQty),
                 ];
             })->values()->all();
             foreach ($orderLines as $item) {
                 $input=collect($data['lines'])->firstWhere('productId',$item->productId);
-                DB::table('receiving_inspections')->insert(['receiptId'=>$receiptId,'poId'=>$id,'orderLine'=>$item->id,'productId'=>$item->productId,'accepted'=>$input['qty'] ?? 0,'damaged'=>$input['damagedQty'] ?? 0,'missing'=>max(0,ReceivingCarryover::remaining($item)-($input['damagedQty'] ?? 0)),'newMissing'=>max(0,ReceivingCarryover::remaining($item)-($input['damagedQty'] ?? 0)-(int)DB::table('receiving_carryovers')->where('targetLine',$item->id)->selectRaw('COALESCE(SUM(quantity-receivedQty-releasedQty),0) as qty')->value('qty')),'damageReason'=>$input['damageReason'] ?? null,'created_at'=>now()]);
+                DB::table('receiving_inspections')->insert(['receiptId'=>$receiptId,'poId'=>$id,'orderLine'=>$item->id,'productId'=>$item->productId,'accepted'=>$input['qty'] ?? 0,'damaged'=>$input['damagedQty'] ?? 0,'missing'=>max(0,ReceivingCarryover::remaining($item)-($inspectionLots !== null ? (int)$item->damageOutstanding : ($input['damagedQty'] ?? 0))),'newMissing'=>max(0,ReceivingCarryover::remaining($item)-($inspectionLots !== null ? (int)$item->damageOutstanding : ($input['damagedQty'] ?? 0))-(int)DB::table('receiving_carryovers')->where('targetLine',$item->id)->selectRaw('COALESCE(SUM(quantity-receivedQty-releasedQty),0) as qty')->value('qty')),'damageReason'=>$input['damageReason'] ?? null,'created_at'=>now()]);
             }
             $remarks = ReceivingRemarks::forReceipt((object) ['inspection'=>$inspection, 'outcome'=>$data['notes'] ?? '']);
             $status = $short ? 'Partially Received' : 'Fully Received';
