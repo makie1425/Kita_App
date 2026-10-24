@@ -1,0 +1,43 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert/strict');
+const ctx=vm.createContext({React:{createElement:(type,props,...children)=>({type,props,children})},DCLogic:class{setState(p,done){Object.assign(this.state,typeof p==='function'?p(this.state):p);done?.();}},window:{}});
+vm.runInContext(fs.readFileSync('public/app.js','utf8')+';globalThis.App=Component;',ctx);
+const nodes=n=>!n||typeof n!=='object'?[]:Array.isArray(n)?n.flatMap(nodes):[n,...nodes(n.children)];
+const text=n=>n==null?'':typeof n==='string'?n:Array.isArray(n)?n.map(text).join(' '):text(n.children);
+function setup(){
+  const app=new ctx.App();
+  Object.assign(app.state,{screen:'mgrRegistration',data:{PRODUCTS:[],CATEGORIES:[{name:'Drinks',status:'Active'}],SUPPLIERS:[],BRANDS:[],SUBCATEGORIES:[]},regProductName:'Water',regCategory:'Drinks',regScannedBarcode:'WATER',regStockUnit:'Bottle',regReorderLevel:5});
+  app.reloadCatalog=async()=>{};
+  return app;
+}
+(async()=>{
+  const app=setup();let tree=app.buildMgrRegistration();
+  const controls=nodes(tree).filter(n=>['input','select'].includes(n.type));
+  assert(controls.some(n=>n.props.id==='registration-regStockUnit'));
+  assert(!controls.some(n=>['registration-regPurchaseUnit','registration-regConversionFactor'].includes(n.props.id)));
+  assert(text(tree).includes('Minimum Stock'));
+  assert(text(tree).includes('mL (Milliliter)'));
+  const category=nodes(tree).find(n=>n.props?.className==='registration-category');
+  nodes(category).find(n=>n.type==='button').props.onClick();
+  assert(app.state.categoryModalOpen);
+  assert(nodes(app.buildMgrRegistration()).some(n=>n.props?.role==='dialog'));
+  app.closeCategoryModal();
+  const calls=[];
+  app.authPost=async(url,payload)=>{calls.push(payload);return {product:{...payload,id:1}};};
+  app.state.regSize='500';app.saveRegistration();
+  assert.equal(calls.length,0);assert.equal(app.state.registrationNotice.tone,'error');
+  assert.equal(app.state.toasts.length,0,'Registration feedback stays in the form');
+  app.state.regSizeUnit='mL';app.state.regConversionFactor='invalid';app.state.regPurchaseUnit='Box';
+  app.saveRegistration();await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(calls.length,1);assert.equal(calls[0].purchaseUnit,'Bottle');assert.equal(calls[0].conversionFactor,1);
+  assert.equal(calls[0].minStock,5);assert.equal(calls[0].size,'500');assert.equal(calls[0].sizeUnit,'mL');
+  tree=app.buildMgrRegistration();
+  assert(text(nodes(tree).find(n=>n.props?.id==='registration-feedback')).includes('Registration complete'));
+  assert(nodes(tree).findIndex(n=>n.props?.id==='registration-feedback')<nodes(tree).findIndex(n=>n.type==='fieldset'));
+  const edit=setup();
+  const product={id:2,name:'Juice',category:'Drinks',barcode:'JUICE',stock:12,stockUnit:'Bottle',purchaseUnit:'Box',conversionFactor:12,status:'Active',price:30,unitPrice:20};
+  edit.state.data.PRODUCTS=[product];edit.editProductMaster(product);
+  let saved;edit.authPost=async(url,payload)=>{saved=payload;return {product:{...product,...payload}};};
+  edit.saveRegistration();await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(saved.purchaseUnit,'Box');assert.equal(saved.conversionFactor,12,'Editing preserves existing conversion data');
+  console.log('Registration category access, simplified fields, size validation, top feedback, new-product defaults and existing conversion preservation passed.');
+})().catch(error=>{console.error(error);process.exitCode=1;});

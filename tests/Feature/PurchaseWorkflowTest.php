@@ -400,6 +400,47 @@ class PurchaseWorkflowTest extends TestCase
         $this->assertDatabaseHas('item_request_lines', ['requestId' => $id, 'qty' => 2, 'unit' => 'Piece']);
     }
 
+    public function test_case_orders_convert_bottles_and_preserve_purchase_unit(): void
+    {
+        DB::table('products')->where('id', $this->product)->update(['stockUnit' => 'Bottle', 'unit' => 'Bottle']);
+        $body = ['category' => 'Supplies', 'lines' => [['productId' => $this->product, 'supplierId' => $this->supplier, 'qty' => 3, 'orderUnit' => 'Case']]];
+        $this->postJson('/api/purchase-requests', $body)->assertUnprocessable();
+        $body['lines'][0]['stockUnitsPerOrder'] = 24;
+        $id = $this->postJson('/api/purchase-requests', $body)->assertCreated()->json('id');
+        $this->assertDatabaseHas('item_request_lines', ['requestId' => $id, 'qty' => 72, 'unit' => 'Bottle', 'orderUnit' => 'Case', 'piecesPerBox' => 24]);
+        $this->approve($id);
+        $this->assertDatabaseHas('purchase_order_lines', ['poId' => $id, 'orderedQty' => 72, 'unit' => 'Bottle']);
+        $this->assertDatabaseHas('products', ['id' => $this->product, 'stock' => 0]);
+    }
+
+    public function test_package_options_include_configured_unit_and_reject_invalid_factors(): void
+    {
+        DB::table('products')->where('id', $this->product)->update(['purchaseUnit' => 'Tray']);
+        $body = ['category' => 'Supplies', 'lines' => [['productId' => $this->product, 'supplierId' => $this->supplier, 'qty' => 2, 'orderUnit' => 'Tray', 'stockUnitsPerOrder' => 6]]];
+        $this->postJson('/api/purchase-requests', $body)->assertCreated();
+        foreach ([0, -1, 1.5, 1000000] as $factor) {
+            $body['lines'][0]['stockUnitsPerOrder'] = $factor;
+            $this->postJson('/api/purchase-requests', $body)->assertUnprocessable();
+        }
+        $body['lines'][0]['stockUnitsPerOrder'] = 6;
+        $body['lines'][0]['orderUnit'] = 'Unknown unit';
+        $this->postJson('/api/purchase-requests', $body)->assertUnprocessable();
+        $body['lines'][0]['orderUnit'] = 'Case';
+        $body['lines'][0]['piecesPerBox'] = 12;
+        $this->postJson('/api/purchase-requests', $body)->assertUnprocessable();
+    }
+
+    public function test_po_sequence_continues_into_the_next_month_without_renumbering(): void
+    {
+        $this->travelTo(now()->setDate(2026, 10, 31)->startOfDay());
+        $first = $this->requestOrder();
+        $this->assertSame('PO-2026-10-000001', $first);
+        $this->travelTo(now()->setDate(2026, 11, 1));
+        $this->assertSame('PO-2026-11-000002', $this->requestOrder());
+        $this->assertDatabaseHas('item_requests', ['id' => $first]);
+        $this->travelBack();
+    }
+
     private function delivery(int $qty = 4, int $version = 0): array
     {
         return ['idempotencyKey' => (string) Str::uuid(), 'version' => $version,
@@ -462,7 +503,7 @@ class PurchaseWorkflowTest extends TestCase
     public function test_complete_workflow_preserves_id_and_posts_only_actual_stock_with_printable_history(): void
     {
         $id = $this->requestOrder();
-        $this->assertMatchesRegularExpression('/^PO-'.now()->format('Y').'-[0-9]{6,}$/', $id);
+        $this->assertMatchesRegularExpression('/^PO-'.now()->format('Y-m').'-[0-9]{6,}$/', $id);
         $this->assertDatabaseHas('products', ['id' => $this->product, 'stock' => 0]);
         $this->actingAs($this->admin)->getJson('/api/purchasing')->assertOk()->assertJsonPath('requests.0.id', $id);
         $this->approve($id);
@@ -629,8 +670,8 @@ class PurchaseWorkflowTest extends TestCase
         $changed = $body;$changed['lines'][0]['qty'] = 3;
         $this->postJson('/api/purchase-requests', $changed)->assertConflict();
         $second = $this->requestOrder();
-        $this->assertSame('PO-'.now()->format('Y').'-000001', $first);
-        $this->assertSame('PO-'.now()->format('Y').'-000002', $second);
+        $this->assertSame('PO-'.now()->format('Y-m').'-000001', $first);
+        $this->assertSame('PO-'.now()->format('Y-m').'-000002', $second);
         $this->assertDatabaseHas('inventory_sequences', ['name' => 'purchase_orders', 'lastValue' => 2]);
         $this->getJson('/api/purchasing')->assertOk()->assertJsonCount(2, 'requests');
         $this->postJson('/api/purchase-requests', $body + ['id' => 'PO-MANUAL'])->assertUnprocessable()->assertJsonValidationErrors('id');
@@ -641,9 +682,9 @@ class PurchaseWorkflowTest extends TestCase
         $this->travelTo(now()->setDate(2026, 12, 31)->startOfDay());
         DB::table('item_requests')->insert(['id' => '42', 'status' => 'Pending Approval']);
         DB::table('inventory_sequences')->where('name', 'purchase_orders')->update(['lastValue' => 42]);
-        $this->assertSame('PO-2026-000043', $this->requestOrder());
+        $this->assertSame('PO-2026-12-000043', $this->requestOrder());
         $this->travelTo(now()->setDate(2027, 1, 1));
-        $this->assertSame('PO-2027-000044', $this->requestOrder());
+        $this->assertSame('PO-2027-01-000044', $this->requestOrder());
         $this->assertDatabaseHas('item_requests', ['id' => '42']);
         $this->travelBack();
     }
@@ -654,7 +695,7 @@ class PurchaseWorkflowTest extends TestCase
         DB::table('inventory_sequences')->where('name', 'purchase_orders')->update(['lastValue' => 0]);
         $second = $this->requestOrder();
         $this->assertNotSame($first, $second);
-        $this->assertSame('PO-'.now()->format('Y').'-000002', $second);
+        $this->assertSame('PO-'.now()->format('Y-m').'-000002', $second);
     }
 
     public function test_five_missing_are_reported_while_received_items_post_and_history_is_preserved(): void
