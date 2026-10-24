@@ -80,7 +80,7 @@ class ReceivingCarryover
         $number = (int) DB::table('inventory_sequences')->where('name', 'purchase_orders')->value('lastValue');
         do {
             abort_if($number >= PHP_INT_MAX - 1, 409, 'Purchase order numbering limit reached.');
-            $id = 'PO-'.now()->format('Y').'-'.str_pad((string) ++$number, 6, '0', STR_PAD_LEFT);
+            $id = 'PO-'.now()->format('Y-m').'-'.str_pad((string) ++$number, 6, '0', STR_PAD_LEFT);
         } while (DB::table('item_requests')->where('id', $id)->exists() || DB::table('purchase_orders')->where('id', $id)->exists());
         DB::table('inventory_sequences')->where('name', 'purchase_orders')->update(['lastValue'=>$number]);
         DB::table('item_requests')->insert([

@@ -27,6 +27,7 @@ class PurchaseWorkflow
             'lines.*.unitCost' => ['sometimes', ...InventoryRules::moneyRules()],
             'lines.*.orderUnit' => ['sometimes', 'string', 'max:40'],
             'lines.*.piecesPerBox' => ['nullable', 'integer', 'between:1,1000000'],
+            'lines.*.stockUnitsPerOrder' => ['nullable', 'integer', 'between:1,1000000'],
         ]);
         if (!empty($data['expectedDeliveryDate'])) SupplierAccounts::requireReady();
         $hash = hash('sha256', json_encode($data));
@@ -45,7 +46,7 @@ class PurchaseWorkflow
             }
             $number = (int) $sequence->lastValue;
             // Keep the existing sequence across years; never renumber historical records.
-            $prefix = 'PO-'.now()->format('Y').'-';
+            $prefix = 'PO-'.now()->format('Y-m').'-';
             do {
                 abort_if($number >= PHP_INT_MAX - 1, 409, 'Purchase order numbering limit reached.');
                 $id = $prefix.str_pad((string) ++$number, 6, '0', STR_PAD_LEFT);
@@ -66,17 +67,23 @@ class PurchaseWorkflow
                 $orderUnit = $line['orderUnit'] ?? $stockUnit;
                 $pieceStock = in_array(strtolower($stockUnit ?? ''), ['piece', 'pieces'], true);
                 $factor = 1;
-                if ($orderUnit === 'Box' && $pieceStock) {
-                    if (empty($line['piecesPerBox'])) {
-                        throw ValidationException::withMessages(['lines' => 'Enter the number of pieces per box.']);
+                $packaged = $orderUnit !== $stockUnit && !($pieceStock && $orderUnit === 'Piece');
+                if ($packaged) {
+                    $allowed = array_filter(['Box', 'Case', 'Pack', $product->purchaseUnit]);
+                    if (!in_array($orderUnit, $allowed, true)) {
+                        throw ValidationException::withMessages(['lines' => 'Choose the Stock Unit or an available purchase package.']);
                     }
-                    $factor = $line['piecesPerBox'];
-                } elseif ($orderUnit !== $stockUnit && !($pieceStock && $orderUnit === 'Piece')) {
-                    throw ValidationException::withMessages(['lines' => 'Choose the inventory unit, or Box for products stocked in pieces.']);
+                    if (isset($line['stockUnitsPerOrder'], $line['piecesPerBox']) && $line['stockUnitsPerOrder'] !== $line['piecesPerBox']) {
+                        throw ValidationException::withMessages(['lines' => 'Use one consistent package quantity.']);
+                    }
+                    $factor = $line['stockUnitsPerOrder'] ?? $line['piecesPerBox'] ?? 0;
+                    if ($factor < 1) {
+                        throw ValidationException::withMessages(['lines' => 'Enter the number of stock units per purchase package.']);
+                    }
                 }
                 $qty = ($lines[$product->id]['qty'] ?? 0) + $line['qty'] * $factor;
                 if (isset($lines[$product->id]) && ($lines[$product->id]['orderUnit'] !== $orderUnit || ($lines[$product->id]['piecesPerBox'] ?? 1) !== $factor)) {
-                    throw ValidationException::withMessages(['lines' => 'Use the same unit and box size for each product.']);
+                    throw ValidationException::withMessages(['lines' => 'Use the same purchase unit and package quantity for each product.']);
                 }
                 if ($qty > 1000000) {
                     throw ValidationException::withMessages(['lines' => 'Total quantity per item must not exceed 1,000,000.']);
@@ -93,7 +100,8 @@ class PurchaseWorkflow
                 $lines[$product->id] = ['requestId' => $id, 'productId' => $product->id, 'name' => InventoryRules::productLabel($product),
                     'category' => $product->category, 'unit' => $unit, 'qty' => $qty, 'supplierId' => $supplierId,
                     'unitCost' => $unitCost, 'orderUnit' => $orderUnit,
-                    'piecesPerBox' => $orderUnit === 'Box' && $pieceStock ? $factor : null];
+                    // Retain the existing column for compatibility with historical box orders.
+                    'piecesPerBox' => $packaged ? $factor : null];
             }
             DB::table('item_requests')->insert([
                 'id' => $id, 'category' => $data['category'], 'status' => 'Pending Approval', 'dateRequested' => now()->toDateString(),
