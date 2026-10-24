@@ -1792,8 +1792,21 @@ class Component extends DCLogic {
       ]),
       this.state.lastReceivedPo?h('div',{className:'sa-panel',role:'status'},'Delivery saved'+(this.state.lastDeliveryBatch?' · '+this.state.lastDeliveryBatch:'')+'. View or print the PO reports from Reports.'):null,
       h('div',{className:'receiving-tabs',role:'group','aria-label':'Receiving views'},[['active','All POs'],['missing','Outstanding items'],['discrepancies','Discrepancies']].map(([value,label])=>h('button',{type:'button',key:value,'data-action-tone':'blue','aria-pressed':tab===value,onClick:()=>{this.setState({receivingTab:value});this.setTableView('purchase-receiving',{page:1});}},label))),
-      this.recordTable('purchase-receiving',['PO Number','Supplier','Items / Received','Receiving balance','Status','Actions'],selected.map(o=>{
-        return tr([td(o.id,{fontWeight:700}),td(o.supplierName||this.purchaseSupplier(o.supplierId)),td(h('details',null,[h('summary',null,o.lines.length+' items'),...o.lines.map(l=>h('p',{key:l.productId},`${l.name}: ${l.deliveredQty||0} / ${l.orderedQty} ${this.purchaseUnit(l)}`))])),td(peso(o.receivingBalance??o.outstandingValue)),td(h('div',null,[badge(o.status),h('small',{style:{display:'block'}},o.remarks||'')])),td([canReceive(o)?btn('Receive delivery',()=>this.openPurchaseReceiving(o),'primary'):null])],o.id);
+      this.recordTable('purchase-receiving',['Receipt No.','Receiving Date','PO Number','Supplier','Product','Ordered Qty','Received Qty','Outstanding Qty','Unit Cost','Total Cost','Status','Actions'],selected.flatMap(o=>{
+        const rows=(o.receipts||[]).flatMap(r=>(r.lines||[]).map(l=>{
+          const originalId=String(l.conditionText||'').match(/replacement for product #(\d+)/)?.[1]||l.productId;
+          return {r,l,ordered:o.lines.find(p=>String(p.productId)===String(originalId))};
+        }));
+        o.lines.filter(l=>!rows.some(row=>row.ordered===l)).forEach(l=>rows.push({r:null,l,ordered:l}));
+        return rows.map(({r,l,ordered},index)=>{
+          const outstanding=ordered?this.receivingOutstanding(ordered):0;
+          const received=Number(r?l.deliveredQty||0:ordered.deliveredQty||0);
+          const cost=r?l.unitCost:null;
+          const status=outstanding===0?'Completed':Number(ordered?.deliveredQty||0)+Number(ordered?.resolvedQty||0)>0?'Partial':'Awaiting';
+          const report=r?'/receipts/'+encodeURIComponent(r.id)+'/report':'/purchase-orders/'+encodeURIComponent(o.id)+'/report';
+          const reportAction=label=>h('a',{className:'kita-button',href:report,target:'_blank',rel:'noopener'},label);
+          return tr([td(r?.id||'Not received',{fontWeight:700}),td(r?.date||'—'),td(o.id),td(o.supplierName||this.purchaseSupplier(o.supplierId)),td(l.name||ordered?.name||l.productId),td(ordered?.orderedQty??l.poQty??'—'),td(received),td(outstanding),td(cost==null?'—':peso(cost)),td(cost==null?'—':peso(received*Number(cost))),td(badge(status)),td([reportAction('View'),canReceive(o)&&ordered&&this.carryoverAvailable(ordered)>0?btn('Receive',()=>this.openPurchaseReceiving(o),'primary'):null,reportAction('Print')])],o.id+'-'+(r?.id||'awaiting')+'-'+index);
+        });
       }),{externalSearch:true}),
       this.buildDeliveryHistory(selected),this.buildCarryoverPanel(),tab==='discrepancies'?this.buildSupplierContacts(selected):null,modal,
     ]);
