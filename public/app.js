@@ -1737,6 +1737,26 @@ class Component extends DCLogic {
     if(!groups.size)return null;
     return h('details',{className:'delivery-history'},[h('summary',null,'Delivery batch history'),this.recordTable('delivery-batches',['Batch / Lot','Received','Purchase orders','Products received'],[...groups.values()].sort((a,b)=>String(b.date).localeCompare(String(a.date))).map(g=>tr([td(g.batch),td(g.date),td([...new Set(g.entries.map(e=>e.order.id))].join(', ')),td(h('details',null,[h('summary',null,g.entries.reduce((n,e)=>n+(e.receipt.lines||[]).length,0)+' items'),...g.entries.flatMap(e=>(e.receipt.lines||[]).map((l,i)=>h('p',{key:e.receipt.id+'-'+i},[h('strong',null,l.name+' · '+l.deliveredQty+' '+(l.unit||'units')),h('small',{style:{display:'block'}},e.order.id),l.followupNote?h('small',{style:{display:'block'}},l.followupNote):null])))]))],g.batch)))]);
   }
+  buildReceivingExample(){
+    const h=React.createElement;
+    return h('details',{className:'receiving-example'},[
+      h('summary',null,'Example: 35 received = 5 previously missing + 30 newly ordered'),
+      h('div',{className:'receiving-example-content'},[
+        h('p',null,'The same supplier delivers 35 units of one product: 5 missing from your original PO and 30 ordered on a new approved PO.'),
+        h('div',{className:'receiving-example-split'},[
+          h('div',null,[h('span',null,'Original PO'),h('strong',null,'5 units'),h('small',null,'Fulfill the previous shortage')]),
+          h('div',null,[h('span',null,'New PO'),h('strong',null,'30 units'),h('small',null,'Receive the new order')])
+        ]),
+        h('ol',null,[
+          h('li',null,'Open Receive delivery on the original PO. Select the product and enter 5 as the accepted quantity.'),
+          h('li',null,'In the same popup, switch Purchase order to the new PO. Select the same product and enter 30. Your first entry stays saved.'),
+          h('li',null,'Review both POs under Included in this delivery, then click Confirm delivery once.')
+        ]),
+        h('p',{className:'receiving-example-result'},'Result: 35 units added to stock, one shared Batch / Lot, and each quantity recorded against its own PO. The original PO keeps a follow-up note for the earlier shortage.'),
+        h('p',{className:'receiving-example-note'},'Do not enter all 35 under the new PO. This is an example only; no stock is added by opening this guide.')
+      ])
+    ]);
+  }
   buildPurchaseReceiving(){
     const h=React.createElement,state=this.purchasingState();if(state)return state;
     const order=this.state.purchaseData.orders.find(o=>o.id===this.state.purchaseReceivingId);
@@ -1748,6 +1768,7 @@ class Component extends DCLogic {
       h('header',{className:'receive-compact-header'},[h('div',null,[h('small',null,'STOCK RECEIVING'),h('h2',null,'Receive delivery'),h('p',null,order.supplierName||this.purchaseSupplier(order.supplierId))]),h('button',{type:'button','aria-label':'Close receiving',disabled:!!this.state.receivingSaving,onClick:close},'×')]),
       h('div',{className:'receive-compact-body'},[
         h('p',{className:'receive-compact-hint'},'Switch POs to add items to the same delivery. One Batch / Lot is generated on confirmation.'),
+        this.buildReceivingExample(),
         h('label',null,['Purchase order',h('select',{'aria-label':'Delivery purchase order',value:order.id,disabled:!!this.state.receivingSaving,onChange:e=>this.switchReceivingPO(e.target.value)},deliveryPOs.map(o=>h('option',{key:o.id,value:o.id},o.id+' - '+o.status)))]),
         (order.receipts||[]).length?h('p',{className:'receive-followup-note'},'Previous delivery recorded. Outstanding items stay under this PO.'):null,
         h('label',null,['Product',h('select',{'aria-label':'Receiving product',value:line.productId,onChange:e=>this.setState({receiveItemId:e.target.value})},order.lines.map(l=>h('option',{key:l.productId,value:l.productId},l.name+(Number(this.state.receiveQty?.[l.productId])>0?' · '+this.state.receiveQty[l.productId]+' entered':''))))]),
@@ -1783,6 +1804,7 @@ class Component extends DCLogic {
     return h('div',{className:'receiving-dashboard'},[
       h('div',{className:'receiving-heading'},[sectionTitle('Stock Receiving','Receive deliveries and track outstanding items by PO.'),h('label',{className:'receiving-search'},[h('span',{className:'sr-only'},'Search receiving records'),h('input',{type:'search',placeholder:'Search PO, supplier, receipt...',value:this.state.tableViews['purchase-receiving']?.query||'',onChange:e=>this.setTableView('purchase-receiving',{query:e.target.value,page:1})})])]),
       h('div',{className:'receiving-top-filters'},[this.purchaseFilters(true)]),
+      this.buildReceivingExample(),
       h('div',{className:'receiving-metrics'},[
         kpi('Pending Deliveries',orders.filter(canReceive).length+' POs'),
         kpi('Received Today',peso(receivedValue),'Recorded receiving value'),
