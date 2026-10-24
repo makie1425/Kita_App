@@ -146,9 +146,10 @@ class ReceivingCarryover
             $po=DB::table('purchase_orders')->where('id',$a->sourcePo)->lockForUpdate()->first();
             $value=round($po->deliveredValue+($take-$forwarded)*$cost,2);
             abort_if($value>9999999999.99,422,'Received value exceeds the supported amount.');
+            PurchaseBudget::check($po,$value);
             $complete=DB::table('purchase_order_lines')->where('poId',$po->id)->get()->every(fn($l)=>self::remaining($l)===0);
-            $status=$complete ? 'Fully Received' : 'Partially Received';
-            DB::table('purchase_orders')->where('id',$po->id)->update(['deliveredValue'=>$value,'outstandingValue'=>max(0,$po->orderedValue-$value),'status'=>$status,'receivingVersion'=>$po->receivingVersion+1]);
+            $status=$complete?'Fully Received':'Partially Received';
+            DB::table('purchase_orders')->where('id',$po->id)->update(['deliveredValue'=>$value,'outstandingValue'=>max(0,PurchaseBudget::limit($po)-$value),'status'=>$status,'receivingVersion'=>$po->receivingVersion+1]);
             DB::table('item_requests')->where('id',$po->itemRequestId)->update(['status'=>$status]);
             $used+=$take;
         }

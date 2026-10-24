@@ -1079,7 +1079,7 @@ class Component extends DCLogic {
   };
   setRepDateMode=e=>this.setState({repDateMode:e.target.value});
   setRepField=field=>e=>this.setState({[field]:e.target.value});
-  openItemPicker=()=>this.setState({itemPickerOpen:true,itemPickerSearch:"",itemPickerFilterCategory:"",itemPickerSubcategoryId:"",itemPickerFilterSupplier:"",itemPickerChecked:{},itemPickerLowStockOnly:false});
+  openItemPicker=()=>this.setState({itemPickerOpen:true,itemPickerSearch:"",itemPickerFilterCategory:"",itemPickerSubcategoryId:"",itemPickerFilterSupplier:this.state.newReqCart.length?this.state.newReqSupplier||"":"",itemPickerChecked:{},itemPickerLowStockOnly:false});
   closeItemPicker=()=>this.setState({itemPickerOpen:false});
   setItemPickerSearch=e=>this.setState({itemPickerSearch:e.target.value});
   setItemPickerFilterCategory=e=>this.setState({itemPickerFilterCategory:e.target.value,itemPickerSubcategoryId:""});
@@ -1090,10 +1090,16 @@ class Component extends DCLogic {
     const {data,itemPickerChecked,itemPickerFilterSupplier}=this.state;
     const ids=Object.keys(itemPickerChecked).filter(id=>itemPickerChecked[id]);
     if(ids.length===0){ this.toast("Select at least one item.","error"); return; }
+    const selected=data.PRODUCTS.filter(p=>ids.includes(String(p.id))&&p.status==='Active'&&!p.archivedAt);
+    const supplierIds=[...new Set(selected.map(p=>String(p.supplierId||'')).filter(Boolean))];
+    const supplierId=String(itemPickerFilterSupplier||this.state.newReqCart[0]?.supplierId||(supplierIds.length===1?supplierIds[0]:''));
+    if(!supplierId||!data.SUPPLIERS.some(sp=>String(sp.id)===supplierId&&sp.status==='Active'&&!sp.archivedAt)){this.toast('Choose a supplier in Add Items. Each request uses one supplier.','error');return;}
+    if(!itemPickerFilterSupplier&&selected.some(p=>String(p.supplierId||'')!==supplierId)){this.toast('Choose one supplier in Add Items before combining these products.','error');return;}
+    if(this.state.newReqCart.length&&String(this.state.newReqSupplier||this.state.newReqCart[0].supplierId)!==supplierId){this.toast('This request already has a different supplier. Remove its items before choosing another supplier.','error');return;}
     const existingIds=new Set(this.state.newReqCart.map(l=>l.productId));
-    const added=ids.filter(id=>data.PRODUCTS.some(p=>String(p.id)===String(id)&&p.status==="Active")).map(id=>{ const p=data.PRODUCTS.find(pp=>String(pp.id)===String(id));
-      return {category:p.category,supplierId:itemPickerFilterSupplier||p.supplierId,productId:p.id,name:this.productLabel(p),qty:1}; }).filter(l=>!existingIds.has(l.productId));
-    this.setState(s=>({newReqCart:[...s.newReqCart.map(l=>ids.includes(String(l.productId))?{...l,qty:Number(l.qty)+1}:l),...added],itemPickerOpen:false}));
+    const added=selected.filter(p=>!existingIds.has(p.id)).map(p=>({category:p.category,supplierId,productId:p.id,name:this.productLabel(p),qty:1}));
+    this.purchaseSubmissionKey=null;
+    this.setState(s=>({newReqSupplier:supplierId,newReqCart:[...s.newReqCart.map(l=>ids.includes(String(l.productId))?{...l,qty:Number(l.qty)+1}:l),...added],itemPickerOpen:false}));
     this.toast(`${added.length} item(s) added to the request.`);
   };
   setReqCartQty=i=>e=>{ const val=e.target.value; this.setState(s=>({newReqCart:s.newReqCart.map((l,idx)=>idx===i?{...l,qty:val}:l)})); };
@@ -1546,13 +1552,13 @@ class Component extends DCLogic {
       ]);
     }
     if(!s.data)return h('p',null,loadingStatus('Loading inventory and suppliers...'));
-    return h('div',null,[sectionTitle('Create Purchase Request','Choose one supplier per PO. Quantities are in inventory units; stock changes only after receiving.'),
-      h('div',{className:'purchase-filters'},[h('label',null,['Supplier',h('select',{value:s.newReqSupplier||'',onChange:e=>this.setState({newReqSupplier:e.target.value})},[h('option',{value:''},'Select supplier'),...s.data.SUPPLIERS.filter(sp=>sp.status==='Active'&&!sp.archivedAt).map(sp=>h('option',{key:sp.id,value:sp.id},sp.name))])]),btn('+ Add Items',this.openItemPicker,'primary')]),
-
+    return h('div',{className:'purchase-create-page'},[
+      h('header',{className:'purchase-create-header'},[sectionTitle('Create Purchase Request','Add items, review quantities, and submit for approval.'),btn('+ Add Items',this.openItemPicker,'primary')]),
+      h('div',{className:'purchase-create-summary'},[h('div',null,[h('small',null,'SUPPLIER'),h('strong',null,s.newReqCart.length&&s.newReqSupplier?this.purchaseSupplier(s.newReqSupplier):'Choose a supplier when adding items')]),h('div',null,[h('small',null,'REQUEST ITEMS'),h('strong',null,s.newReqCart.length+' item'+(s.newReqCart.length===1?'':'s'))])]),
       this.recordTable('purchase-cart',['Item','Category','Quantity','Order Unit','Cost per Stock Unit (PHP)','Action'],s.newReqCart.map((l,i)=>tr([td(l.name),td(l.category),td(h('input',{'aria-label':'Quantity for '+l.name,type:'number',min:1,step:1,value:l.qty,onChange:this.setReqCartQty(i)})),td(this.buildRequestUnit(l,i)),td(h('input',{'aria-label':'Cost per stock unit for '+l.name,type:'number',min:0,step:'0.01',value:l.unitCost??(s.data.PRODUCTS.find(p=>p.id===l.productId)?.unitPrice||0),onChange:e=>this.setState({newReqCart:s.newReqCart.map((line,n)=>n===i?{...line,unitCost:e.target.value}:line)})})),td(btn('Remove',this.removeReqLine(i)))],i))),
       h('label',{className:'purchase-notes'},['Expected delivery date (optional)',h('input',{type:'date',value:s.purchaseExpectedDate||'',min:s.data?.BUSINESS_DATE,onChange:e=>this.setState({purchaseExpectedDate:e.target.value})})]),
       h('label',{className:'purchase-notes'},['Purchase notes',h('textarea',{value:s.purchaseNotes||'',maxLength:2000,onChange:e=>this.setState({purchaseNotes:e.target.value})})]),
-      btn('Submit Purchase Request',this.submitPurchase,'primary'),
+      h('footer',{className:'purchase-create-footer'},[h('span',null,'Stock is updated only after the approved order is received.'),btn('Submit Purchase Request',this.submitPurchase,'primary')]),
       s.itemPickerOpen?this.buildItemPickerModal():null,s.categoryModalOpen?this.buildCategoryModal():null
     ]);
   }
@@ -1590,10 +1596,29 @@ class Component extends DCLogic {
     try{const result=await this.authPost(`/api/purchase-requests/${encodeURIComponent(record.id)}`,{action,note,revision:record.revision,...(action==='disapproved'?{}:{lines})},'PATCH');this.setState({purchaseReviewId:null});this.toast(result.message);await Promise.all([this.reloadPurchasing(),this.reloadCatalog()]);}
     catch(error){this.toast(error.message,'error');}finally{this.reviewBusy=false;this.setState({purchaseReviewSaving:null,purchaseReviewAction:null});}
   };
+  requestReceivingBudget=async(order)=>{
+    if(this.budgetBusy)return;
+    const draft=this.state.receivingBudgetDraft||{};
+    if(!this.validAmount(draft.amount)||Number(draft.amount)<=0||!String(draft.reason||'').trim()){this.setState({receiveError:'Enter the additional amount and explain the price increase.'});return;}
+    this.budgetBusy=true;this.setState({budgetSaving:true,receiveError:''});
+    try{const result=await this.authPost(`/api/purchase-orders/${encodeURIComponent(order.id)}/budget-requests`,{requestKey:draft.key||crypto.randomUUID(),version:this.state.receiveVersion,amount:Number(draft.amount),reason:draft.reason});this.toast(result.message);await this.reloadPurchasing();}
+    catch(error){this.setState({receiveError:error.message});}finally{this.budgetBusy=false;this.setState({budgetSaving:false});}
+  };
+  reviewReceivingBudget=async(entry,action)=>{
+    if(this.budgetBusy)return;
+    this.budgetBusy=true;this.setState({budgetSaving:true});
+    try{const result=await this.authPost(`/api/purchase-budget-requests/${entry.id}`,{action},'PATCH');this.toast(result.message);await this.reloadPurchasing();}
+    catch(error){this.toast(error.message,'error');}finally{this.budgetBusy=false;this.setState({budgetSaving:false});}
+  };
+  buildReceivingBudgetReviews(){
+    const h=React.createElement,entries=(this.state.purchaseData?.orders||[]).flatMap(o=>(o.budgetRequests||[]).filter(r=>r.status==='Pending').map(r=>({...r,order:o})));
+    if(!entries.length)return null;
+    return h('section',{className:'sa-panel'},[h('h2',null,'Additional receiving amounts'),h('p',null,'Review price increases before stock is received. Original PO prices and batch costs remain unchanged.'),...entries.map(r=>h('div',{key:r.id,className:'purchase-budget-review'},[h('strong',null,r.poId+' · '+peso(r.amount)),h('p',null,r.reason),h('small',null,'Remaining approved balance: '+peso(r.order.receivingBalance)),h('div',{className:'purchase-actions'},['Approved','Declined'].map(action=>h('button',{type:'button',className:'kita-button',disabled:!!this.state.budgetSaving,onClick:()=>this.reviewReceivingBudget(r,action)},action==='Approved'?'Approve additional amount':'Decline')))]))]);
+  }
   buildPurchaseReview(){
     const h=React.createElement,state=this.purchasingState();if(state)return state;
     const requests=this.filterPurchases(this.state.purchaseData.requests).filter(r=>['Pending','Pending Approval','Proceed to Purchase'].includes(r.status));
-    return h('div',null,[sectionTitle('Purchase Request Review','Review, edit, approve or decline the original request. Approval does not add stock.'),this.purchaseFilters(),
+    return h('div',null,[sectionTitle('Purchase Request Review','Review, edit, approve or decline the original request. Approval does not add stock.'),this.purchaseFilters(),this.buildReceivingBudgetReviews(),
       ...requests.map(r=>h('fieldset',{key:r.id,className:'sa-panel purchase-review',disabled:!!this.state.purchaseReviewSaving},[
         h('h2',null,r.id),h('p',null,`${r.supplierName||this.purchaseSupplier(r.lines[0]?.supplierId)} | ${r.requestedBy} | ${r.requested_at||r.dateRequested}`),h('p',null,r.notes||''),
         table(['Item','Category','Requested','Review quantity','Stock Unit','Unit Cost (PHP)','Actions'],(this.state.purchaseReviewId===r.id?this.state.purchaseReviewLines:r.lines).map((l,i)=>tr([td(l.name),td(l.category),td(l.qty),td(this.state.purchaseReviewId===r.id?h('input',{'aria-label':'Review quantity for '+l.name,type:'number',min:1,step:1,value:l.confirmedQty??l.qty,onChange:e=>this.setState(s=>({purchaseReviewLines:s.purchaseReviewLines.map((line,n)=>n===i?{...line,confirmedQty:e.target.value}:line)}))}):l.confirmedQty??l.qty),td(this.purchaseUnit(l)),td(peso(l.unitCost)),td(this.state.purchaseReviewId===r.id?btn('Remove',()=>this.setState(s=>({purchaseReviewLines:s.purchaseReviewLines.filter((_,n)=>n!==i)}))):'')],l.id))),
@@ -1605,20 +1630,36 @@ class Component extends DCLogic {
       ])),!requests.length?h('p',{className:'record-empty'},'No pending requests match these filters.'):null,this.purchaseRequestDetails()
     ]);
   }
-  openPurchaseReceiving=order=>this.setState({purchaseReceivingId:order.id,receiveItemId:null,receiveQty:{},receiveDamaged:{},receiveDamageReasons:{},receiveSubstitutes:{},receiveReasons:{},receivePrices:{},receiveCosts:{},receiveBatches:{},receiveExpiries:{},receiveManufactured:{},receiveLots:{},receiveNotes:'',receivePaymentDueDate:'',receiveSupplierDocument:'',receiveReference:'',receiveDate:this.state.data?.BUSINESS_DATE||new Date().toISOString().slice(0,10),receiveKey:crypto.randomUUID(),receiveVersion:order.receivingVersion,receiveError:''});
+  openPurchaseReceiving=order=>this.setState({receivingDrafts:{},receiveDeliveryKey:crypto.randomUUID(),receivingBudgetDraft:{key:crypto.randomUUID(),amount:'',reason:''},purchaseReceivingId:order.id,receiveItemId:null,receiveQty:{},receiveDamaged:{},receiveDamageReasons:{},receiveSubstitutes:{},receiveReasons:{},receivePrices:{},receiveCosts:{},receiveBatches:{},receiveExpiries:{},receiveManufactured:{},receiveLots:{},receiveNotes:'',receivePaymentDueDate:'',receiveSupplierDocument:'',receiveReference:'',receiveDate:this.state.data?.BUSINESS_DATE||new Date().toISOString().slice(0,10),receiveKey:crypto.randomUUID(),receiveVersion:order.receivingVersion,receiveError:''});
+  receivingDraft=()=>Object.fromEntries(['receiveVersion','receiveQty','receiveDamaged','receiveDamageReasons','receiveSubstitutes','receiveReasons','receivePrices','receiveCosts','receiveExpiries','receiveManufactured','receiveNotes','receivePaymentDueDate','receiveSupplierDocument'].map(k=>[k,this.state[k]]));
+  emptyReceivingDraft=order=>({receiveVersion:order.receivingVersion,receiveQty:{},receiveDamaged:{},receiveDamageReasons:{},receiveSubstitutes:{},receiveReasons:{},receivePrices:{},receiveCosts:{},receiveExpiries:{},receiveManufactured:{},receiveNotes:'',receivePaymentDueDate:'',receiveSupplierDocument:''});
+  switchReceivingPO=id=>{
+    const order=this.state.purchaseData.orders.find(o=>o.id===id);if(!order||this.receivingBusy)return;
+    const drafts={...this.state.receivingDrafts,[this.state.purchaseReceivingId]:this.receivingDraft()};
+    this.setState({...this.emptyReceivingDraft(order),...(drafts[id]||{}),receivingDrafts:drafts,purchaseReceivingId:id,receiveItemId:null,receiveError:'',receivingBudgetDraft:{key:crypto.randomUUID(),amount:'',reason:''}});
+  };
+  receivingDeliveryOrders=()=>{
+    const drafts={...this.state.receivingDrafts,[this.state.purchaseReceivingId]:this.receivingDraft()},products=this.state.productsLocal||this.state.data?.PRODUCTS||[];
+    return Object.entries(drafts).map(([poId,d])=>{
+      const order=this.state.purchaseData.orders.find(o=>o.id===poId);if(!order)return null;
+      const lines=order.lines.filter(l=>String(d.receiveQty?.[l.productId]??'').trim()!==''||String(d.receiveDamaged?.[l.productId]??'').trim()!=='').map(l=>{
+        const id=l.productId,product=products.find(p=>String(p.id)===String(d.receiveSubstitutes?.[id]||id));
+        return {productId:Number(id),substituteProductId:Number(d.receiveSubstitutes?.[id])||null,substitutionReason:d.receiveReasons?.[id]||null,qty:Number(d.receiveQty?.[id]||0),damagedQty:Number(d.receiveDamaged?.[id]||0),damageReason:d.receiveDamageReasons?.[id]||null,unitCost:d.receiveCosts?.[id]??l.unitCost,sellingPrice:d.receivePrices?.[id]??product?.price??'',expiryDate:d.receiveExpiries?.[id]||null,manufacturedDate:d.receiveManufactured?.[id]||null};
+      }).filter(l=>l.qty!==0||l.damagedQty!==0);
+      return {poId,version:d.receiveVersion,notes:d.receiveNotes||'',paymentDueDate:d.receivePaymentDueDate||null,supplierDocument:d.receiveSupplierDocument||null,lines};
+    }).filter(o=>o&&o.lines.length);
+  };
   confirmPurchaseReceiving=async()=>{
     if(this.receivingBusy)return;
-    const order=this.state.purchaseData.orders.find(o=>o.id===this.state.purchaseReceivingId);
-    if([this.state.receiveQty,this.state.receiveDamaged].some(values=>Object.values(values||{}).some(q=>String(q).trim()!==''&&(!Number.isInteger(Number(q))||Number(q)<0)))){this.setState({receiveError:'Quantities must be non-negative whole numbers.'});return;}
-    const entered=order.lines.filter(l=>Number(this.state.receiveQty?.[l.productId])>0||Number(this.state.receiveDamaged?.[l.productId])>0).map(l=>[l.productId,this.state.receiveQty?.[l.productId]||0]);
-    if(!entered.length||entered.some(([,qty])=>!Number.isInteger(Number(qty))||Number(qty)<0)){this.setState({receiveError:'Enter accepted or damaged whole quantities. Leave undelivered items blank.'});return;}
-    if(entered.some(([id])=>!this.validAmount(this.receivingCost(id))||Number(this.receivingCost(id))>99999999.99)){this.setState({receiveError:'Enter a valid cost price for each delivered item (0 to 99,999,999.99, up to two decimal places).'});return;}
-    if(entered.some(([id])=>!this.validAmount(this.receivingPrice(id))||Number(this.receivingPrice(id))>99999999.99)){this.setState({receiveError:'Enter a retail price for each delivered item (up to two decimal places).'});return;}
-    if(!window.confirm('Confirm delivery for '+order.id+'? '+'Only accepted goods enter stock. Missing and damaged quantities remain outstanding on this same PO. '+'Quantities will be added to the selected original or replacement product stock. The retail price entered will apply to all remaining units of that product, including earlier deliveries.'))return;
+    const order=this.state.purchaseData.orders.find(o=>o.id===this.state.purchaseReceivingId),orders=this.receivingDeliveryOrders(),lines=orders.flatMap(o=>o.lines);
+    if(!lines.length){this.setState({receiveError:'Enter accepted or damaged quantities for at least one product.'});return;}
+    if(lines.some(l=>!Number.isInteger(l.qty)||l.qty<0||!Number.isInteger(l.damagedQty)||l.damagedQty<0)){this.setState({receiveError:'Quantities must be non-negative whole numbers.'});return;}
+    if(lines.some(l=>!this.validAmount(l.unitCost)||!this.validAmount(l.sellingPrice))){this.setState({receiveError:'Enter valid cost and selling prices for all included items.'});return;}
+    if(!window.confirm('Confirm this delivery for '+orders.length+' PO(s)? All entered items share one receiving Batch / Lot. Each item stays under its original PO. Updated selling prices apply to remaining stock; previous batch costs stay unchanged.'))return;
     this.receivingBusy=true;this.setState({receivingSaving:true,receiveError:''});
     try{
-      const result=await this.authPost(`/api/purchase-orders/${encodeURIComponent(order.id)}/receive`,{idempotencyKey:this.state.receiveKey,version:this.state.receiveVersion,receivedDate:this.state.receiveDate,notes:this.state.receiveNotes,paymentDueDate:this.state.receivePaymentDueDate||null,supplierDocument:this.state.receiveSupplierDocument||null,lines:entered.map(([productId,qty])=>({productId:Number(productId),substituteProductId:Number(this.state.receiveSubstitutes?.[productId])||null,substitutionReason:this.state.receiveReasons?.[productId]||null,qty:Number(qty),damagedQty:Number(this.state.receiveDamaged?.[productId]||0),damageReason:this.state.receiveDamageReasons?.[productId]||null,sellingPrice:this.receivingPrice(productId),unitCost:this.receivingCost(productId),batchNumber:this.state.receiveBatches?.[productId]||null,expiryDate:this.state.receiveExpiries?.[productId]||null,manufacturedDate:this.state.receiveManufactured?.[productId]||null,lotNumber:this.state.receiveLots?.[productId]||null}))});
-      this.setState({purchaseReceivingId:null,lastReceivedPo:result.poId||order.id});this.toast(result.message);await Promise.all([this.reloadPurchasing(),this.reloadCatalog()]);
+      const result=await this.authPost('/api/receiving-deliveries',{requestKey:this.state.receiveDeliveryKey,supplierId:Number(order.supplierId),receivedDate:this.state.receiveDate,orders});
+      this.setState({purchaseReceivingId:null,receivingDrafts:{},lastReceivedPo:order.id,lastDeliveryBatch:result.batchNumber});this.toast(result.message);await Promise.all([this.reloadPurchasing(),this.reloadCatalog()]);
     }catch(error){this.setState({receiveError:error.message});}finally{this.receivingBusy=false;this.setState({receivingSaving:false});}
   };
   receivingTarget=id=>this.state.receiveSubstitutes?.[id]||id;
@@ -1664,11 +1705,9 @@ class Component extends DCLogic {
     try{const result=await this.authPost('/api/receiving-carryovers/'+id+'/release',{});await this.reloadPurchasing();this.toast(result.message);}catch(e){this.toast(e.message,'error');}
   };
   buildCarryoverPanel(){
-    const h=React.createElement,data=this.state.purchaseData;if(!data)return null;
-    const shortages=data.orders.filter(o=>o.receipts?.length&&!['Cancelled','Closed'].includes(o.status)).flatMap(o=>o.lines.filter(l=>this.receivingOutstanding(l)>0).map(l=>({o,l})));
-    return h('section',{className:'carryover-panel'},[h('h3',null,'Outstanding deliveries'),h('p',null,'Receive missing goods and replacements on the same PO. Damaged goods are returned without increasing inventory.'),
-      this.recordTable('receiving-shortages',['PO Number','Item','Stock Unit','Outstanding Qty','Available to Receive','Action'],shortages.map(({o,l})=>tr([td(o.id),td(l.name),td(this.purchaseUnit(l)),td(this.receivingOutstanding(l)),td(this.carryoverAvailable(l)),td(this.state.role==='manager'&&this.carryoverAvailable(l)>0?btn('Receive remaining',()=>this.openPurchaseReceiving(o)):null)],l.id))),
-      (data.carryovers||[]).length?h('details',null,[h('summary',null,'Legacy linked delivery history'),h('p',null,'Existing links are retained. Release an unreceived allocation to receive those units on the original PO.'),this.recordTable('carryover-history',['Original PO','Linked PO','Linked','Received','Still allocated','Action'],data.carryovers.map(a=>tr([td(a.sourcePo),td(a.targetPo),td(a.quantity),td(a.receivedQty),td(Number(a.quantity)-Number(a.receivedQty)-Number(a.releasedQty)),td(this.state.role==='manager'&&Number(a.quantity)>Number(a.receivedQty)+Number(a.releasedQty)?btn('Release unreceived',()=>this.releaseCarryover(a.id)):null)],a.id))) ]):null]);
+    const h=React.createElement,entries=this.state.purchaseData?.carryovers||[];
+    if(!entries.length)return null;
+    return h('details',{className:'carryover-panel'},[h('summary',null,'Earlier shortage links'),h('p',null,'Existing links are preserved. Release unreceived allocations to receive those items under their original PO.'),this.recordTable('carryover-history',['Original PO','Linked PO','Received','Still allocated','Action'],entries.map(a=>tr([td(a.sourcePo),td(a.targetPo),td(a.receivedQty),td(Number(a.quantity)-Number(a.receivedQty)-Number(a.releasedQty)),td(Number(a.quantity)>Number(a.receivedQty)+Number(a.releasedQty)?btn('Release unreceived',()=>this.releaseCarryover(a.id)):null)],a.id)))]);
   }
   buildSupplierPerformance(supplierId){
     const h=React.createElement,data=this.state.purchaseData;if(!data)return h('p',null,['Loading supplier performance...',btn('Refresh',()=>this.reloadPurchasing().catch(()=>{}))]);
@@ -1685,35 +1724,52 @@ class Component extends DCLogic {
     return h('section',{className:'supplier-performance'},[h('h3',null,'Supplier Performance'),h('div',{className:'supplier-performance-metrics'},[kpi('Ordered units',ordered),kpi('Accepted units',accepted),kpi('Fulfillment rate',ordered?(100*accepted/ordered).toFixed(1)+'%':'No orders'),kpi('Outstanding units',Math.max(0,ordered-accepted)),kpi('Initially missing (recorded)',missing),kpi('Damaged (recorded)',damaged)]),h('p',{className:'receive-compact-hint'},'Carryovers are excluded from new orders. Fulfillment includes later accepted replacements. Missing and damaged counts use recorded inspections; older receipts without inspections are not estimated.'),
       h('h4',null,'Shortage resolution history'),this.recordTable('supplier-resolutions-'+supplierId,['Original PO','Received under PO','Quantity','Received date','Days to resolve'],resolutions.map(r=>{const a=allocations.find(a=>a.id===r.carryoverId);return tr([td(a.sourcePo),td(a.targetPo),td(r.quantity),td(String(r.created_at).slice(0,10)),td(days(a,r)??'Not recorded')],r.id);})),
       h('h4',null,'Outstanding shortages'),this.recordTable('supplier-open-'+supplierId,['Original PO','Product','Outstanding','First receipt'],orders.flatMap(o=>o.receipts?.length?o.lines.filter(l=>this.receivingOutstanding(l)>0).map(l=>tr([td(o.id),td(l.name),td(this.receivingOutstanding(l)),td(o.receipts.map(r=>r.date).sort()[0])],l.id)):[])),
-      h('h4',null,'Delivery and replacement history'),this.recordTable('supplier-deliveries-'+supplierId,['PO','Receipt','Received','Product','Accepted','Batch / Lot','Condition / replacement'],history.map(({o,r,l})=>tr([td(o.id),td(r.deliveryReference||r.id),td(r.date),td(l.name),td(l.deliveredQty),td(l.internalBatch||l.batchNumber||l.lotNumber||'Not recorded'),td(l.conditionText||'Not recorded')],l.id)))
+      h('h4',null,'Delivery and replacement history'),this.recordTable('supplier-deliveries-'+supplierId,['PO','Receipt','Received','Product','Accepted','Batch / Lot','Condition / replacement'],history.map(({o,r,l})=>tr([td(o.id),td(r.deliveryReference||r.id),td(r.date),td(l.name),td(l.deliveredQty),td(l.internalBatch||l.batchNumber||l.lotNumber||'Not recorded'),td([l.conditionText,l.followupNote].filter(Boolean).join(' · ')||'Not recorded')],l.id)))
     ]);
   }
   buildReceivingAuditFilter(){
     const h=React.createElement;
     return h('label',{className:'receiving-audit-filter'},['Discrepancy audit',h('select',{'aria-label':'Discrepancy audit',value:this.state.receivingAudit||'',onChange:e=>{this.setState({receivingAudit:e.target.value});this.setTableView('purchase-receiving',{page:1});}},[['','All discrepancies'],['missing','Missing items only'],['damaged','Damaged stock only'],['flagged','Discrepancy flagged'],['none','No discrepancy']].map(([value,label])=>h('option',{key:value,value},label)))]);
   }
+  buildDeliveryHistory(orders){
+    const h=React.createElement,groups=new Map();
+    orders.forEach(o=>(o.receipts||[]).forEach(r=>{const key=r.deliveryBatch||r.id;if(!groups.has(key))groups.set(key,{batch:r.deliveryBatch||'Earlier receipt: '+r.id,date:r.date,entries:[]});groups.get(key).entries.push({order:o,receipt:r});}));
+    if(!groups.size)return null;
+    return h('details',{className:'delivery-history'},[h('summary',null,'Delivery batch history'),this.recordTable('delivery-batches',['Batch / Lot','Received','Purchase orders','Products received'],[...groups.values()].sort((a,b)=>String(b.date).localeCompare(String(a.date))).map(g=>tr([td(g.batch),td(g.date),td([...new Set(g.entries.map(e=>e.order.id))].join(', ')),td(h('details',null,[h('summary',null,g.entries.reduce((n,e)=>n+(e.receipt.lines||[]).length,0)+' items'),...g.entries.flatMap(e=>(e.receipt.lines||[]).map((l,i)=>h('p',{key:e.receipt.id+'-'+i},[h('strong',null,l.name+' · '+l.deliveredQty+' '+(l.unit||'units')),h('small',{style:{display:'block'}},e.order.id),l.followupNote?h('small',{style:{display:'block'}},l.followupNote):null])))]))],g.batch)))]);
+  }
   buildPurchaseReceiving(){
     const h=React.createElement,state=this.purchasingState();if(state)return state;
     const order=this.state.purchaseData.orders.find(o=>o.id===this.state.purchaseReceivingId);
     const close=()=>{if(!this.receivingBusy)this.setState({purchaseReceivingId:null});};
     const line=order?.lines.find(l=>String(l.productId)===String(this.state.receiveItemId))||order?.lines.find(l=>Number(l.deliveredQty||0)<Number(l.orderedQty))||order?.lines[0];
-    const enteredCount=Object.values(this.state.receiveQty||{}).filter(q=>Number(q)>0).length;
+    const deliveryOrders=order?this.receivingDeliveryOrders():[],enteredCount=deliveryOrders.reduce((n,o)=>n+o.lines.length,0);
+    const deliveryPOs=order?this.state.purchaseData.orders.filter(o=>String(o.supplierId)===String(order.supplierId)&&o.lines.some(l=>this.carryoverAvailable(l)>0)&&(['Approved / Waiting for Delivery','Partially Received','Approved','Ordered','Completed','Received with Discrepancy'].includes(o.status)||(o.status==='Draft'&&o.request?.status==='Approved'))):[];
     const modal=order&&line?h('dialog',{className:'receiving-dialog receiving-dialog--compact', 'aria-label':'Delivery receipt verification',ref:node=>{if(node&&!node.open)node.showModal();},onCancel:e=>{e.preventDefault();close();}},h('div',{className:'receiving-form'},[
-      h('header',{className:'receive-compact-header'},[h('div',null,[h('small',null,'STOCK RECEIVING'),h('h2',null,order.id),h('p',null,order.supplierName||this.purchaseSupplier(order.supplierId))]),h('button',{type:'button','aria-label':'Close receiving',disabled:!!this.state.receivingSaving,onClick:close},'×')]),
+      h('header',{className:'receive-compact-header'},[h('div',null,[h('small',null,'STOCK RECEIVING'),h('h2',null,'Receive delivery'),h('p',null,order.supplierName||this.purchaseSupplier(order.supplierId))]),h('button',{type:'button','aria-label':'Close receiving',disabled:!!this.state.receivingSaving,onClick:close},'×')]),
       h('div',{className:'receive-compact-body'},[
+        h('p',{className:'receive-compact-hint'},'Switch POs to add items to the same delivery. One Batch / Lot is generated on confirmation.'),
+        h('label',null,['Purchase order',h('select',{'aria-label':'Delivery purchase order',value:order.id,disabled:!!this.state.receivingSaving,onChange:e=>this.switchReceivingPO(e.target.value)},deliveryPOs.map(o=>h('option',{key:o.id,value:o.id},o.id+' - '+o.status)))]),
+        (order.receipts||[]).length?h('p',{className:'receive-followup-note'},'Previous delivery recorded. Outstanding items stay under this PO.'):null,
         h('label',null,['Product',h('select',{'aria-label':'Receiving product',value:line.productId,onChange:e=>this.setState({receiveItemId:e.target.value})},order.lines.map(l=>h('option',{key:l.productId,value:l.productId},l.name+(Number(this.state.receiveQty?.[l.productId])>0?' · '+this.state.receiveQty[l.productId]+' entered':''))))]),
-        h('div',{className:'receive-compact-summary'},[h('span',null,'Outstanding quantity'),h('strong',null,this.receivingOutstanding(line)+' '+this.purchaseUnit(line)),h('span',null,'Original unit cost'),h('strong',null,peso(line.unitCost))]),
+        h('div',{className:'receive-compact-summary'},[h('span',null,'Outstanding quantity'),h('strong',null,this.receivingOutstanding(line)+' '+this.purchaseUnit(line)),h('span',null,'Original unit cost'),h('strong',null,peso(line.unitCost)),h('span',null,'PO receiving balance'),h('strong',null,peso(order.receivingBalance??order.outstandingValue))]),
         h('label',null,['Receive original or substitute product',this.buildReceivingSubstitution(line)]),
         h('label',null,['Accepted quantity',h('input',{'aria-label':'Receive '+line.name,type:'number',min:1,step:1,placeholder:'Enter quantity',value:this.state.receiveQty?.[line.productId]??'',onChange:e=>this.setState(s=>({receiveQty:{...s.receiveQty,[line.productId]:e.target.value}}))})]),
         h('p',{className:'receive-compact-hint'},'Batch / Lot Number: generated automatically on confirmation.'),
-        h('details',{className:'receive-extra-fields'},[h('summary',null,'Damaged items — return to supplier'),h('label',null,['Damaged / returned quantity',h('input',{type:'number',min:0,step:1,'aria-label':'Damaged quantity',value:this.state.receiveDamaged?.[line.productId]??'',onChange:e=>this.setState(s=>({receiveDamaged:{...s.receiveDamaged,[line.productId]:e.target.value}}))})]),h('label',null,['Damage reason',h('input',{type:'text',maxLength:500,value:this.state.receiveDamageReasons?.[line.productId]||'',onChange:e=>this.setState(s=>({receiveDamageReasons:{...s.receiveDamageReasons,[line.productId]:e.target.value}}))})])]),
-        h('details',{className:'receive-extra-fields',key:line.productId},[h('summary',null,'Prices, batch & expiry'),h('div',{className:'receive-fields-grid'},[['receiveCosts','Cost price','number'],['receivePrices','Retail price','number'],['receiveExpiries','Expiry date','date'],['receiveManufactured','Manufactured','date']].map(([field,label,type])=>h('label',{key:field},[label,h('input',{'aria-label':label+' for '+line.name,type,...(type==='number'?{min:0,step:'0.01'}:{}),...(field==='receiveExpiries'?{min:this.state.receiveDate}:field==='receiveManufactured'?{max:this.state.receiveDate}:{}),value:field==='receiveCosts'?this.receivingCost(line.productId):field==='receivePrices'?this.receivingPrice(line.productId):this.state[field]?.[line.productId]??'',onChange:e=>this.setState(s=>({[field]:{...s[field],[line.productId]:e.target.value}}))})])))]),
+        h('p',{className:'receive-compact-hint'},'Substitutes must fit this PO’s balance. Updated selling prices apply to all remaining units; previous batch costs stay unchanged.'),
+        h('details',{className:'receive-extra-fields'},[h('summary',null,'Additional amount approval'),h('p',{className:'receive-compact-hint'},'Request only the extra amount needed above the remaining balance. Approval does not receive stock or record a payment.'),
+          ...(order.budgetRequests||[]).map(r=>h('p',{key:r.id},[peso(r.amount)+' · '+r.status+((r.status==='Pending'&&Number(r.version)!==Number(order.receivingVersion))?' (PO changed; request again)':''),h('small',{style:{display:'block'}},r.reason)])),
+          h('label',null,['Additional amount (PHP)',h('input',{'aria-label':'Additional receiving amount',type:'number',min:'0.01',step:'0.01',value:this.state.receivingBudgetDraft?.amount||'',onChange:e=>this.setState(s=>({receivingBudgetDraft:{...s.receivingBudgetDraft,key:crypto.randomUUID(),amount:e.target.value}}))})]),
+          h('label',null,['Reason for increase',h('textarea',{'aria-label':'Reason for receiving increase',maxLength:2000,value:this.state.receivingBudgetDraft?.reason||'',onChange:e=>this.setState(s=>({receivingBudgetDraft:{...s.receivingBudgetDraft,key:crypto.randomUUID(),reason:e.target.value}}))})]),
+          h('button',{type:'button',className:'primary-button',disabled:!!this.state.budgetSaving||(order.budgetRequests||[]).some(r=>r.status==='Pending'&&Number(r.version)===Number(order.receivingVersion)),onClick:()=>this.requestReceivingBudget(order)},this.state.budgetSaving?'Sending...':'Request admin approval')]),
+        h('details',{className:'receive-extra-fields'},[h('summary',null,'Damaged items'),h('label',null,['Rejected quantity',h('input',{type:'number',min:0,step:1,'aria-label':'Damaged quantity',value:this.state.receiveDamaged?.[line.productId]??'',onChange:e=>this.setState(s=>({receiveDamaged:{...s.receiveDamaged,[line.productId]:e.target.value}}))})]),h('label',null,['Damage reason',h('input',{type:'text',maxLength:500,value:this.state.receiveDamageReasons?.[line.productId]||'',onChange:e=>this.setState(s=>({receiveDamageReasons:{...s.receiveDamageReasons,[line.productId]:e.target.value}}))})])]),
+        h('details',{className:'receive-extra-fields',key:line.productId},[h('summary',null,'Prices & expiration'),h('div',{className:'receive-fields-grid'},[['receiveCosts','Cost price','number'],['receivePrices','Retail price','number'],['receiveExpiries','Expiry date','date'],['receiveManufactured','Manufactured','date']].map(([field,label,type])=>h('label',{key:field},[label,h('input',{'aria-label':label+' for '+line.name,type,...(type==='number'?{min:0,step:'0.01'}:{}),...(field==='receiveExpiries'?{min:this.state.receiveDate}:field==='receiveManufactured'?{max:this.state.receiveDate}:{}),value:field==='receiveCosts'?this.receivingCost(line.productId):field==='receivePrices'?this.receivingPrice(line.productId):this.state[field]?.[line.productId]??'',onChange:e=>this.setState(s=>({[field]:{...s[field],[line.productId]:e.target.value}}))})])))]),
         h('details',{className:'receive-extra-fields'},[h('summary',null,'Supplier document and payment due date'),h('label',null,['Supplier invoice / delivery document',h('input',{maxLength:100,value:this.state.receiveSupplierDocument||'',onChange:e=>this.setState({receiveSupplierDocument:e.target.value})})]),h('label',null,['Payment due date (optional)',h('input',{type:'date',min:this.state.receiveDate,value:this.state.receivePaymentDueDate||'',onChange:e=>this.setState({receivePaymentDueDate:e.target.value})})])]),
         h('details',{className:'receive-extra-fields'},[h('summary',null,'Receiving notes'),h('textarea',{'aria-label':'Receiving notes',placeholder:'Required for excess delivery',maxLength:2000,value:this.state.receiveNotes,onChange:e=>this.setState({receiveNotes:e.target.value})})]),
-        h('p',{className:'receive-compact-hint'},enteredCount+' item(s) entered. Confirm posts all entered quantities. Receipt reference is assigned automatically.'),
+        h('p',{className:'receive-compact-hint'},enteredCount+' item(s) across '+deliveryOrders.length+' PO(s). All entered items are posted together.'),
+        deliveryOrders.length?h('div',{className:'delivery-review'},[h('strong',null,'Included in this delivery'),...deliveryOrders.map(o=>h('div',{key:o.poId},[h('span',null,o.poId+' · '+o.lines.length+' item(s)'),h('button',{type:'button',disabled:!!this.state.receivingSaving,onClick:()=>this.switchReceivingPO(o.poId)},'Review')])),h('button',{type:'button',disabled:!!this.state.receivingSaving,onClick:()=>this.setState({...this.emptyReceivingDraft(order),receiveItemId:null})},'Clear items for current PO')]):null,
         this.state.receiveError?h('p',{role:'alert',className:'alert'},this.state.receiveError):null,
       ]),
-      h('footer',{className:'receive-compact-footer'},[h('button',{type:'button',className:'receive-cancel',disabled:!!this.state.receivingSaving,onClick:close},'Cancel'),h('button',{className:'primary-button','data-action-tone':'blue',disabled:!!this.state.receivingSaving,'aria-busy':!!this.state.receivingSaving,onClick:this.confirmPurchaseReceiving},this.state.receivingSaving?'Posting...':'Confirm Receipt')])
+      h('footer',{className:'receive-compact-footer'},[h('button',{type:'button',className:'receive-cancel',disabled:!!this.state.receivingSaving,onClick:close},'Cancel'),h('button',{className:'primary-button','data-action-tone':'blue',disabled:!!this.state.receivingSaving,'aria-busy':!!this.state.receivingSaving,onClick:this.confirmPurchaseReceiving},this.state.receivingSaving?'Posting...':'Confirm delivery')])
     ])):null;
     const orders=this.state.purchaseData.orders;
     const canReceive=o=>o.lines.some(l=>this.carryoverAvailable(l)>0)&&(['Approved / Waiting for Delivery','Partially Received','Approved','Ordered','Completed','Received with Discrepancy'].includes(o.status)||(o.status==='Draft'&&o.request?.status==='Approved'));
@@ -1725,7 +1781,7 @@ class Component extends DCLogic {
     const today=this.state.data?.BUSINESS_DATE;
     const receivedValue=receipts.filter(r=>r.date===today).reduce((sum,r)=>sum+(r.lines||[]).reduce((total,l)=>total+Number(l.deliveredQty||0)*Number(l.unitCost||0),0),0);
     return h('div',{className:'receiving-dashboard'},[
-      h('div',{className:'receiving-heading'},[sectionTitle('Stock Receiving Dashboard'),h('label',{className:'receiving-search'},[h('span',{className:'sr-only'},'Search receiving records'),h('input',{type:'search',placeholder:'Search PO, supplier, receipt...',value:this.state.tableViews['purchase-receiving']?.query||'',onChange:e=>this.setTableView('purchase-receiving',{query:e.target.value,page:1})})])]),
+      h('div',{className:'receiving-heading'},[sectionTitle('Stock Receiving','Receive deliveries and track outstanding items by PO.'),h('label',{className:'receiving-search'},[h('span',{className:'sr-only'},'Search receiving records'),h('input',{type:'search',placeholder:'Search PO, supplier, receipt...',value:this.state.tableViews['purchase-receiving']?.query||'',onChange:e=>this.setTableView('purchase-receiving',{query:e.target.value,page:1})})])]),
       h('div',{className:'receiving-top-filters'},[this.purchaseFilters(true)]),
       h('div',{className:'receiving-metrics'},[
         kpi('Pending Deliveries',orders.filter(canReceive).length+' POs'),
@@ -1734,13 +1790,12 @@ class Component extends DCLogic {
         kpi('Discrepancies',orders.filter(discrepancy).length+' POs'),
         kpi('Fully Received',orders.filter(o=>o.fulfillmentStatus==='Fully Received').length+' POs'),
       ]),
-      this.state.lastReceivedPo?h('div',{className:'sa-panel',role:'status'},'Delivery saved under '+this.state.lastReceivedPo+'. View it in Transaction History.'):null,
-      h('div',{className:'receiving-tabs',role:'group','aria-label':'Receiving views'},[['active','Active Receiving'],['missing','Missing / Returned Items'],['discrepancies','Discrepancies & Follow-ups']].map(([value,label])=>h('button',{type:'button',key:value,'data-action-tone':'blue','aria-pressed':tab===value,onClick:()=>{this.setState({receivingTab:value});this.setTableView('purchase-receiving',{page:1});}},label))),
-      this.recordTable('purchase-receiving',['PO Number','Receipt ID','Supplier','Items / Received','Batch / Lot','PO Progress','Remarks','Actions'],selected.map(o=>{
-        const receiptLines=(o.receipts||[]).flatMap(r=>r.lines||[]);
-        return tr([td(o.id,{fontWeight:700}),td((o.receipts||[]).map(r=>r.id).join(', ')||'Not received'),td(o.supplierName||this.purchaseSupplier(o.supplierId)),td(h('details',null,[h('summary',null,o.lines.length+' items'),...o.lines.map(l=>h('p',{key:l.productId},`${l.name}: ${l.deliveredQty||0} / ${l.orderedQty} ${this.purchaseUnit(l)}`))])),td([...new Set(receiptLines.map(l=>[...new Set([l.batchNumber,l.lotNumber].filter(Boolean))].join(' / ')).filter(Boolean))].join(', ')||'Assigned on receipt'),td(o.fulfillmentStatus||o.status),td(o.remarks||'Awaiting delivery'),td([canReceive(o)?btn('Receive Stock',()=>this.openPurchaseReceiving(o),'primary'):null])],o.id);
+      this.state.lastReceivedPo?h('div',{className:'sa-panel',role:'status'},'Delivery saved'+(this.state.lastDeliveryBatch?' · '+this.state.lastDeliveryBatch:'')+'. View or print the PO reports from Reports.'):null,
+      h('div',{className:'receiving-tabs',role:'group','aria-label':'Receiving views'},[['active','All POs'],['missing','Outstanding items'],['discrepancies','Discrepancies']].map(([value,label])=>h('button',{type:'button',key:value,'data-action-tone':'blue','aria-pressed':tab===value,onClick:()=>{this.setState({receivingTab:value});this.setTableView('purchase-receiving',{page:1});}},label))),
+      this.recordTable('purchase-receiving',['PO Number','Supplier','Items / Received','Receiving balance','Status','Actions'],selected.map(o=>{
+        return tr([td(o.id,{fontWeight:700}),td(o.supplierName||this.purchaseSupplier(o.supplierId)),td(h('details',null,[h('summary',null,o.lines.length+' items'),...o.lines.map(l=>h('p',{key:l.productId},`${l.name}: ${l.deliveredQty||0} / ${l.orderedQty} ${this.purchaseUnit(l)}`))])),td(peso(o.receivingBalance??o.outstandingValue)),td(h('div',null,[badge(o.status),h('small',{style:{display:'block'}},o.remarks||'')])),td([canReceive(o)?btn('Receive delivery',()=>this.openPurchaseReceiving(o),'primary'):null])],o.id);
       }),{externalSearch:true}),
-      this.buildCarryoverPanel(),tab==='discrepancies'?this.buildSupplierContacts(selected):null,modal,
+      this.buildDeliveryHistory(selected),this.buildCarryoverPanel(),tab==='discrepancies'?this.buildSupplierContacts(selected):null,modal,
     ]);
   }
 
@@ -1815,7 +1870,7 @@ class Component extends DCLogic {
     let items=data.PRODUCTS.filter(p=>p.status==="Active"&&!p.archivedAt&&
       (!itemPickerFilterCategory||p.category===itemPickerFilterCategory) &&
       (!this.state.itemPickerSubcategoryId||String(p.subcategoryId)===String(this.state.itemPickerSubcategoryId)) &&
-      (!itemPickerFilterSupplier||String(p.supplierId)===String(itemPickerFilterSupplier)) &&
+      (!itemPickerFilterSupplier||!p.supplierId||String(p.supplierId)===String(itemPickerFilterSupplier)) &&
       (!itemPickerLowStockOnly||isLow(p)) &&
       (!q||searchMatches(this.productLabel(p)+" "+p.barcode,q)));
     items = [...items].sort((a,b)=>(isLow(b)?1:0)-(isLow(a)?1:0));
@@ -1832,7 +1887,7 @@ class Component extends DCLogic {
           React.createElement("input",{key:"s",value:itemPickerSearch,onChange:this.setItemPickerSearch,placeholder:"Searchâ€¦",style:{padding:8,border:"1px solid "+COLORS.border,borderRadius:7}}),
           React.createElement("select",{key:"c",value:itemPickerFilterCategory,onChange:this.setItemPickerFilterCategory,style:{padding:8,border:"1px solid "+COLORS.border,borderRadius:7}},[React.createElement("option",{key:"-",value:""},"All Categories"),...data.CATEGORIES.filter(c=>c.status==="Active").map(c=>React.createElement("option",{key:c.name,value:c.name},c.name))]),
           this.buildSubcategorySelect(itemPickerFilterCategory,this.state.itemPickerSubcategoryId,e=>this.setState({itemPickerSubcategoryId:e.target.value})),
-          React.createElement("select",{key:"sp",value:itemPickerFilterSupplier,onChange:this.setItemPickerFilterSupplier,style:{padding:8,border:"1px solid "+COLORS.border,borderRadius:7,minWidth:0,width:"100%"}},[React.createElement("option",{key:"-",value:""},"All Suppliers"),...data.SUPPLIERS.filter(sp=>sp.status==="Active").map(sp=>React.createElement("option",{key:sp.id,value:sp.id},sp.name))]),
+          React.createElement("select",{key:"sp","aria-label":"Supplier for purchase request",value:itemPickerFilterSupplier,onChange:this.setItemPickerFilterSupplier,style:{padding:8,border:"1px solid "+COLORS.border,borderRadius:7,minWidth:0,width:"100%"}},[React.createElement("option",{key:"-",value:""},"Choose supplier"),...data.SUPPLIERS.filter(sp=>sp.status==="Active"&&!sp.archivedAt).map(sp=>React.createElement("option",{key:sp.id,value:sp.id},sp.name))]),
         ]),
         React.createElement("label",{key:"lowtoggle",style:{display:"flex",alignItems:"center",gap:6,fontSize:12,fontWeight:700,color:COLORS.red,marginBottom:10,cursor:"pointer"}},[React.createElement("input",{key:"cb",type:"checkbox",checked:itemPickerLowStockOnly,onChange:this.toggleItemPickerLowStockOnly}),"Low Stock Only"]),
         React.createElement("div",{key:"list",style:{flex:1,overflowY:"auto",border:"1px solid "+COLORS.border,borderRadius:8}},

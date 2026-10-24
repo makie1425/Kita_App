@@ -121,3 +121,8 @@ Route::middleware('role:admin')->group(function () {
 });
 
 Route::post('/api/purchase-orders/{id}/cancel-remainder', [\App\Http\Controllers\PurchasingWorkflowController::class, 'cancelRemainder'])->middleware('role:admin');
+
+Route::post('/api/purchase-orders/{id}/budget-requests', [\App\Services\PurchaseBudget::class, 'request'])->middleware(['auth','role:manager']);
+Route::patch('/api/purchase-budget-requests/{id}', [\App\Services\PurchaseBudget::class, 'review'])->middleware(['auth','role:admin']);
+
+Route::post('/api/receiving-deliveries', [\App\Services\ReceivingDelivery::class, 'store'])->middleware(['auth','role:manager']);

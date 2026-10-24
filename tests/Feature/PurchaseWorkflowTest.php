@@ -48,6 +48,47 @@ class PurchaseWorkflowTest extends TestCase
         $this->assertDatabaseHas('products', ['id' => $this->product, 'stock' => 4]);
     }
 
+    public function test_over_balance_receipt_requires_separate_admin_approval_and_preserves_batch_costs(): void
+    {
+        $id=$this->requestOrder(10); $this->approve($id);
+        $this->actingAs($this->manager)->postJson('/api/purchase-orders/'.$id.'/receive',$this->delivery(6))->assertCreated();
+        $body=$this->delivery(4,1); $body['lines'][0]['unitCost']=3.75; $body['lines'][0]['sellingPrice']=9;
+        $this->postJson('/api/purchase-orders/'.$id.'/receive',$body)->assertUnprocessable();
+        $this->assertDatabaseCount('receiving_records',1);
+        $this->assertDatabaseHas('products',['id'=>$this->product,'stock'=>6,'price'=>5]);
+        $request=['requestKey'=>(string)Str::uuid(),'version'=>1,'amount'=>5,'reason'=>'Supplier increased unit cost'];
+        $this->postJson('/api/purchase-orders/'.$id.'/budget-requests',$request)->assertCreated();
+        $this->postJson('/api/purchase-orders/'.$id.'/budget-requests',$request)->assertOk();
+        $approval=DB::table('purchase_budget_requests')->value('id');
+        $this->patchJson('/api/purchase-budget-requests/'.$approval,['action'=>'Approved'])->assertForbidden();
+        $this->postJson('/api/purchase-orders/'.$id.'/receive',$body)->assertUnprocessable();
+        $this->actingAs($this->admin)->patchJson('/api/purchase-budget-requests/'.$approval,['action'=>'Approved'])->assertOk();
+        $this->patchJson('/api/purchase-budget-requests/'.$approval,['action'=>'Approved'])->assertOk();
+        $this->assertDatabaseHas('purchase_orders',['id'=>$id,'orderedValue'=>25,'outstandingValue'=>15,'receivingVersion'=>2]);
+        $this->actingAs($this->manager)->postJson('/api/purchase-orders/'.$id.'/receive',$body)->assertConflict();
+        $body['version']=2;
+        $this->postJson('/api/purchase-orders/'.$id.'/receive',$body)->assertCreated()->assertJsonPath('status','Fully Received');
+        $this->postJson('/api/purchase-orders/'.$id.'/receive',$body)->assertOk();
+        $this->assertDatabaseHas('purchase_orders',['id'=>$id,'deliveredValue'=>30,'outstandingValue'=>0]);
+        $this->assertDatabaseHas('products',['id'=>$this->product,'stock'=>10,'price'=>9]);
+        $this->get('/purchase-orders/'.$id.'/report')->assertOk()->assertSee('Additional amount approval history')->assertSee('Supplier increased unit cost')->assertSee('30.00');
+        $this->assertDatabaseHas('inventory_batches',['productId'=>$this->product,'quantityReceived'=>6,'unitCost'=>2.50]);
+        $this->assertDatabaseHas('inventory_batches',['productId'=>$this->product,'quantityReceived'=>4,'unitCost'=>3.75]);
+    }
+
+    public function test_stale_budget_request_cannot_be_approved_but_can_be_declined(): void
+    {
+        $id=$this->requestOrder(10); $this->approve($id);
+        $this->actingAs($this->manager)->postJson('/api/purchase-orders/'.$id.'/budget-requests',[
+            'requestKey'=>(string)Str::uuid(),'version'=>0,'amount'=>5,'reason'=>'Price increase'
+        ])->assertCreated();
+        $approval=DB::table('purchase_budget_requests')->value('id');
+        $this->postJson('/api/purchase-orders/'.$id.'/receive',$this->delivery(2))->assertCreated();
+        $this->actingAs($this->admin)->patchJson('/api/purchase-budget-requests/'.$approval,['action'=>'Approved'])->assertConflict();
+        $this->patchJson('/api/purchase-budget-requests/'.$approval,['action'=>'Declined'])->assertOk();
+        $this->assertDatabaseHas('purchase_orders',['id'=>$id,'outstandingValue'=>20]);
+    }
+
     public function test_substitutions_enforce_cost_and_outstanding_quantity_and_preserve_receipt_history(): void
     {
         $replacement = $this->postJson('/api/products', [
@@ -100,6 +141,10 @@ class PurchaseWorkflowTest extends TestCase
         $other=$link; $other['requestKey']=(string)Str::uuid();
         $this->postJson('/api/purchase-orders/'.$original.'/carryovers',$other)->assertUnprocessable();
         $this->postJson('/api/purchase-orders/'.$original.'/receive',$this->delivery(1,2))->assertUnprocessable();
+        $expensive=$this->delivery(3,1); $expensive['lines'][0]['unitCost']=10;
+        $this->postJson('/api/purchase-orders/'.$next.'/receive',$expensive)->assertUnprocessable();
+        $this->assertDatabaseHas('receiving_carryovers',['sourcePo'=>$original,'receivedQty'=>0]);
+        $this->assertDatabaseHas('products',['id'=>$this->product,'stock'=>15]);
         $partial=$this->delivery(3,1);
         $this->postJson('/api/purchase-orders/'.$next.'/receive',$partial)->assertCreated();
         $this->postJson('/api/purchase-orders/'.$next.'/receive',$partial)->assertOk();
@@ -221,6 +266,74 @@ class PurchaseWorkflowTest extends TestCase
             DB::table('products')->where('id',$this->product)->update(['stock'=>2]);
         });
         $this->getJson('/api/inventory-history')->assertOk()->assertJsonPath('movements.0.batchNumbers',$batch->batchNumber);
+    }
+
+    public function test_shared_delivery_keeps_original_pos_and_one_batch_with_followup_notes(): void
+    {
+        $old=$this->requestOrder(10); $this->approve($old);
+        $first=$this->delivery(6); $first['lines'][0]['damagedQty']=1; $first['lines'][0]['damageReason']='Broken';
+        $previous=$this->actingAs($this->manager)->postJson('/api/purchase-orders/'.$old.'/receive',$first)->assertCreated()->json('id');
+        $originalBatch=DB::table('receiving_records')->where('id',$previous)->value('deliveryBatch');
+        $newProduct=$this->postJson('/api/products',['name'=>'New delivery product','category'=>'Supplies','barcode'=>'NEW-DELIVERY-PRODUCT','stock'=>0,'unitPrice'=>2.50,'price'=>5,'purchaseUnit'=>'Piece','stockUnit'=>'Piece','conversionFactor'=>1,'supplierId'=>$this->supplier])->assertCreated()->json('product.id');
+        $new=$this->postJson('/api/purchase-requests',['category'=>'Supplies','lines'=>[['productId'=>$newProduct,'supplierId'=>$this->supplier,'qty'=>4]]])->assertCreated()->json('id');
+        $this->approve($new);
+        $body=['requestKey'=>(string)Str::uuid(),'supplierId'=>$this->supplier,'receivedDate'=>now()->toDateString(),'orders'=>[
+            ['poId'=>$old,'version'=>1,'lines'=>[['productId'=>$this->product,'qty'=>4]]],
+            ['poId'=>$new,'version'=>0,'supplierDocument'=>'NEW-INVOICE','paymentDueDate'=>now()->addDays(7)->toDateString(),'lines'=>[['productId'=>$newProduct,'qty'=>4]]],
+        ]];
+        $batch=$this->actingAs($this->manager)->postJson('/api/receiving-deliveries',$body)->assertCreated()->assertJsonCount(2,'receipts')->json('batchNumber');
+        $this->assertNotSame($originalBatch,$batch);
+        $this->assertSame(2,DB::table('receiving_records')->where('deliveryBatch',$batch)->count());
+        $this->assertDatabaseHas('receiving_records',['poId'=>$new,'supplierDocument'=>'NEW-INVOICE','paymentDueDate'=>now()->addDays(7)->toDateString()]);
+        $this->assertSame(2,DB::table('inventory_batches')->where('batchNumber',$batch)->where('lotNumber',$batch)->count());
+        $this->assertDatabaseHas('purchase_orders',['id'=>$old,'orderedValue'=>25,'deliveredValue'=>25,'status'=>'Fully Received']);
+        $this->assertDatabaseHas('purchase_orders',['id'=>$new,'orderedValue'=>10,'deliveredValue'=>10,'status'=>'Fully Received']);
+        $this->assertDatabaseHas('products',['id'=>$this->product,'stock'=>10]);
+        $this->assertDatabaseHas('products',['id'=>$newProduct,'stock'=>4]);
+        $this->assertDatabaseHas('receiving_inspections',['receiptId'=>$previous,'missing'=>3,'damaged'=>1]);
+        $this->assertDatabaseCount('receiving_carryovers',0);
+        $this->get('/purchase-orders/'.$old.'/report')->assertOk()->assertSee($batch)->assertSee($new)->assertSee('missing items and damaged items')->assertSee($previous);
+        $this->postJson('/api/receiving-deliveries',$body)->assertOk()->assertJsonPath('batchNumber',$batch);
+        $this->assertDatabaseCount('receiving_records',3);
+        $body['orders'][0]['lines'][0]['qty']=3;
+        $this->postJson('/api/receiving-deliveries',$body)->assertConflict();
+    }
+
+    public function test_shared_delivery_rolls_back_every_po_if_one_exceeds_its_balance(): void
+    {
+        $one=$this->requestOrder(2);$this->approve($one);
+        $two=$this->requestOrder(2);$this->approve($two);
+        $body=['requestKey'=>(string)Str::uuid(),'supplierId'=>$this->supplier,'receivedDate'=>now()->toDateString(),'orders'=>[
+            ['poId'=>$one,'version'=>0,'lines'=>[['productId'=>$this->product,'qty'=>2]]],
+            ['poId'=>$two,'version'=>0,'lines'=>[['productId'=>$this->product,'qty'=>2,'unitCost'=>3]]],
+        ]];
+        $this->actingAs($this->manager)->postJson('/api/receiving-deliveries',$body)->assertUnprocessable();
+        $this->assertDatabaseCount('receiving_records',0);
+        $this->assertDatabaseCount('receiving_deliveries',0);
+        $this->assertDatabaseHas('products',['id'=>$this->product,'stock'=>0]);
+        $this->assertDatabaseHas('purchase_order_lines',['poId'=>$one,'deliveredQty'=>0]);
+        $body['orders'][1]['lines'][0]['unitCost']=2.50;
+        $body['orders'][0]['lines'][0]['sellingPrice']=5;
+        $body['orders'][1]['lines'][0]['sellingPrice']=6;
+        $this->postJson('/api/receiving-deliveries',$body)->assertUnprocessable();
+        $body['orders'][1]['lines'][0]['sellingPrice']=5;
+        $this->postJson('/api/receiving-deliveries',$body)->assertCreated();
+        $this->assertDatabaseHas('products',['id'=>$this->product,'stock'=>4]);
+    }
+
+    public function test_shared_delivery_rejects_mixed_suppliers_and_unauthorized_posting(): void
+    {
+        $one=$this->requestOrder(2);$this->approve($one);
+        $two=$this->requestOrder(2);$this->approve($two);
+        $supplier=$this->actingAs($this->manager)->postJson('/api/suppliers',['name'=>'Another supplier'])->assertCreated()->json('supplier.id');
+        DB::table('purchase_orders')->where('id',$two)->update(['supplierId'=>$supplier]);
+        $body=['requestKey'=>(string)Str::uuid(),'supplierId'=>$this->supplier,'receivedDate'=>now()->toDateString(),'orders'=>[
+            ['poId'=>$one,'version'=>0,'lines'=>[['productId'=>$this->product,'qty'=>2]]],
+            ['poId'=>$two,'version'=>0,'lines'=>[['productId'=>$this->product,'qty'=>2]]],
+        ]];
+        $this->postJson('/api/receiving-deliveries',$body)->assertUnprocessable();
+        $this->actingAs($this->admin)->postJson('/api/receiving-deliveries',$body)->assertForbidden();
+        $this->assertDatabaseCount('receiving_records',0);
     }
 
     private function requestOrder(int $qty = 10): string
@@ -421,6 +534,12 @@ class PurchaseWorkflowTest extends TestCase
         $body = $this->delivery(3);
         $this->actingAs($this->manager)->postJson('/api/purchase-orders/'.$id.'/receive', $body)->assertUnprocessable();
         $body['notes'] = 'Supplier delivered one extra piece, accepted by manager.';
+        $this->postJson('/api/purchase-orders/'.$id.'/receive', $body)->assertUnprocessable();
+        $this->postJson('/api/purchase-orders/'.$id.'/budget-requests', ['requestKey'=>(string)Str::uuid(),'version'=>0,'amount'=>2.50,'reason'=>'Accept one extra piece'])->assertCreated();
+        $approval=DB::table('purchase_budget_requests')->value('id');
+        $this->actingAs($this->admin)->patchJson('/api/purchase-budget-requests/'.$approval,['action'=>'Approved'])->assertOk();
+        $this->actingAs($this->manager);
+        $body['version']=1;
         $this->postJson('/api/purchase-orders/'.$id.'/receive', $body)->assertCreated()->assertJsonPath('status', 'Fully Received');
         $this->assertDatabaseHas('products', ['id' => $this->product, 'stock' => 3]);
         $this->get('/purchase-orders/'.$id.'/report')->assertOk()->assertSee('Quantity discrepancies are recorded as remarks.');

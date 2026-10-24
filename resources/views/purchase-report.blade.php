@@ -40,6 +40,22 @@
     <p class="muted">* Difference = received − ordered. Negative quantities are outstanding; positive quantities are excess. Quantities use the inventory unit shown for each item.</p>
     @if($lines->contains(fn ($line) => (int) $line->deliveredQty + (int)($line->resolvedQty ?? 0) !== (int) $line->orderedQty))<p class="notice">Quantity discrepancies are recorded as remarks. The PO remains open for outstanding goods. Post later accepted deliveries against this same PO.</p>@endif
     <p class="muted">Resolved later quantities fulfill the original obligation without rewriting its receipts. Carryover items included in a later PO do not add a new purchase charge.</p>
+    <h2>Receiving balance (PHP)</h2>
+    <section class="meta">
+        <div><strong>Original ordered value</strong>{{ number_format($order->orderedValue, 2) }}</div>
+        <div><strong>Approved additional amount</strong>{{ number_format($receivingLimit - $order->orderedValue, 2) }}</div>
+        <div><strong>Accepted delivery value</strong>{{ number_format($order->deliveredValue, 2) }}</div>
+        <div><strong>Remaining approved receiving value</strong>{{ number_format(max(0, $receivingLimit - $order->deliveredValue), 2) }}</div>
+    </section>
+    <p class="muted">Receiving value is not an unpaid invoice balance or a supplier credit memo. A lower-cost replacement can leave unused approved value after all quantities are fulfilled.</p>
+    @if($budgetRequests->isNotEmpty())
+    <h2>Additional amount approval history</h2>
+    <div class="table-wrap"><table><thead><tr><th>Requested</th><th>Amount</th><th>Reason</th><th>Status</th><th>Requested by (User ID)</th><th>Reviewed by (User ID) / Date</th></tr></thead><tbody>
+    @foreach($budgetRequests as $entry)
+        <tr><td>{{ $entry->created_at }}</td><td>{{ number_format($entry->amount, 2) }}</td><td>{{ $entry->reason }}</td><td>{{ $entry->status }}</td><td>{{ $entry->requestedBy }}</td><td>{{ $entry->reviewedBy ?? 'Pending' }} / {{ $entry->reviewed_at ?? '-' }}</td></tr>
+    @endforeach
+    </tbody></table></div>
+    @endif
     @if($carryovers->isNotEmpty())
     <h2>Linked shortage history</h2>
     <div class="table-wrap"><table><thead><tr><th>Original PO</th><th>Subsequent PO</th><th>Allocated</th><th>Received</th><th>Released</th><th>Resolution receipts</th></tr></thead><tbody>
@@ -50,10 +66,16 @@
     @forelse($receipts as $receipt)
         <section class="receipt"><strong class="mono">{{ $receipt->id }}</strong> · Receipt reference: {{ $receipt->deliveryReference ?? 'Not recorded' }}
         <p>Supplier document: {{ ($receipt->supplierDocument ?? null) ?: "Not recorded" }} ? Payment due: {{ ($receipt->paymentDueDate ?? null) ?: "Not recorded" }}</p>
+        @if($receipt->deliveryBatch)
+        <p><strong>Receiving Batch / Lot:</strong> {{ $receipt->deliveryBatch }}<br><strong>POs in this delivery:</strong> {{ $sharedReceipts->get($receipt->deliveryBatch, collect())->pluck('poId')->unique()->implode(', ') }}</p>
+        @endif
         <p>Date received: {{ $receipt->date }} · Recorded at: {{ $receipt->received_at ?? 'Not recorded' }}<br>Received by: {{ $receipt->receivedBy ?? 'Not recorded' }} · Remarks: {{ \App\Services\ReceivingRemarks::forReceipt($receipt) }}</p>
         <div class="table-wrap" tabindex="0" role="region" aria-label="Delivery items"><table><thead><tr><th>Product ID</th><th>Item / Category</th><th>Manufacturer</th><th>Ordered Qty</th><th>Received Order</th><th>Unit</th><th>Actual unit cost</th><th>Batch / Lot</th><th>Expiry</th></tr></thead><tbody>
         @foreach($receiptLines->get($receipt->id, collect()) as $line)<tr><td>{{ $line->productId }}</td><td>{{ $line->name ?? 'Item #'.$line->productId }}<br>{{ $line->category ?? 'Not recorded' }}</td><td>{{ $line->manufacturer ?? 'Not recorded' }}</td><td>{{ $line->poQty }}</td><td>{{ $line->deliveredQty }}</td><td>{{ $line->unit ?? 'Not recorded' }}</td><td>{{ $line->unitCost === null ? 'Not recorded' : number_format($line->unitCost, 2) }}</td><td>{{ $line->batchNumber ?? '-' }}</td><td>{{ $line->expiryDate ?? '-' }}</td></tr>@endforeach
         </tbody></table></div>
+        @foreach($receiptLines->get($receipt->id, collect()) as $line)
+            @if($line->followupNote)<p class="notes"><strong>{{ $line->name }}:</strong> {{ $line->followupNote }}</p>@endif
+        @endforeach
         @php($inspection = json_decode($receipt->inspection ?? 'null', true))
         @if(is_array($inspection))
             <h2>{{ collect($inspection)->contains(fn ($item) => $item['missing'] > 0) ? 'MISSING ITEM / SHORTAGE REPORT' : 'RECEIVING INSPECTION REPORT' }}</h2>

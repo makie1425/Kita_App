@@ -90,7 +90,7 @@ class ProductFifoTest extends TestCase
     private function receive(int $qty, float $cost, ?float $retail = null): string
     {
         $this->actingAs($this->manager);
-        $id = $this->postJson('/api/purchase-requests', ['category' => 'Beverages', 'lines' => [['productId' => $this->product, 'supplierId' => $this->input['supplierId'], 'qty' => $qty]]])->assertCreated()->json('id');
+        $id = $this->postJson('/api/purchase-requests', ['category' => 'Beverages', 'lines' => [['productId' => $this->product, 'supplierId' => $this->input['supplierId'], 'qty' => $qty, 'unitCost' => $cost]]])->assertCreated()->json('id');
         $before = DB::table('products')->where('id', $this->product)->value('stock');
         $this->actingAs($this->admin)->patchJson('/api/purchase-requests/'.$id, ['action' => 'approved', 'revision' => 0])->assertOk();
         $this->assertEquals($before, DB::table('products')->where('id', $this->product)->value('stock'));
@@ -162,6 +162,12 @@ class ProductFifoTest extends TestCase
         $this->postJson('/api/purchase-orders/'.$id.'/receive', $payload)->assertUnprocessable();
         $this->assertDatabaseHas('products', ['id' => $this->product, 'stock' => 2, 'unitPrice' => 55]);
         $payload['lines'][0]['sellingPrice'] = 85;
+        $this->postJson('/api/purchase-orders/'.$id.'/receive', $payload)->assertUnprocessable();
+        $this->postJson('/api/purchase-orders/'.$id.'/budget-requests', ['requestKey'=>(string)Str::uuid(),'version'=>0,'amount'=>15,'reason'=>'Supplier price increased from 55 to 60'])->assertCreated();
+        $approval=DB::table('purchase_budget_requests')->where('poId',$id)->value('id');
+        $this->actingAs($this->admin)->patchJson('/api/purchase-budget-requests/'.$approval,['action'=>'Approved'])->assertOk();
+        $this->actingAs($this->manager);
+        $payload['version']=1;
         $this->postJson('/api/purchase-orders/'.$id.'/receive', $payload)->assertCreated();
         $this->assertDatabaseHas('products', ['id' => $this->product, 'stock' => 5, 'unitPrice' => 60, 'price' => 85]);
         $this->assertDatabaseHas('inventory_batches', ['productId' => $this->product, 'unitCost' => 55, 'quantityRemaining' => 2]);
