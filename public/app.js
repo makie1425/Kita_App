@@ -1889,59 +1889,79 @@ class Component extends DCLogic {
     ]));
   }
 
+  receivingQuantityLabel(lines,quantity){
+    const totals=new Map();
+    lines.forEach(l=>{const unit=this.purchaseUnit(l)||'units';totals.set(unit,(totals.get(unit)||0)+Number(quantity(l)||0));});
+    return [...totals].map(([unit,n])=>n+' '+unit).join(' · ')||'0 units';
+  }
   buildPurchaseReceiving(){
     const h=React.createElement,state=this.purchasingState();if(state)return state;
-    const order=this.state.purchaseData.orders.find(o=>o.id===this.state.purchaseReceivingId);
-    const close=()=>{if(!this.receivingBusy)this.setState({purchaseReceivingId:null});};
-    const modal=order?this.buildInspectionPopup(order,close):null;
-    const orders=this.state.purchaseData.orders;
+    const orders=this.state.purchaseData.orders,tab=this.state.receivingTab||'active';
     const canReceive=o=>o.lines.some(l=>this.carryoverAvailable(l)>0)&&(['Approved / Waiting for Delivery','Partially Received','Approved','Ordered','Completed','Received with Discrepancy'].includes(o.status)||(o.status==='Draft'&&o.request?.status==='Approved'));
-    const missing=o=>(o.lines||[]).reduce((sum,l)=>sum+this.receivingOutstanding(l),0);
-    const discrepancy=o=>o.status==='Received with Discrepancy'||(o.receipts||[]).some(r=>r.discrepancy);
-    const tab=this.state.receivingTab||'active';
-    const selected=this.filterPurchases(orders,true).filter(o=>this.matchesReceivingAudit(o,this.state.receivingAudit||'')).filter(o=>tab==='missing'?(o.receipts||[]).length&&missing(o)>0:tab==='discrepancies'?discrepancy(o):true).sort((a,b)=>Number(!!a.receipts?.length)-Number(!!b.receipts?.length));
-    const receipts=orders.flatMap(o=>o.receipts||[]);
-    const today=this.state.data?.BUSINESS_DATE;
-    const receivedValue=receipts.filter(r=>r.date===today).reduce((sum,r)=>sum+(r.lines||[]).reduce((total,l)=>total+Number(l.deliveredQty||0)*Number(l.unitCost||0),0),0);
-    return h('div',{className:'receiving-dashboard'},[
-      h('div',{className:'receiving-heading'},[sectionTitle('Stock Receiving','Receive deliveries and track outstanding items by PO.'),h('label',{className:'receiving-search'},[h('span',{className:'sr-only'},'Search receiving records'),h('input',{type:'search',placeholder:'Search PO, supplier, receipt...',value:this.state.tableViews['purchase-receiving']?.query||'',onChange:e=>this.setTableView('purchase-receiving',{query:e.target.value,page:1})})])]),
-      h('div',{className:'receiving-top-filters'},[this.purchaseFilters(true)]),
-      this.buildReceivingExample(),
-      h('div',{className:'receiving-metrics'},[
-        kpi('Pending Deliveries',orders.filter(canReceive).length+' POs'),
-        kpi('Received Today',peso(receivedValue),'Recorded receiving value'),
-        kpi('Outstanding Items',orders.reduce((sum,o)=>sum+o.lines.filter(l=>this.carryoverAvailable(l)>0).length,0)+' lines'),
-        kpi('Discrepancies',orders.filter(discrepancy).length+' POs'),
-        kpi('Fully Received',orders.filter(o=>o.fulfillmentStatus==='Fully Received').length+' POs'),
-      ]),
-      this.state.lastReceivedPo?h('div',{className:'sa-panel',role:'status'},'Delivery saved'+(this.state.lastDeliveryBatch?' · '+this.state.lastDeliveryBatch:'')+'. View or print the PO reports from Reports.'):null,
-      h('div',{className:'receiving-tabs',role:'group','aria-label':'Receiving views'},[['active','All POs'],['missing','Outstanding items'],['discrepancies','Discrepancies']].map(([value,label])=>h('button',{type:'button',key:value,'data-action-tone':'blue','aria-pressed':tab===value,onClick:()=>{this.setState({receivingTab:value});this.setTableView('purchase-receiving',{page:1});}},label))),
-      this.recordTable('purchase-receiving',['Receipt No.','Receiving Date','PO Number','Supplier','Product','Ordered Qty','Received Qty','Outstanding Qty','Unit Cost','Total Cost','Status','Actions'],selected.flatMap(o=>{
-        const rows=(o.receipts||[]).flatMap(r=>(r.lines||[]).map(l=>{
-          const originalId=String(l.conditionText||'').match(/replacement for product #(\d+)/)?.[1]||l.productId;
-          return {r,l,ordered:o.lines.find(p=>String(p.productId)===String(originalId))};
-        }));
-        o.lines.filter(l=>!rows.some(row=>row.ordered===l)).forEach(l=>rows.push({r:null,l,ordered:l}));
-        return rows.map(({r,l,ordered},index)=>{
-          const outstanding=ordered?this.receivingOutstanding(ordered):0;
-          const received=Number(r?l.deliveredQty||0:ordered.deliveredQty||0);
-          const cost=r?l.unitCost:null;
-          const status=outstanding===0?'Completed':Number(ordered?.deliveredQty||0)+Number(ordered?.resolvedQty||0)>0?'Partial':'Awaiting';
-          const report=r?'/receipts/'+encodeURIComponent(r.id)+'/report':'/purchase-orders/'+encodeURIComponent(o.id)+'/report';
-          const reportAction=label=>h('a',{className:'kita-button',href:report,target:'_blank',rel:'noopener'},label);
-          return tr([td(r?.id||'Not received',{fontWeight:700}),td(r?.date||'—'),td(o.id),td(o.supplierName||this.purchaseSupplier(o.supplierId)),td(l.name||ordered?.name||l.productId),td(ordered?.orderedQty??l.poQty??'—'),td(received),td(outstanding),td(cost==null?'—':peso(cost)),td(cost==null?'—':peso(received*Number(cost))),td(badge(status)),td([reportAction('View'),canReceive(o)&&ordered&&this.carryoverAvailable(ordered)>0?btn('Receive',()=>this.openPurchaseReceiving(o),'primary'):null,reportAction('Print')])],o.id+'-'+(r?.id||'awaiting')+'-'+index);
-        });
-      }),{externalSearch:true}),
-      this.buildStockReceiptHistory(),this.buildDeliveryHistory(selected),this.buildCarryoverPanel(),tab==='discrepancies'?this.buildSupplierContacts(selected):null,modal,
+    const pending=orders.filter(canReceive),receipts=orders.flatMap(o=>o.receipts||[]);
+    const query=this.state.receivingCardSearch||'';
+    const selected=this.filterPurchases(pending,true).filter(o=>this.matchesReceivingAudit(o,this.state.receivingAudit||'')).filter(o=>tab!=='missing'||o.receipts?.length).filter(o=>searchMatches([o.id,o.supplierName,this.purchaseSupplier(o.supplierId),...o.lines.map(l=>l.name)].join(' '),query)).sort((a,b)=>String(a.created).localeCompare(String(b.created))||a.id.localeCompare(b.id));
+    const order=orders.find(o=>o.id===this.state.purchaseReceivingId);
+    const close=()=>{if(!this.receivingBusy)this.setState({purchaseReceivingId:null});};
+    const receiptIds=new Set(receipts.filter(r=>r.date===this.state.data?.BUSINESS_DATE).map(r=>r.deliveryBatch||r.id));
+    return h('div',{className:'receiving-workspace'},[
+      sectionTitle('Stock Receiving','Receive approved purchase orders and manage supplier deliveries.'),
+      h('div',{className:'receiving-card-metrics'},[kpi('Purchase Orders Awaiting Receipt',pending.length+' POs'),kpi('Stock Receipts Today',receiptIds.size),kpi('Outstanding Items',pending.reduce((n,o)=>n+o.lines.filter(l=>this.carryoverAvailable(l)>0).length,0)+' lines'),kpi('Fully Received Purchase Orders',orders.filter(o=>o.fulfillmentStatus==='Fully Received'||o.status==='Fully Received').length+' POs')]),
+      h('section',{className:'receiving-card-panel'},[
+        h('div',{className:'receiving-card-tabs','aria-label':'Receiving views'},[
+          ...[['active','To Receive'],['history','Stock Receipt History'],['missing','Outstanding Items']].map(([value,label])=>h('button',{type:'button',key:value,'aria-pressed':tab===value,onClick:()=>this.setState({receivingTab:value})},label)),
+          h('button',{type:'button',onClick:()=>{this.setState({screen:'mgrInventory'});this.openInventoryView('batches');}},'Batch / Lot Register')
+        ]),
+        tab==='history'?h(React.Fragment,null,[this.buildStockReceiptHistory(),this.buildDeliveryHistory(orders),!receipts.length?h('p',{className:'record-empty'},'No stock receipts have been recorded.'):null]):h(React.Fragment,null,[
+          h('h3',null,tab==='missing'?'Outstanding Items':'Purchase Orders Awaiting Receipt'),
+          h('p',{className:'receiving-card-help'},tab==='missing'?'Previously received orders with quantities still outstanding.':'Approved purchase orders with quantities remaining to receive.'),
+          h('input',{className:'receiving-card-search',type:'search','aria-label':'Search purchase orders',placeholder:'Search purchase order, supplier, or product...',value:query,onChange:e=>this.setState({receivingCardSearch:e.target.value})}),
+          h('details',{className:'receiving-card-filters'},[h('summary',null,'Filter purchase orders'),this.purchaseFilters(true)]),
+          h('div',{className:'receiving-card-list'},selected.length?selected.map(o=>{
+            const lines=o.lines.filter(l=>this.carryoverAvailable(l)>0);
+            return h('article',{className:'receiving-record-card',key:o.id},[
+              h('div',{className:'receiving-card-row'},[h('strong',null,o.id),badge(o.receipts?.length?'Partially Received':'Awaiting Delivery')]),
+              h('p',{className:'receiving-card-meta'},(o.supplierName||this.purchaseSupplier(o.supplierId))+' · '+String(o.created||'').slice(0,10)),
+              h('div',{className:'receiving-card-row'},[h('span',null,lines.map(l=>l.name).join(', ')+' · '+lines.length+' item'+(lines.length===1?'':'s')),h('strong',null,this.receivingQuantityLabel(lines,l=>this.carryoverAvailable(l)))]),
+              h('div',{className:'receiving-card-actions'},[h('button',{type:'button',className:'primary-button',onClick:()=>this.openPurchaseReceiving(o)},'Receive Delivery')])
+            ]);
+          }):h('p',{className:'record-empty',role:'status'},'No purchase orders match these filters.'))
+        ])
+      ]),this.buildReceivingExample(),order?this.buildInspectionPopup(order,close):null
     ]);
   }
 
   buildPurchaseHistory(){
     const h=React.createElement,state=this.purchasingState();if(state)return state;
-    const orders=this.filterPurchases(this.state.purchaseData.orders,true).filter(o=>o.receipts.length>0);
-    const deliveries=orders.flatMap(o=>o.receipts.map(r=>({o,r}))).filter(({o,r})=>this.matchesReceivingAudit({...o,receipts:[r]},this.state.receivingAudit||'')).sort((a,b)=>String(b.r.received_at||b.r.date).localeCompare(String(a.r.received_at||a.r.date))||String(b.r.id).localeCompare(String(a.r.id)));
-    return h('div',null,[sectionTitle('Purchase Transaction History','Each delivery has its own receipt. The same PO stays open until its outstanding quantities are accepted; inspection remarks remain unchanged.'),this.purchaseFilters(true),this.buildSupplierContacts(orders),
-      this.recordTable('purchase-history',['PO ID','Receipt ID','Supplier','Items / received / unit','Received date','Remarks','Received by','Approving Admin','Report'],deliveries.map(({o,r})=>tr([td(o.id),td(r.id),td(o.supplierName||this.purchaseSupplier(o.supplierId)),td((r.lines||[]).map(l=>`${l.name||o.lines.find(p=>Number(p.productId)===Number(l.productId))?.name||l.productId}: ${l.deliveredQty||0} ${this.purchaseUnit(l)}`).join('; ')),td(r.received_at||r.date),td(r.remarks||'Received as ordered'),td(r.receivedBy||'Not recorded'),td(o.request?.approvedBy||'Not recorded'),td(h('a',{className:'kita-button',href:'/receipts/'+encodeURIComponent(r.id)+'/report',target:'_blank',rel:'noopener'},'View Receipt Slip'))],r.id)))
+    const orders=this.state.purchaseData.orders;
+    const all=orders.flatMap(o=>(o.receipts||[]).map(r=>({o,r}))).sort((a,b)=>String(b.r.received_at||b.r.date).localeCompare(String(a.r.received_at||a.r.date))||String(b.r.id).localeCompare(String(a.r.id)));
+    const query=this.state.receiptHistorySearch||'',type=this.state.receiptHistoryType||'',from=this.state.receiptHistoryFrom||'',to=this.state.receiptHistoryTo||'';
+    const isReplacement=r=>(r.lines||[]).some(l=>/replacement|substitut/i.test(l.conditionText||''));
+    const filtered=all.filter(({o,r})=>(!type||(type==='replacement'?isReplacement(r):!isReplacement(r)))&&(!from||r.date>=from)&&(!to||r.date<=to)&&searchMatches([r.id,o.id,o.supplierName,r.receivedBy,r.remarks,...(r.lines||[]).map(l=>l.name)].join(' '),query));
+    return h('div',{className:'receiving-workspace'},[
+      sectionTitle('Transaction History','Audit trail of posted purchase receipts. Open the Inventory Ledger for other stock movements.'),
+      h('div',{className:'receiving-card-metrics'},[kpi('Posted PO Receipts',all.length),kpi('Purchase Orders Received',orders.filter(o=>o.receipts?.length).length),kpi('Replacement / Substitution Receipts',all.filter(({r})=>isReplacement(r)).length),kpi('Latest Receipt Date',all[0]?.r.date||'No receipts')]),
+      h('section',{className:'receiving-card-panel'},[
+        h('div',{className:'receiving-card-row'},[h('h3',null,'Receipt Transactions'),h('button',{type:'button',className:'kita-button',onClick:()=>{this.setState({screen:'mgrInventory'});this.openInventoryView('movements');}},'Inventory Ledger')]),
+        h('input',{className:'receiving-card-search',type:'search','aria-label':'Search receipt transactions',placeholder:'Search receipt, purchase order, supplier, or user...',value:query,onChange:e=>this.setState({receiptHistorySearch:e.target.value})}),
+        h('div',{className:'receiving-history-filters'},[
+          h('label',null,['Transaction Type',h('select',{value:type,onChange:e=>this.setState({receiptHistoryType:e.target.value})},[['','All Types'],['receipt','Stock Receipt'],['replacement','Replacement / Substitution Receipt']].map(([value,label])=>h('option',{value,key:value},label)))]),
+          ...[['receiptHistoryFrom','Receipt Date From',from],['receiptHistoryTo','Receipt Date To',to]].map(([key,label,value])=>h('label',{key},[label,h('input',{type:'date',value,onChange:e=>this.setState({[key]:e.target.value})})]))
+        ]),
+        h('p',{className:'receiving-card-help',role:'status'},filtered.length+' matching receipts'),
+        h('div',{className:'receiving-card-list'},filtered.length?filtered.map(({o,r})=>h('article',{className:'receiving-record-card',key:r.id},[
+          h('div',{className:'receiving-card-row'},[h('strong',null,r.id),badge(isReplacement(r)?'Replacement / Substitution Receipt':'Stock Receipt')]),
+          h('p',{className:'receiving-card-meta'},r.received_at||r.date),
+          h('div',{className:'receiving-card-row'},[h('span',null,r.remarks||'Stock received and posted'),h('strong',{className:'receiving-card-quantity'},'+'+this.receivingQuantityLabel(r.lines||[],l=>l.deliveredQty))]),
+          h('p',{className:'receiving-card-meta'},'Purchase Order: '+o.id),
+          h('p',{className:'receiving-card-meta'},'Received by: '+(r.receivedBy||'Not recorded')),
+          h('details',{className:'receiving-transaction-details'},[
+            h('summary',null,'View Transaction'),
+            h('dl',null,[...[[ 'Receipt No.',r.id],['Purchase Order No.',o.id],['Supplier',o.supplierName||this.purchaseSupplier(o.supplierId)],['Status','Posted']].map(([label,value])=>h('div',{key:label},[h('dt',null,label),h('dd',null,value)])),...(r.lines||[]).map((l,i)=>h('div',{key:i},[h('dt',null,l.name||o.lines.find(p=>Number(p.productId)===Number(l.productId))?.name||l.productId),h('dd',null,l.deliveredQty+' '+this.purchaseUnit(l))]))]),
+            h('a',{className:'kita-button',href:'/receipts/'+encodeURIComponent(r.id)+'/report',target:'_blank',rel:'noopener'},'View / Print Receipt')
+          ])
+        ])):h('p',{className:'record-empty'},'No receipt transactions match these filters.'))
+      ])
     ]);
   }
   cancelPurchaseRemainder=async id=>{

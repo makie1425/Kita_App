@@ -1623,6 +1623,48 @@ body:has(.receiving-dialog[open]) { overflow:hidden; }
 .receive-compact-body .receiving-example { margin:0; font-size:12px; }
 .receive-compact-body .receiving-example>summary { font-size:12px; padding:10px; }
 /* Delivery inspection popup: compact, blue and white. */
+.receiving-workspace { color:#15325b; max-width:1200px; margin:0 auto; }
+.receiving-card-metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; margin:16px 0; }
+.receiving-card-metrics>div { min-width:0; padding:16px!important; border:1px solid #d8e4fa; border-radius:12px; box-shadow:none; }
+.receiving-card-metrics .kpi-card { min-height:100px; background:#fff; }
+.receiving-card-metrics .kpi-heading { min-height:26px; font-size:11px; }
+.receiving-card-metrics .kpi-icon { width:24px; height:24px; }
+.receiving-card-metrics .kpi-value { font-size:22px; margin-top:8px; }
+.receiving-card-panel { background:#fff; border:1px solid #d8e4fa; border-radius:12px; padding:18px; }
+.receiving-card-panel h3 { font-size:15px; margin:14px 0 6px; }
+.receiving-card-tabs { display:flex; flex-wrap:wrap; gap:8px; border-bottom:1px solid #e8eef8; padding-bottom:14px; margin-bottom:14px; }
+.receiving-card-tabs button { background:#fff; border:1px solid #d6e2f5; border-radius:18px; padding:7px 12px; font-size:12px; color:#244b85; }
+.receiving-card-tabs button[aria-pressed=true],.receiving-card-tabs button:hover { background:#245ff5; color:#fff; border-color:#245ff5; }
+.receiving-card-search { width:100%; box-sizing:border-box; padding:10px 12px; border:1px solid #dbe4f0; border-radius:9px; font-size:13px; }
+.receiving-card-help,.receiving-card-meta { color:#6c7e99; font-size:12px; line-height:1.5; }
+.receiving-card-meta { margin:7px 0; }
+.receiving-card-filters { margin:12px 0; font-size:12px; }
+.receiving-card-filters summary { cursor:pointer; color:#245ff5; }
+.receiving-card-list { display:grid; gap:12px; }
+.receiving-record-card { border:1px solid #dce4ef; border-radius:10px; padding:16px; font-size:13px; min-width:0; overflow-wrap:anywhere; }
+.receiving-card-row { display:flex; justify-content:space-between; align-items:center; gap:12px; }
+.receiving-card-row>span:first-child { flex:1; }
+.receiving-card-actions { display:flex; justify-content:flex-end; margin-top:12px; }
+.receiving-card-actions button { font-size:12px; padding:8px 14px; border-radius:8px; }
+.receiving-workspace .primary-button { background:#245ff5; color:#fff; border-color:#245ff5; }
+.receiving-workspace .primary-button:hover { background:#1746ce; color:#fff; }
+.receiving-history-filters { display:grid; grid-template-columns:2fr 1fr 1fr; gap:12px; margin-top:12px; }
+.receiving-history-filters label { display:flex; flex-direction:column; gap:6px; font-size:12px; }
+.receiving-history-filters input,.receiving-history-filters select { width:100%; min-width:0; box-sizing:border-box; padding:9px; background:#fff; color:#244b85; border:1px solid #dbe4f0; border-radius:8px; }
+.receiving-card-quantity { color:#174cbe; }
+.receiving-transaction-details summary { cursor:pointer; color:#245ff5; text-align:right; font-size:12px; }
+.receiving-transaction-details dl { padding:12px; border-radius:8px; background:#f7faff; }
+.receiving-transaction-details dl>div { display:flex; justify-content:space-between; gap:20px; padding:7px 0; }
+.receiving-transaction-details dt { color:#6c7e99; }
+.receiving-transaction-details dd { margin:0; text-align:right; }
+@media(max-width:700px) {
+ .receiving-card-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+ .receiving-card-panel { padding:12px; }
+ .receiving-record-card { padding:12px; }
+ .receiving-history-filters { grid-template-columns:repeat(2,minmax(0,1fr)); }
+ .receiving-history-filters label:first-child { grid-column:1/-1; }
+ .receiving-card-row { align-items:flex-start; flex-wrap:wrap; }
+}
 .inspection-dialog { width:min(1120px,96vw); max-width:96vw; padding:0; overflow:hidden; border-radius:14px; }
 .inspection-shell { display:flex; flex-direction:column; max-height:90dvh; }
 .inspection-header { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; padding:16px 22px; background:linear-gradient(110deg,#1647ed,#2462ee); color:#fff; }
