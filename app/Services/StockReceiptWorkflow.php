@@ -85,16 +85,13 @@ class StockReceiptWorkflow
             if ($type==='missing') abort_if($delivered>$balance['missing'],422,'Delivery exceeds the outstanding missing quantity.');
             if ($type==='damaged') abort_if($delivered>$balance['damaged'],422,'Delivery exceeds the damaged replacement quantity due.');
             if ($type==='outstanding') abort_if($delivered>$balance['total'],422,'Delivery exceeds the previous outstanding quantity.');
-            if ($delivered>$balance['total']) {
-                abort_if($damaged>0,422,'Resolve excess damaged quantities separately before posting this receipt.');
-                $exceptions[]='Excess delivery: '.$order->id.' / '.$line->name.' (+'.($delivered-$balance['total']).')';
-            }
+            abort_if($delivered>$balance['total'],422,'Delivery cannot exceed the outstanding quantity.');
             $target=InventoryRules::product(($entry['substituteProductId'] ?? null) ?: $entry['productId']);
             abort_unless(strtolower($line->unit)===strtolower($target->stockUnit ?: $target->unit),422,'Replacement products must use the same stock unit.');
             $substitute=(int)$target->id!==(int)$line->productId;
             if ($substitute) {
                 abort_unless(trim($entry['substitutionReason'] ?? ''),422,'Explain the substitution.');
-                abort_if($accepted>$balance['total'] || (float)$entry['unitCost']>(float)$line->unitCost || InventoryRules::unitCost($target)>(float)$line->unitCost,422,'A substitute must have equal-or-lower unit cost and cannot exceed the outstanding quantity.');
+                abort_if($accepted>$balance['total'],422,'A substitute must have equal-or-lower unit cost and cannot exceed the outstanding quantity.');
                 $exceptions[]='Substitution: '.$line->name.' → '.$target->name.' ('.$order->id.')';
             }
             if ((int)round($entry['unitCost']*100)!==(int)round($line->unitCost*100)) $exceptions[]='Purchase-cost change: '.$order->id.' / '.$line->name;
@@ -115,11 +112,12 @@ class StockReceiptWorkflow
             if (isset($groups[$key])) abort_unless($groups[$key]['targetProductId']===$target->id && (float)$groups[$key]['unitCost']===(float)$entry['unitCost'],422,'Use one received product and unit cost for each original PO line.');
             $group=$groups[$key] ?? ['poId'=>$order->id,'version'=>$entry['version'],'productId'=>$line->productId,'targetProductId'=>$target->id,'substituteProductId'=>$substitute?$target->id:null,'substitutionReason'=>$type==='damaged'?'damaged':'missing','unitCost'=>$entry['unitCost'],'qty'=>0,'damagedQty'=>0,'damageReason'=>'','lots'=>[]];
             $group['qty']+=$accepted;$group['damagedQty']+=$damaged;$group['damageReason'].=($entry['damageReason'] ?? '').' ';$group['lots']=array_merge($group['lots'],$entry['lots']);
+            PurchaseBudget::checkLine($line, InventoryRules::lineTotal($group['qty'],$group['unitCost']));
             $groups[$key]=$group;
         }
         foreach ($orders as $order) {
             $value=collect($groups)->where('poId',$order->id)->sum(fn($g)=>InventoryRules::lineTotal($g['qty'],$g['unitCost']));
-            if (round($order->deliveredValue+$value,2)>PurchaseBudget::limit($order)) $exceptions[]='Additional receiving value required: '.$order->id;
+            PurchaseBudget::check($order,round($order->deliveredValue+$value,2));
         }
         if ($exceptions) abort_unless(trim($data['notes'] ?? ''),422,'Add receiving notes explaining the exceptions for approval.');
         return compact('summary','exceptions','groups','orders','balances');
@@ -187,12 +185,7 @@ class StockReceiptWorkflow
             $groups=collect($checked['groups'])->where('poId',$order->id);
             if ($groups->isEmpty()) continue;
             $value=$groups->sum(fn($g)=>InventoryRules::lineTotal($g['qty'],$g['unitCost']));
-            $extra=round(max(0,$order->deliveredValue+$value-PurchaseBudget::limit($order)),2);
-            if ($extra>0) {
-                abort_unless($approved,422,'Additional amount requires approval.');
-                $approval=DB::table('stock_receipts')->where('id',$id)->first();
-                DB::table('purchase_budget_requests')->insert(['poId'=>$order->id,'requestKey'=>(string)Str::uuid(),'version'=>$order->receivingVersion,'amount'=>$extra,'reason'=>'Approved stock receipt '.$id,'status'=>'Approved','requestedBy'=>$approval->requestedBy,'reviewedBy'=>$approval->reviewedBy,'reviewed_at'=>$approval->reviewed_at,'created_at'=>now(),'updated_at'=>now()]);
-            }
+            PurchaseBudget::check($order,round($order->deliveredValue+$value,2));
             $lotsByProduct=[];$lines=[];
             foreach ($groups as $group) {
                 $lots=[];

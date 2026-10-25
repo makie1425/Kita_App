@@ -104,7 +104,9 @@ class ProductMasterController extends Controller
         $query = DB::table('inventory_batches as b')->join('products as p', 'p.id', '=', 'b.productId')
             ->leftJoin('brands as brand', 'brand.id', '=', 'p.brandId')->leftJoin('subcategories as sub', 'sub.id', '=', 'p.subcategoryId')
             ->leftJoin('suppliers as supplier', 'supplier.id', '=', 'b.supplierId')
-            ->leftJoin('receiving_records as receipt', 'receipt.id', '=', 'b.receiptId');
+            ->leftJoin('receiving_records as receipt', 'receipt.id', '=', 'b.receiptId')
+            ->leftJoin('purchase_orders as batch_po', 'batch_po.id', '=', 'receipt.poId')
+            ->leftJoin('item_requests as batch_request', 'batch_request.id', '=', 'batch_po.itemRequestId');
         foreach (['category' => 'p.category', 'brandId' => 'p.brandId', 'subcategoryId' => 'p.subcategoryId', 'productId' => 'p.id', 'supplierId' => 'b.supplierId'] as $key => $column) {
             if ($request->filled($key)) {
                 $query->where($column, $request->input($key));
@@ -123,7 +125,7 @@ class ProductMasterController extends Controller
         $movements->leftJoin('users as actor', fn ($join) => $join->on('actor.id', '=', 'm.userId')->on('actor.role', '=', 'm.userRole'))
             ->leftJoin('receiving_records as receipt', fn ($join) => $join->on('receipt.id', '=', 'm.referenceId')->where('m.referenceType', 'purchase_receiving'));
         return response()->json([
-            'batches' => \App\Services\InventoryAvailability::batches($query->orderByDesc('b.receivedDate')->orderByDesc('b.id')->get(['b.*', 'p.name', 'p.category', 'p.size', 'p.sizeUnit', 'p.stockUnit', 'p.status as productStatus', 'p.archivedAt as productArchivedAt', 'brand.name as brand', 'sub.name as subcategory', 'supplier.name as supplier', 'receipt.poId', 'receipt.deliveryReference', 'receipt.receivedBy'])),
+            'batches' => \App\Services\InventoryAvailability::batches($query->orderByDesc('b.receivedDate')->orderByDesc('b.id')->get(['b.*', 'p.name', 'p.category', 'p.size', 'p.sizeUnit', 'p.stockUnit', 'p.status as productStatus', 'p.archivedAt as productArchivedAt', 'brand.name as brand', 'sub.name as subcategory', 'supplier.name as supplier', 'receipt.poId', 'receipt.deliveryReference', 'receipt.receivedBy', 'batch_request.requested_at as requestedAt', 'receipt.received_at as receivedAt'])),
             'products' => $current,
             'movements' => \App\Services\InventoryLedger::describe(\App\Services\BatchTrace::movements($movements->orderByDesc('m.id')->limit(500)->get(['m.*', 'p.name', 'p.stockUnit', 'p.barcode', 'p.category', 'actor.name as recordedBy', 'receipt.poId']))),
             'movementCount'=>$movementCount, 'movementLimit'=>500, 'movementTypes'=>\App\Services\InventoryLedger::TYPES,

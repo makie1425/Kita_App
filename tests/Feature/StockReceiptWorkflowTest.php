@@ -71,18 +71,38 @@ class StockReceiptWorkflowTest extends TestCase {
   $this->postJson('/api/stock-receipts',$this->body($po,[$e]))->assertUnprocessable();
   $this->assertDatabaseCount('stock_receipts',0);$this->assertDatabaseCount('receiving_records',0);
  }
- public function test_cost_exception_requires_separate_approval_then_idempotent_posting():void {
-  $po=$this->order(10);$e=$this->entry($po,10);$e['unitCost']=110;$body=$this->body($po,[$e]);$body['notes']='Supplier price increase';
-  $id=$this->postJson('/api/stock-receipts',$body)->assertCreated()->assertJsonPath('status','Pending Approval')->json('id');
+ public function test_over_budget_receiving_is_rejected_without_approval_or_inventory():void {
+  $po=$this->order(10);$e=$this->entry($po,10);$e['unitCost']=110;$body=$this->body($po,[$e]);
+  $this->postJson('/api/stock-receipts',$body)->assertUnprocessable()->assertSee('remaining approved value');
+  $this->assertDatabaseCount('stock_receipts',0);
   $this->assertDatabaseHas('products',['id'=>$this->product,'stock'=>0]);
-  $this->postJson('/api/stock-receipts/'.$id.'/post')->assertUnprocessable();
-  $this->patchJson('/api/stock-receipts/'.$id.'/review',['action'=>'Approved','note'=>'Verified supplier price'])->assertForbidden();
-  $this->actingAs($this->admin)->patchJson('/api/stock-receipts/'.$id.'/review',['action'=>'Approved','note'=>'Verified supplier price'])->assertOk();
-  $this->assertDatabaseHas('products',['id'=>$this->product,'stock'=>0]);
+ }
+ public function test_partial_higher_cost_uses_remaining_value_across_receipts():void {
+  $po=$this->order(10);$e=$this->entry($po,5);$e['unitCost']=110;$body=$this->body($po,[$e]);$body['notes']='Actual purchase cost';
+  $id=$this->postJson('/api/stock-receipts',$body)->assertCreated()->json('id');
+  $this->actingAs($this->admin)->patchJson('/api/stock-receipts/'.$id.'/review',['action'=>'Approved','note'=>'Within fixed value'])->assertOk();
   $this->actingAs($this->manager)->postJson('/api/stock-receipts/'.$id.'/post')->assertOk();
-  $this->postJson('/api/stock-receipts/'.$id.'/post')->assertOk();
-  $this->assertDatabaseHas('products',['id'=>$this->product,'stock'=>10,'price'=>150]);
-  $this->assertDatabaseCount('receiving_records',1);
+  $e=$this->entry($po,5,0,1);$this->postJson('/api/stock-receipts',$this->body($po,[$e]))->assertUnprocessable();
+  $e['unitCost']=90;$body=$this->body($po,[$e]);$body['notes']='Within remaining value';
+  $id=$this->postJson('/api/stock-receipts',$body)->assertCreated()->json('id');
+  $this->actingAs($this->admin)->patchJson('/api/stock-receipts/'.$id.'/review',['action'=>'Approved','note'=>'Within remaining value'])->assertOk();
+  $this->actingAs($this->manager)->postJson('/api/stock-receipts/'.$id.'/post')->assertOk();
+  $this->assertDatabaseHas('inventory_batches',['productId'=>$this->product,'unitCost'=>110,'quantityReceived'=>5]);
+  $this->assertDatabaseHas('inventory_batches',['productId'=>$this->product,'unitCost'=>90,'quantityReceived'=>5]);
+ }
+ public function test_missing_substitution_posts_only_replacement_and_cannot_raise_budget():void {
+  $po=$this->order(10);
+  $this->postJson('/api/stock-receipts',$this->body($po,[$this->entry($po,5)]))->assertCreated();
+  $replacement=$this->postJson('/api/products',['name'=>'Sprite','category'=>'Supplies','barcode'=>'SPRITE','stock'=>0,'unitPrice'=>90,'price'=>140,'purchaseUnit'=>'Piece','stockUnit'=>'Piece','conversionFactor'=>1,'supplierId'=>$this->supplier])->assertCreated()->json('product.id');
+  $e=$this->entry($po,5,0,1,'missing');$e['substituteProductId']=$replacement;$e['substitutionReason']='Supplier replacement';$e['unitCost']=90;
+  $body=$this->body($po,[$e]);$body['notes']='Equal or lower value replacement';
+  $id=$this->postJson('/api/stock-receipts',$body)->assertCreated()->json('id');
+  $this->actingAs($this->admin)->patchJson('/api/stock-receipts/'.$id.'/review',['action'=>'Approved','note'=>'Replacement verified'])->assertOk();
+  $this->actingAs($this->manager)->postJson('/api/stock-receipts/'.$id.'/post')->assertOk();
+  $this->assertDatabaseHas('products',['id'=>$this->product,'stock'=>5]);
+  $this->assertDatabaseHas('products',['id'=>$replacement,'stock'=>5]);
+  $this->assertDatabaseHas('purchase_order_lines',['poId'=>$po,'productId'=>$this->product,'deliveredQty'=>10]);
+  $this->postJson('/api/purchase-orders/'.$po.'/budget-requests',['requestKey'=>(string)Str::uuid(),'version'=>2,'amount'=>100,'reason'=>'Increase'])->assertUnprocessable();
  }
  public function test_all_damaged_delivery_records_obligation_without_inventory():void {
   $po=$this->order(10);

@@ -44,7 +44,7 @@ class PurchasingController extends Controller
         foreach ($orders as $order) {
             $order->budgetRequests = $budgetRequests->get($order->id, collect());
             $order->additionalApprovedValue = (float) $order->budgetRequests->where('status', 'Approved')->sum('amount');
-            $order->receivingBalance = max(0, round((float) $order->orderedValue + $order->additionalApprovedValue, 2) - (float)$order->deliveredValue);
+            $order->receivingBalance = max(0, round((float) $order->orderedValue, 2) - (float)$order->deliveredValue);
             $order->lines = $lines->get($order->id, collect());
             foreach ($order->lines as $line) {
                 $remaining = max(0, ReceivingCarryover::remaining($line) - $incoming->get($line->id, 0));
@@ -152,8 +152,7 @@ class PurchasingController extends Controller
                     $actualCost = $line['unitCost'] ?? $product->unitPrice;
                     if ($product->id == $ordered->productId || empty($line['substitutionReason'])
                         || $line['qty'] > ReceivingCarryover::remaining($ordered)
-                        || (int) round(InventoryRules::unitCost($product) * 100) > $limit
-                        || (int) round((float) $actualCost * 100) > $limit) {
+) {
                         throw ValidationException::withMessages(['lines' => 'Select an equal-or-lower-cost replacement, provide its missing/damaged reason, and receive only the outstanding quantity.']);
                     }
                 }
@@ -169,6 +168,7 @@ class PurchasingController extends Controller
                     throw ValidationException::withMessages(['notes' => 'Explain the excess delivery before posting it.']);
                 }
                 $cost = (float) ($line['unitCost'] ?? ($substitute ? $product->unitPrice : $ordered->unitCost));
+                PurchaseBudget::checkLine($ordered, InventoryRules::lineTotal($line['qty'],$cost));
                 $carried=ReceivingCarryover::resolve($ordered,$line['qty'],$cost,$receiptId);
                 $receivedCents += (int) round(InventoryRules::lineTotal($line['qty']-$carried, $cost) * 100);
                 $previousInspection=DB::table('receiving_inspections')->where('orderLine',$ordered->id)->orderByDesc('id')->first();

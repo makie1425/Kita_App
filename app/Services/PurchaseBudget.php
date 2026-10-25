@@ -14,18 +14,34 @@ class PurchaseBudget
 
     public static function limit(object $order): float
     {
-        return round((float) $order->orderedValue + self::additional($order->id), 2);
+        return round((float) $order->orderedValue, 2);
+    }
+
+    public static function lineRemaining(object $line): float
+    {
+        $spent = DB::table('receiving_record_lines as l')->join('receiving_records as r','r.id','=','l.receivingId')
+            ->where('r.poId',$line->poId)->whereRaw('COALESCE(l.originalProductId,l.productId) = ?',[$line->productId])
+            ->selectRaw('COALESCE(SUM(l.deliveredQty * l.unitCost),0) as spent')->value('spent');
+        return max(0, round($line->orderedQty * $line->unitCost - (float)$spent, 2));
+    }
+
+    public static function checkLine(object $line, float $value): void
+    {
+        $remaining=self::lineRemaining($line);
+        abort_if((int)round($value*100)>(int)round($remaining*100),422,
+            'Cannot receive: total cost exceeds the remaining approved value of PHP '.number_format($remaining,2,'.','').'. Only equal-or-lower-value replacements are allowed.');
     }
 
     public static function check(object $order, float $delivered): void
     {
         abort_if((int) round($delivered * 100) > (int) round(self::limit($order) * 100), 422,
-            'This receipt exceeds the remaining approved receiving balance for '.$order->id.'. Request approval for the additional amount before receiving.');
+            'This receipt exceeds the remaining approved receiving balance for '.$order->id.'. Only equal-or-lower-value receiving is allowed; this limit cannot be increased.');
     }
 
     public function request(Request $request, string $id)
     {
         InventoryRules::authorize($request, ['manager', 'superadmin', 'super_admin']);
+        abort(422, 'Additional receiving amounts are disabled. Receiving must remain within the outstanding value.');
         $data=$request->validate(['requestKey'=>['required','uuid'], 'version'=>['required','integer','min:0'], 'amount'=>['required','numeric','decimal:0,2','min:0.01','max:99999999.99'], 'reason'=>['required','string','max:2000']]);
         abort_unless(trim($data['reason']),422,'Explain the price increase.');
         return DB::transaction(function () use ($request,$id,$data) {
@@ -50,6 +66,7 @@ class PurchaseBudget
     public function review(Request $request, int $id)
     {
         InventoryRules::authorize($request,['admin','superadmin','super_admin']);
+        abort_if($request->input('action')==='Approved',422,'The outstanding receiving limit cannot be increased.');
         $data=$request->validate(['action'=>['required','in:Approved,Declined']]);
         return DB::transaction(function () use ($request,$id,$data) {
             InventoryRules::lockActor($request);
