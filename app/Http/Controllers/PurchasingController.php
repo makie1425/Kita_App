@@ -38,19 +38,26 @@ class PurchasingController extends Controller
             $receipt->lines = $receiptLines->get($receipt->id, collect());
             unset($receipt->payloadHash, $receipt->idempotencyKey);
         }
+        $budgetRequests = DB::table('purchase_budget_requests')->orderByDesc('id')->get()->groupBy('poId');
+        $carryovers = DB::table('receiving_carryovers')->get();
+        $incoming = $carryovers->groupBy('targetLine')->map(fn ($rows) => (int) $rows->sum(fn ($row) => $row->quantity - $row->receivedQty - $row->releasedQty));
         foreach ($orders as $order) {
-            $order->additionalApprovedValue = PurchaseBudget::additional($order->id);
-            $order->receivingBalance = max(0, PurchaseBudget::limit($order) - (float)$order->deliveredValue);
-            $order->budgetRequests = DB::table('purchase_budget_requests')->where('poId',$order->id)->orderByDesc('id')->get();
+            $order->budgetRequests = $budgetRequests->get($order->id, collect());
+            $order->additionalApprovedValue = (float) $order->budgetRequests->where('status', 'Approved')->sum('amount');
+            $order->receivingBalance = max(0, round((float) $order->orderedValue + $order->additionalApprovedValue, 2) - (float)$order->deliveredValue);
             $order->lines = $lines->get($order->id, collect());
-            foreach ($order->lines as $line) { $line->obligation = \App\Services\StockReceiptWorkflow::obligation($line); }
+            foreach ($order->lines as $line) {
+                $remaining = max(0, ReceivingCarryover::remaining($line) - $incoming->get($line->id, 0));
+                $damage = min($remaining, (int) ($line->damageOutstanding ?? 0));
+                $line->obligation = ['missing'=>$remaining-$damage, 'damaged'=>$damage, 'unclassified'=>$line->damageOutstanding===null && (int)$line->deliveredQty>0, 'total'=>$remaining];
+            }
             $order->request = $requests->firstWhere('id', $order->itemRequestId);
             $order->receipts = $receipts->where('poId', $order->id)->values();
             $order->fulfillmentStatus = $order->status === 'Cancelled' ? 'Cancelled' : ($order->receipts->isEmpty() ? 'Awaiting delivery' : ($order->lines->contains(fn ($l) => ReceivingCarryover::remaining($l) > 0) ? 'Partially Received' : 'Fully Received'));
             $order->remarks = $order->receipts->isEmpty() ? 'Awaiting delivery' : $order->receipts->pluck('remarks')->implode(' | ');
         }
 
-        return response()->json(['stockReceipts'=>\App\Services\StockReceiptWorkflow::listing(), 'requests' => $requests, 'orders' => $orders, 'carryovers'=>DB::table('receiving_carryovers')->get(), 'resolutions'=>DB::table('receiving_carryover_resolutions')->get(), 'inspections'=>DB::table('receiving_inspections')->orderBy('id')->get()])->header('Cache-Control', 'no-store');
+        return response()->json(['stockReceipts'=>\App\Services\StockReceiptWorkflow::listing(), 'requests' => $requests, 'orders' => $orders, 'carryovers'=>$carryovers, 'resolutions'=>DB::table('receiving_carryover_resolutions')->get(), 'inspections'=>DB::table('receiving_inspections')->orderBy('id')->get()])->header('Cache-Control', 'no-store');
     }
 
     public function carryover(Request $request, string $id) { return ReceivingCarryover::allocate($request, $id); }

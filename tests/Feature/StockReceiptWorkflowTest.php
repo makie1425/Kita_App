@@ -25,6 +25,23 @@ class StockReceiptWorkflowTest extends TestCase {
   return ['poId'=>$po,'version'=>$version,'productId'=>$this->product,'type'=>$type,'delivered'=>$delivered,'damaged'=>$damaged,'damageReason'=>$damaged?'Crushed packaging':null,'disposition'=>'return','unitCost'=>100,'lots'=>$delivered>$damaged?[['quantity'=>$delivered-$damaged,'supplierLot'=>'SUP-123']]:[]];
  }
  private function body($po,$entries) {return ['requestKey'=>(string)Str::uuid(),'primaryPo'=>$po,'supplierId'=>$this->supplier,'deliveryDate'=>now()->toDateString(),'entries'=>$entries];}
+ public function test_purchasing_listing_batches_database_reads():void {
+  $old=$this->order(50);
+  $this->postJson('/api/stock-receipts',$this->body($old,[$this->entry($old,45,5)]))->assertCreated();
+  $read=function(){
+   DB::enableQueryLog();DB::flushQueryLog();
+   $response=$this->getJson('/api/purchasing')->assertOk();
+   $queries=count(DB::getQueryLog());DB::disableQueryLog();
+   return [$response,$queries];
+  };
+  [$before,$count]=$read();
+  for($i=0;$i<4;$i++)$this->order(10);
+  [$after,$largerCount]=$read();
+  $this->assertSame($count,$largerCount,'Listing queries must not grow with each PO or line.');
+  $order=collect($after->json('orders'))->firstWhere('id',$old);
+  $this->assertSame(['missing'=>5,'damaged'=>5,'unclassified'=>false,'total'=>10],$order['lines'][0]['obligation']);
+  $this->assertEquals(1000,$order['receivingBalance']);
+ }
  public function test_missing_and_damaged_are_resolved_under_original_po_in_one_delivery():void {
   $old=$this->order(50);
   $first=$this->body($old,[$this->entry($old,45,5)]);

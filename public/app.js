@@ -1493,6 +1493,10 @@ class Component extends DCLogic {
     this.setState({purchaseLoading:true,purchaseError:""});
     try{
       const response=await fetch('/api/purchasing',{headers:{Accept:'application/json'},credentials:'same-origin'});
+      if(!(response.headers.get('content-type')||'').includes('application/json')){
+        if([502,503,504].includes(response.status))throw new Error('The server is taking too long to load purchase records. Please retry in a moment.');
+        throw new Error('Unable to load purchase records (HTTP '+response.status+'). Please refresh and try again.');
+      }
       const body=await response.json();this.handleSessionResponse(response,body);
       if(!response.ok)throw new Error(body.message||'Unable to load purchasing records.');
       if(this.purchaseLoadId===requestId)this.setState({purchaseData:body});return body;
