@@ -243,7 +243,7 @@ class Component extends DCLogic {
     barcodeInput:"", cart:[], scannerConnected:true, manualLookupOpen:false, manualSearch:"",
     seniorPwdOpen:false, seniorForm:{name:"",idNumber:""}, seniorApplied:false, seniorInfo:null, employeeDiscount:false,
     overrideLine:null, overrideReason:"", overridePin:"",
-    paymentMethod:"cash", ewalletProvider:"GCash", tendered:"", paymentState:"idle", reservationSeconds:45,
+    paymentMethod:"cash", ewalletProvider:"QR Ph", tendered:"", paymentState:"idle", reservationSeconds:45,
     commitOpen:false, lateWebhook:false, transactionResult:null,
     refundLookup:"", refundTxn:null, refundError:"", refundClass:"", refundSelectedLines:[],
     exchangeMode:false, exchangeReplacement:"",exchangeTendered:"", voidMode:false, voidPin:"", voidError:"",
@@ -369,7 +369,7 @@ class Component extends DCLogic {
     if(!e.repeat) this.doLogin();
   };
   backToPortalSelect=()=>this.setState({authStep:"login",pendingRole:null,loginUsername:"",loginPassword:"",loginError:""});
-  authPost=(url,payload,method="POST",signal,retried=false)=>fetch(url,{method,signal,headers:{"Content-Type":"application/json","Accept":"application/json","X-CSRF-TOKEN":(window.KITA_AUTH&&window.KITA_AUTH.csrfToken)||document.querySelector('meta[name="csrf-token"]')?.content||""},credentials:"same-origin",body:JSON.stringify(payload)}).then(async r=>{
+  authPost=(url,payload,method="POST",signal,retried=false)=>this.trackLoad(()=>fetch(url,{method,signal,headers:{"Content-Type":"application/json","Accept":"application/json","X-CSRF-TOKEN":(window.KITA_AUTH&&window.KITA_AUTH.csrfToken)||document.querySelector('meta[name="csrf-token"]')?.content||""},credentials:"same-origin",body:JSON.stringify(payload)}).then(async r=>{
     if(r.status===419&&!retried&&url===((window.KITA_AUTH&&window.KITA_AUTH.loginUrl)||'/login')){
       const refresh=await fetch('/auth/csrf-token',{signal,credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}});
       const token=await refresh.json();
@@ -377,7 +377,7 @@ class Component extends DCLogic {
       window.KITA_AUTH=window.KITA_AUTH||{};window.KITA_AUTH.csrfToken=token.csrf_token;
       return this.authPost(url,payload,method,signal,true);
     }
-    const body=await r.json().catch(()=>{ throw new Error("Your session changed. Refresh the page to continue."); }); this.handleSessionResponse(r,body); if(!r.ok){ const msg=(body.errors && Object.values(body.errors)[0] && Object.values(body.errors)[0][0]) || body.message || "Request failed."; const err=new Error(msg); err.status=r.status; err.body=body; throw err; } if(this.state.authStep==='in'&&!url.startsWith('/api/notifications'))this.reloadNotifications(); return body; });
+    const body=await r.json().catch(()=>{ throw new Error("Your session changed. Refresh the page to continue."); }); this.handleSessionResponse(r,body); if(!r.ok){ const msg=(body.errors && Object.values(body.errors)[0] && Object.values(body.errors)[0][0]) || body.message || "Request failed."; const err=new Error(msg); err.status=r.status; err.body=body; throw err; } if(this.state.authStep==='in'&&!url.startsWith('/api/notifications'))this.reloadNotifications(); return body; }));
   loginPost=async (url,payload)=>{
     const controller=new AbortController();
     const timer=setTimeout(()=>controller.abort(),30000);
@@ -623,7 +623,7 @@ class Component extends DCLogic {
     this.checkoutInFlight=true;
     this.setState({paymentState:"processing"});
     const uuid=this.checkoutUuid||(this.checkoutUuid="TXN-"+crypto.randomUUID().replace(/-/g,"").slice(0,26));
-    const refCodes={GCash:"GC-","QR Ph":"QR-"};
+    const refCodes={"QR Ph":"QR-"};
     const result={ uuid,date:new Date().toISOString().slice(0,10),cashier:this.currentUser().name,cart:[...this.state.cart],totals,
       paymentMode: this.state.paymentMethod==="cash"?"Cash":this.state.ewalletProvider,
       tendered, paid:totals.grandTotal, change:Math.max(0,tendered-totals.grandTotal),
@@ -1202,12 +1202,12 @@ class Component extends DCLogic {
           React.createElement("div",{key:"tot",style:{display:"flex",justifyContent:"space-between",fontSize:17,fontWeight:800,marginTop:10,paddingTop:10,borderTop:"1px solid "+COLORS.border}},[React.createElement("span",{key:"l"},"Total"),React.createElement("span",{key:"v",style:{fontFamily:"'JetBrains Mono',monospace"}},peso(totals.grandTotal))]),
         ]),
         card([React.createElement("div",{key:"t",style:{fontWeight:800,marginBottom:10}},"5. Payment"),
-          React.createElement("div",{key:"tog",style:{display:"flex",gap:6,marginBottom:10}},["cash","ewallet"].map(m=>React.createElement("button",{key:m,onClick:this.setPaymentMethod(m),style:{flex:1,padding:"9px 0",borderRadius:8,fontWeight:700,fontSize:12,cursor:"pointer",background:paymentMethod===m?COLORS.brand:"#fff",color:paymentMethod===m?"#fff":COLORS.text,border:"1px solid "+(paymentMethod===m?COLORS.brand:COLORS.border)}},m==="cash"?"Cash":"E-Wallet"))),
+          React.createElement("div",{key:"tog",style:{display:"flex",gap:6,marginBottom:10}},["cash","ewallet"].map(m=>React.createElement("button",{key:m,onClick:this.setPaymentMethod(m),style:{flex:1,padding:"9px 0",borderRadius:8,fontWeight:700,fontSize:12,cursor:"pointer",background:paymentMethod===m?COLORS.brand:"#fff",color:paymentMethod===m?"#fff":COLORS.text,border:"1px solid "+(paymentMethod===m?COLORS.brand:COLORS.border)}},m==="cash"?"Cash":"QR Ph"))),
           paymentMethod==="cash"?React.createElement("div",{key:"cash"},[
             React.createElement("input",{key:"i",value:tendered,onChange:this.setTendered,placeholder:"Tendered amount",type:"number",style:{width:"100%",padding:"9px 10px",border:"1px solid "+COLORS.border,borderRadius:8,fontSize:13,marginBottom:6}}),
             tendered?React.createElement("div",{key:"c",style:{fontSize:12,color:COLORS.textSoft}},`Change: ${peso(Math.max(0,(parseFloat(tendered)||0)-totals.grandTotal))}`):null,
-          ]):React.createElement("select",{key:"ew",value:ewalletProvider,onChange:this.setEwalletProvider,style:{width:"100%",padding:"9px 10px",border:"1px solid "+COLORS.border,borderRadius:8,marginBottom:6}},["GCash","QR Ph"].map(p=>React.createElement("option",{key:p,value:p},p))),
-          paymentMethod==="ewallet" && ewalletProvider==="QR Ph"?React.createElement("div",{key:"qr-help",style:{fontSize:12,color:COLORS.textSoft,marginBottom:8}},"Open checkout to display a QR for "+peso(totals.grandTotal)+". Scan with GCash or a QR Ph-compatible banking app. Payment is confirmed automatically."):null,
+          ]):React.createElement("div",{key:"ew",style:{fontSize:13,fontWeight:700,marginBottom:6}},"QR Ph payment"),
+          paymentMethod==="ewallet" && ewalletProvider==="QR Ph"?React.createElement("div",{key:"qr-help",style:{fontSize:12,color:COLORS.textSoft,marginBottom:8}},"Open checkout to display a QR for "+peso(totals.grandTotal)+". Scan with a QR Ph-compatible wallet or banking app. Payment is confirmed automatically."):null,
           paymentState==="pending"?React.createElement("div",{key:"pend",style:{background:COLORS.amberBg,color:COLORS.amber,padding:"10px",borderRadius:8,fontSize:12,fontWeight:700,marginBottom:8,display:"flex",justifyContent:"space-between"}},[React.createElement("span",{key:"l"},"ðŸ”’ Stock reserved â€” Pending"),React.createElement("span",{key:"t",style:{fontFamily:"'JetBrains Mono',monospace"}},reservationSeconds+"s")]):null,
           paymentState==="processing"?React.createElement("div",{key:"proc",style:{background:COLORS.blueBg,color:COLORS.blue,padding:"10px",borderRadius:8,fontSize:12,fontWeight:700,marginBottom:8}},loadingStatus("Processing payment...")):null,
           paymentState==="authorized"?React.createElement("div",{key:"auth",style:{background:COLORS.blueBg,color:COLORS.blue,padding:"10px",borderRadius:8,fontSize:12,fontWeight:700,marginBottom:8}},"Authorized â€” finalizingâ€¦"):null,
@@ -3105,7 +3105,7 @@ class Component extends DCLogic {
 
     return {
       sidebarClass:s.sidebarOpen?"sidebar sidebar--open":"sidebar",sidebarOpen:s.sidebarOpen,toggleSidebar:this.toggleSidebar,closeSidebar:this.closeSidebar,onShellKeyDown:this.onShellKeyDown,
-      dataLoading:(s.pendingLoads||0)>0||!!s.purchaseLoading||!!s.backupLoading||!!s.backupBusy,
+      dataLoading:(s.pendingLoads||0)>0||!!s.purchaseLoading||!!s.backupLoading||!!s.backupBusy||!!s.supplierAccountsLoading||!!s.workflowLoading||!!s.inventoryHistoryLoading||!!s.reportLoading||!!s.saLoading||!!s.loginPending||!!s.registrationSaving||s.paymentState==="processing"||(!!s.mgrNotifOpen&&!!s.notificationLoading),
       dataLoadingLabel:s.backupBusy?"Creating your backup...":s.backupLoading?"Loading backups...":s.purchaseLoading?"Loading purchase records...":"Loading your workspace data...",dataError:s.dataError,activePortalColor:activePortal.fg,activePortalBg:activePortal.bg,activePortalIcon:activePortal.icon,activePortalLabel:activePortal.label,activePortalDesc:activePortal.desc,backToPortalSelect:this.backToPortalSelect,
       showLogin,showOtp,showApp,loginUsername:s.loginUsername,onUsernameChange:this.onUsernameChange,loginPassword:s.loginPassword,onPasswordChange:this.onPasswordChange,
       otpEmail:s.otpEmail,otpCode:s.otpCode,onOtpChange:this.onOtpChange,verifyOtp:this.verifyOtp,backToPassword:this.backToPassword,

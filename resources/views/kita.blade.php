@@ -11,6 +11,7 @@
 <body>
 @verbatim
 <x-dc>
+<sc-if value="{{ dataLoading }}"><div class="loading-overlay" role="status" aria-live="polite" aria-label="{{ dataLoadingLabel }}"><span class="loading-spinner" aria-hidden="true"></span><span class="loading-overlay-label">{{ dataLoadingLabel }}</span></div></sc-if>
 
 <sc-if value="{{ showLogin }}" hint-placeholder-val="{{ false }}">
 <div class="auth-page">
@@ -126,7 +127,6 @@
     </header>
 
     <section class="content-area" aria-label="Page content" aria-busy="{{ dataLoading }}">
-      <sc-if value="{{ dataLoading }}"><div class="loading-banner" role="status"><span class="loading-spinner" aria-hidden="true"></span> {{ dataLoadingLabel }}</div></sc-if>
       <sc-if value="{{ dataError }}"><div class="alert" role="alert">{{ dataError }}</div></sc-if>
       {{ activeScreen }}
     </section>

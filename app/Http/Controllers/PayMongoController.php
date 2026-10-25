@@ -16,7 +16,7 @@ class PayMongoController extends Controller
 {
     public function createCheckout(Request $request): JsonResponse
     {
-        $data = $request->validate(SaleCheckout::rules('stockItems') + ['provider' => ['required', 'in:GCash,QR Ph']]);
+        $data = $request->validate(SaleCheckout::rules('stockItems') + ['provider' => ['required', 'in:QR Ph']]);
         $transaction = DB::transaction(function () use ($request, $data) {
             $sale = SaleCheckout::prepare($request, $data, 'stockItems');
             if ($sale['total'] <= 0) {
@@ -31,9 +31,7 @@ class PayMongoController extends Controller
             $response = $this->client()->post('https://api.paymongo.com/v1/checkout_sessions', ['data' => ['attributes' => [
                 'reference_number' => $data['uuid'],
                 'line_items' => [['currency' => 'PHP', 'amount' => SaleCheckout::cents($transaction['total']), 'name' => 'KITA purchase', 'quantity' => 1]],
-                'payment_method_types' => [match ($data['provider']) {
-                    'GCash' => 'gcash', 'QR Ph' => 'qrph'
-                }],
+                'payment_method_types' => ['qrph'],
                 'description' => 'KITA checkout '.$data['uuid'], 'send_email_receipt' => false, 'show_description' => true, 'show_line_items' => true,
                 'success_url' => url('/payment/success?uuid='.urlencode($data['uuid'])),
                 'cancel_url' => url('/payment/cancelled?uuid='.urlencode($data['uuid'])), 'metadata' => ['transaction_uuid' => $data['uuid']],

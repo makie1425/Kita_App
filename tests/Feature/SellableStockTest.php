@@ -174,7 +174,7 @@ class SellableStockTest extends TestCase
         config(['services.paymongo.secret' => 'sk_test_example', 'services.paymongo.webhook_secret' => 'secret']);
         $batch = $this->batch(2, '2026-10-20');
         Http::fake(['*/checkout_sessions' => Http::response(['data' => ['id' => 'cs_test', 'attributes' => ['checkout_url' => 'https://checkout.paymongo.com/test']]])]);
-        $this->postJson('/api/payments/paymongo/checkout', ['uuid' => 'WALLET', 'provider' => 'GCash', 'stockItems' => [['productId' => 1, 'qty' => 2]]])->assertOk();
+        $this->postJson('/api/payments/paymongo/checkout', ['uuid' => 'WALLET', 'provider' => 'QR Ph', 'stockItems' => [['productId' => 1, 'qty' => 2]]])->assertOk();
         $this->getJson('/api/inventory/availability')->assertJsonPath('products.0.stockOnHand', 2)->assertJsonPath('products.0.reservedStock', 2)->assertJsonPath('products.0.sellableStock', 0);
         $this->getJson('/api/inventory-history')->assertOk()->assertJsonPath('products.0.inventoryValue', 20)
             ->assertJsonPath('batches.0.inventoryValue', 20)->assertJsonPath('movements.0.transactionType', 'Payment reservation')

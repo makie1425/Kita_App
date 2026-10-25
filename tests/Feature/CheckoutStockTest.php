@@ -257,7 +257,7 @@ class CheckoutStockTest extends TestCase
     {
         config(['services.paymongo.secret' => 'sk_test_test', 'services.paymongo.webhook_secret' => 'secret']);
         Http::fake(['*/checkout_sessions' => Http::response(['data' => ['id' => 'cs_test', 'attributes' => ['checkout_url' => 'https://checkout.paymongo.com/test']]])]);
-        $body = ['uuid' => 'TXN-wallet', 'provider' => 'GCash', 'stockItems' => [['productId' => 1, 'qty' => 2]], 'total' => 1];
+        $body = ['uuid' => 'TXN-wallet', 'provider' => 'QR Ph', 'stockItems' => [['productId' => 1, 'qty' => 2]], 'total' => 1];
         $this->postJson('/api/payments/paymongo/checkout', $body)->assertOk();
         $this->assertDatabaseHas('transactions', ['uuid' => 'TXN-wallet', 'total' => 20, 'status' => 'Pending Payment']);
         $this->assertDatabaseHas('products', ['id' => 1, 'stock' => 3]);
@@ -305,7 +305,7 @@ class CheckoutStockTest extends TestCase
     {
         config(['services.paymongo.secret' => 'sk_test_test', 'services.paymongo.webhook_secret' => 'test-signing-secret']);
         Http::fake(['*/checkout_sessions' => Http::response(['data' => ['id' => 'cs_cancel', 'attributes' => ['checkout_url' => 'https://checkout.paymongo.com/cancel']]])]);
-        $this->postJson('/api/payments/paymongo/checkout', ['uuid' => 'TXN-cancel', 'provider' => 'GCash', 'stockItems' => [['productId' => 1, 'qty' => 1]]])->assertOk();
+        $this->postJson('/api/payments/paymongo/checkout', ['uuid' => 'TXN-cancel', 'provider' => 'QR Ph', 'stockItems' => [['productId' => 1, 'qty' => 1]]])->assertOk();
         Http::fake(['*/expire' => Http::response([]), '*/checkout_sessions/cs_cancel' => Http::response(['data' => ['id' => 'cs_cancel', 'attributes' => ['status' => 'expired', 'payments' => []]]])]);
         $this->postJson('/api/payments/paymongo/TXN-cancel/cancel')->assertOk();
         $this->postJson('/api/payments/paymongo/TXN-cancel/cancel')->assertOk();

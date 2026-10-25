@@ -851,7 +851,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .registration-page .field-group > :is(input,select) { max-width: 100%; }
   .registration-page .form-actions { flex-wrap: wrap; }
 }
-.loading-banner { display: flex; align-items: center; gap: 10px; padding: 12px 16px; margin-bottom: 20px; border: 1px solid #dce5ff; border-radius: 8px; background: var(--brand-bg); color: var(--brand-dark); font-size: 12px; }
+
 .loading-spinner { display: inline-block; width: 22px; height: 22px; flex: 0 0 auto; box-sizing: border-box; border: 3px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; vertical-align: middle; }
 .loading-status { display: inline-flex; align-items: center; gap: 10px; }
 button .loading-spinner { width: 16px; height: 16px; border-width: 2px; }
@@ -1743,3 +1743,13 @@ body:has(.receiving-dialog[open]) { overflow:hidden; }
 .inspection-dialog button { background-color:#245ff5!important; color:#fff!important; }
 .inspection-dialog .inspection-text-button,.inspection-dialog .inspection-add-button { background-color:#fff!important; color:#1747e8!important; }
 .inspection-dialog button:hover { background-color:#1747e8!important; color:#fff!important; }
+
+/* One centered progress indicator across pages, dialogs, and checkout. */
+.loading-overlay { position: fixed; inset: 0; z-index: 100000; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; background: rgba(255,255,255,.82); color: var(--brand); pointer-events: none; }
+.loading-overlay > .loading-spinner { width: 76px; height: 76px; border: 6px solid #dce5ff; border-top-color: var(--brand); border-right-color: var(--brand); animation: spin .8s linear infinite; }
+.loading-overlay-label { font-size: 13px; color: var(--brand-dark); text-align: center; max-width: 280px; }
+body:has(.loading-overlay) .loading-status { visibility: hidden; }
+@media (prefers-reduced-motion: reduce) { .loading-overlay > .loading-spinner { animation: none !important; border-top-color: var(--brand); } }
+@media print { .loading-overlay { display: none !important; } }
+
+body:has(.loading-overlay) button[aria-busy="true"]::before { display: none; }
