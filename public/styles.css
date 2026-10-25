@@ -1749,7 +1749,7 @@ body:has(.receiving-dialog[open]) { overflow:hidden; }
 .loading-overlay > .loading-spinner { width: 76px; height: 76px; border: 6px solid #dce5ff; border-top-color: var(--brand); border-right-color: var(--brand); animation: spin .8s linear infinite; }
 .loading-overlay-label { font-size: 13px; color: var(--brand-dark); text-align: center; max-width: 280px; }
 body:has(.loading-overlay) .loading-status { visibility: hidden; }
-@media (prefers-reduced-motion: reduce) { .loading-overlay > .loading-spinner { animation: none !important; border-top-color: var(--brand); } }
+@media (prefers-reduced-motion: reduce) { .loading-overlay > .loading-spinner { animation: spin 2s linear infinite !important; } }
 @media print { .loading-overlay { display: none !important; } }
 
 body:has(.loading-overlay) button[aria-busy="true"]::before { display: none; }
