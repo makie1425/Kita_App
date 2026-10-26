@@ -1778,3 +1778,9 @@ body:has(.loading-overlay) button[aria-busy="true"]::before { display: none; }
 
 .inventory-batch-group > summary .batch-print-button { float:right; margin:-5px 0 5px 12px; }
 @media(max-width:600px){.inventory-batch-group > summary .batch-print-button{float:none;display:inline-flex;margin:8px 0 0 12px;}}
+
+.registration-size { max-width:420px; min-width:0; }
+.registration-size-fields { grid-template-columns:minmax(80px,0.65fr) minmax(0,1.65fr); }
+.registration-size-fields :is(input,select) { width:100%; min-width:0; }
+.registration-page .form-grid > .field-group { min-width:0; }
+@media(max-width:420px){.registration-size-fields{grid-template-columns:1fr;}}

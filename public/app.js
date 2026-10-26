@@ -117,6 +117,7 @@ function statusValue(value) {
   return /^(pending payment|paid|unpaid|cancelled|canceled|active|inactive|partially refunded|refunded|voided|failed|expired|payment reserved|payment reservation|payment reservation released|payment confirmed)$/i.test(String(value))?badge(value):value;
 }
 
+const PRODUCT_MEASUREMENT_UNITS={"Weight": {"mg": "mg (Milligram)", "g": "g (Gram)", "kg": "kg (Kilogram)", "tonne": "t (Metric tonne)", "oz": "oz (Ounce ? weight)", "lb": "lb (Pound)"}, "Volume": {"mL": "mL (Milliliter)", "cL": "cL (Centiliter)", "dL": "dL (Deciliter)", "Liter": "L (Liter)", "kL": "kL (Kiloliter)", "US fl oz": "fl oz (US fluid ounce)", "US pint": "pt (US pint)", "US quart": "qt (US quart)", "US gallon": "gal (US gallon)", "Imp gallon": "gal (Imperial gallon)", "cm3": "cm? (Cubic centimeter)", "m3": "m? (Cubic meter)"}, "Length": {"mm": "mm (Millimeter)", "cm": "cm (Centimeter)", "m": "m (Meter)", "km": "km (Kilometer)", "in": "in (Inch)", "ft": "ft (Foot)", "yd": "yd (Yard)"}, "Area": {"cm2": "cm? (Square centimeter)", "m2": "m? (Square meter)", "in2": "in? (Square inch)", "ft2": "ft? (Square foot)"}, "Count": {"Piece": "Piece", "Pair": "Pair", "Dozen": "Dozen", "Sheet": "Sheet", "Serving": "Serving", "Tablet": "Tablet", "Capsule": "Capsule"}};
 function peso(n){ n=Number(n)||0; return "â‚±"+n.toLocaleString("en-PH",{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function badge(status){ const c=statusStyle(status); return React.createElement("span",{className:"status-badge",style:{background:c.bg,color:c.fg,fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:20,display:"inline-block",whiteSpace:"nowrap"}},status); }
 function card(children, style){ return React.createElement("div",{className:"kita-card",style:Object.assign({background:COLORS.surface,border:"1px solid "+COLORS.border,borderRadius:12,padding:18},style||{})},children); }
@@ -2493,7 +2494,14 @@ class Component extends DCLogic {
   buildMgrRegistration(){
     const h=React.createElement,s=this.state,data=s.data;
     const products=s.productsLocal||data.PRODUCTS;
-    const units=["Piece","Pack","Box","Case","Sack","Tray","Bottle","Can","Tub","Kg","Liter",...(s.regStockUnit&&!["Piece","Pack","Box","Case","Sack","Tray","Bottle","Can","Tub","Kg","Liter"].includes(s.regStockUnit)?[s.regStockUnit]:[])];
+    const units=[...new Set(["Piece","Pair","Set","Dozen","Pack","Packet","Pouch","Bag","Box","Case","Carton","Sack","Tray","Bottle","Can","Jar","Tub","Cup","Tube","Roll","Sheet","Bundle","Bunch","Bar","Stick","Sachet","Strip","Blister pack","Tablet","Capsule","Vial","Ampoule","Drum","Bucket","Pail","Crate","Pallet","Kg","g","Liter","mL","m",s.regStockUnit].filter(Boolean))];
+    const measurement=h('div',{className:'field-group'},[
+      h('label',{htmlFor:'registration-regSizeUnit'},'Measurement Unit'),
+      h('select',{id:'registration-regSizeUnit',value:s.regSizeUnit||'',onChange:this.setRegField('regSizeUnit')},[
+        h('option',{value:''},'Select measurement unit'),
+        ...Object.entries(PRODUCT_MEASUREMENT_UNITS).map(([group,values])=>h('optgroup',{key:group,label:group},Object.entries(values).map(([value,label])=>h('option',{key:value,value},label)))),
+      ]),
+    ]);
     const field=(key,label,options={})=>{
       const id="registration-"+key,helpId=id+"-help";
       return h("div",{key,className:"field-group"},[
@@ -2528,11 +2536,11 @@ class Component extends DCLogic {
         h('div',{className:'registration-category'},[select("regCategory","Category",data.CATEGORIES.filter(c=>c.status==="Active").map(c=>c.name),true),btn('+ Add Category',this.openCategoryModal)]),
         h("label",{className:"field-group"},["Brand",h("select",{value:s.regBrandId||"",onChange:this.setRegField("regBrandId")},[h("option",{value:""},"Unbranded / not applicable"),...(data.BRANDS||[]).filter(b=>b.status==="Active").map(b=>h("option",{value:b.id,key:b.id},b.name))])]),
         this.buildSubcategorySelect(s.regCategory,s.regSubcategoryId,this.setRegField("regSubcategoryId"),{registration:true}),
-        h('div',{className:'registration-size'},[h('div',{className:'registration-size-fields'},[field("regSize","Size (optional)",{type:"number",step:"0.001",placeholder:'e.g. 500'}),select("regSizeUnit","Measurement Unit",["mL","Liter","g","kg","cm","m","Piece"])]),h('small',null,'Size of one stock unit. Example: 500 mL per Bottle, or 1 kg per Pack. Leave both fields blank if not applicable.')]),
+        h('div',{className:'registration-size'},[h('div',{className:'registration-size-fields'},[field("regSize","Size (optional)",{type:"number",step:"0.001",placeholder:'e.g. 500'}),measurement]),h('small',null,'Size of one stock unit. Example: 500 mL per Bottle, or 1 kg per Pack. Leave both fields blank if not applicable.')]),
         select("regSupplier","Supplier",data.SUPPLIERS.filter(sp=>sp.status==="Active").map(sp=>sp.name)),
         select("regStatus","Status",["Active","Inactive"]),
       ]),
-      group("02","Stock settings","Stock Unit is how inventory is counted, such as Bottle or Piece. New products start with zero stock; receiving adds inventory.",[
+      group("02","Stock settings","Stock Unit is one inventory unit, such as Bottle, Pack, or Piece. Quantities are whole units; use Size and Measurement Unit for the contents (for example, 500 mL per Bottle). New products start with zero stock.",[
         select("regStockUnit","Stock Unit",units,true),
         field("regReorderLevel","Minimum Stock",{type:"number",step:1,help:'Low-stock threshold, counted in the selected Stock Unit.'}),
       ]),

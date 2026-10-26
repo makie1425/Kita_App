@@ -142,7 +142,7 @@ class ProductController extends Controller
             'brandId' => ['nullable', 'integer', Rule::exists('brands', 'id')->where('status', 'Active')],
             'subcategoryId' => [Rule::requiredIf($id === null && DB::table('subcategories')->where('category', $request->input('category'))->where('status', 'Active')->exists()), 'nullable', 'integer', Rule::exists('subcategories', 'id')->where('category', $request->input('category'))->where('status', 'Active')],
             'size' => ['nullable', 'required_with:sizeUnit', 'numeric', 'gt:0', 'max:999999999', 'decimal:0,3'],
-            'sizeUnit' => ['nullable', 'required_with:size', Rule::in(['mL', 'Liter', 'g', 'kg', 'cm', 'm', 'Piece'])],
+            'sizeUnit' => ['nullable', 'required_with:size', Rule::in(\App\Services\ProductMeasurementUnits::VALUES)],
             'minStock' => ['sometimes', 'integer', 'min:0', 'max:2147483647'],
             'barcode' => ['required', 'string', 'max:80', Rule::unique('products', 'barcode')->ignore($id)],
             'supplierId' => ['nullable', 'integer', Rule::exists('suppliers', 'id')->where('status', 'Active')->whereNull('archivedAt')],

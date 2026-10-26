@@ -272,4 +272,15 @@ class ProductFifoTest extends TestCase
         $this->assertDatabaseHas('products', ['id' => $this->product, 'brandId' => $this->input['brandId'], 'minStock' => 10]);
         $this->patchJson('/api/products/'.$this->product, array_replace($body,['stockUnit' => 'Box']))->assertUnprocessable();
     }
+    public function test_all_registration_measurement_units_can_be_saved(): void
+    {
+        foreach (\App\Services\ProductMeasurementUnits::VALUES as $index => $unit) {
+            $input = array_merge($this->input, ['name'=>'Unit example '.$index, 'barcode'=>'UNIT-EXAMPLE-'.$index, 'size'=>1.5, 'sizeUnit'=>$unit]);
+            $id = $this->postJson('/api/products', $input)->assertCreated()->json('product.id');
+            $this->assertDatabaseHas('products', ['id'=>$id, 'sizeUnit'=>$unit]);
+        }
+        $input = array_merge($this->input, ['barcode'=>'INVALID-UNIT','sizeUnit'=>'invalid-unit']);
+        $this->postJson('/api/products', $input)->assertUnprocessable();
+    }
+
 }
