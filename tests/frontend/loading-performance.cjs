@@ -1,0 +1,15 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert/strict');
+const ctx=vm.createContext({React:{createElement:(type,props,...children)=>({type,props,children})},DCLogic:class{setState(p){Object.assign(this.state,typeof p==='function'?p(this.state):p);}},window:{}});
+vm.runInContext(fs.readFileSync('public/app.js','utf8')+';globalThis.app=new Component();',ctx);
+const app=ctx.app;let requests=0;app.reloadPurchasing=async()=>{requests++;};
+app.goScreen('mgrRequestView')();assert.equal(requests,1);
+app.state.purchaseData={orders:[]};app.goScreen('mgrPO')();app.goScreen('purchaseOrders')();assert.equal(requests,1,'Returning to loaded purchase screens must not download again');
+app.state.purchaseData=null;app.state.purchaseLoading=true;app.goScreen('mgrPO')();assert.equal(requests,1,'Navigation must not duplicate an in-flight load');
+let rendered=0;app.recordTable=(_key,_headers,rows)=>rows;
+const rows=Array.from({length:200},(_,i)=>({id:i,productId:i,batchNumber:'B'+i}));
+const draw=()=>app.groupedBatchTables('test',rows,[],r=>{rendered++;return r;});
+const nodes=n=>!n||typeof n!=='object'?[]:Array.isArray(n)?n.flatMap(nodes):[n,...nodes(n.children||n.props?.children)];const details=t=>nodes(t).filter(n=>n.type==='details');
+let tree=draw();assert.equal(rendered,0,'Collapsed batches must not build hidden rows');
+details(tree)[0].props.onToggle({currentTarget:{open:true}});draw();assert.equal(rendered,1,'Only the opened batch builds rows');
+details(tree)[0].props.onToggle({currentTarget:{open:false}});draw();assert.equal(rendered,1);
+console.log('PASS: navigation reuses loaded records, avoids duplicate loads, and collapsed batches defer row rendering.');

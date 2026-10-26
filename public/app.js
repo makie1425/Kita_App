@@ -461,7 +461,7 @@ class Component extends DCLogic {
       else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}
     }
   };
-  goScreen=key=>()=>{ this.setState({screen:key,sidebarOpen:false}); if(["mgrRequest","mgrRequestView","mgrPurchaseHistory","mgrPO","mgrSupplier","admSuppliers","admPurchasedOrders","admForwarded","admDisapproved","admReceivingApprovals"].includes(key))this.reloadPurchasing().catch(()=>{}); if(key==="supplierAccounts")this.loadSupplierAccounts(); if(key==="purchaseOrders")this.reloadPurchasing().catch(()=>{}); if(key==="saDashboard")this.reloadSaDashboard(); if(key==="saBackup")this.reloadBackups(); if(["mgrCashiers","admManagers","saAdmins"].includes(key))this.reloadAccounts().catch(error=>this.toast(error.message,"error")); if(key==="shift") this.reloadCatalog().catch(()=>this.toast("Could not refresh shift transactions.","error")); };
+  goScreen=key=>()=>{ this.setState({screen:key,sidebarOpen:false}); if(["mgrRequest","mgrRequestView","mgrPurchaseHistory","mgrPO","mgrSupplier","admSuppliers","admPurchasedOrders","admForwarded","admDisapproved","admReceivingApprovals"].includes(key)&&!this.state.purchaseData&&!this.state.purchaseLoading)this.reloadPurchasing().catch(()=>{}); if(key==="supplierAccounts")this.loadSupplierAccounts(); if(key==="purchaseOrders"&&!this.state.purchaseData&&!this.state.purchaseLoading)this.reloadPurchasing().catch(()=>{}); if(key==="saDashboard")this.reloadSaDashboard(); if(key==="saBackup")this.reloadBackups(); if(["mgrCashiers","admManagers","saAdmins"].includes(key)&&!this.state.accountsLocal)this.reloadAccounts().catch(error=>this.toast(error.message,"error")); if(key==="shift") this.reloadCatalog().catch(()=>this.toast("Could not refresh shift transactions.","error")); };
 
   simScannerDisconnect=()=>{ this.setState({scannerConnected:false}); this.toast("Scanner disconnected â€” use manual entry.","warn"); };
   simPaymentTimeout=()=>{ if(this.state.paymentState==="processing"||this.state.paymentState==="pending"){ this.setState({paymentState:"timeout"}); this.toast("Payment timed out.","error"); } else this.toast("Start an e-wallet payment first.","warn"); };
@@ -2134,9 +2134,9 @@ class Component extends DCLogic {
   };
   groupedBatchTables=(key,rows,headers,renderRow,options={})=>{
     const h=React.createElement,groups=this.inventoryBatchGroups(rows);
-    return groups.length?h('div',{className:'inventory-batch-groups'},groups.map(({batch,items})=>h('details',{key:batch,className:'inventory-batch-group'},[
+    return groups.length?h('div',{className:'inventory-batch-groups'},groups.map(({batch,items})=>h('details',{key:batch,className:'inventory-batch-group',open:!!this.state.expandedBatches?.[key+'-'+batch],onToggle:e=>{const open=e.currentTarget.open,id=key+'-'+batch;if(!!this.state.expandedBatches?.[id]!==open)this.setState(s=>({expandedBatches:{...s.expandedBatches,[id]:open}}));}},[
       h('summary',null,[h('strong',null,batch),h('span',null,new Set(items.map(r=>r.productId)).size+' products / '+items.length+' stock entries'),h('small',null,items[0].receivedAt||items[0].receivedDate||''),h('a',{className:'kita-button batch-print-button',href:'/inventory/batches/'+encodeURIComponent(items[0].id)+'/print',target:'_blank',rel:'noopener',onClick:e=>e.stopPropagation()},'Print batch')]),
-      this.recordTable(key+'-'+batch,headers,items.map(renderRow),options),
+      this.state.expandedBatches?.[key+'-'+batch]?this.recordTable(key+'-'+batch,headers,items.map(renderRow),options):null,
     ]))):h('p',{className:'record-empty'},'No batches match these filters.');
   };
   buildInventoryWorkflows(tab){
@@ -3181,7 +3181,7 @@ class Component extends DCLogic {
 
     return {
       sidebarClass:s.sidebarOpen?"sidebar sidebar--open":"sidebar",sidebarOpen:s.sidebarOpen,toggleSidebar:this.toggleSidebar,closeSidebar:this.closeSidebar,onShellKeyDown:this.onShellKeyDown,
-      dataLoading:(s.pendingLoads||0)>0||!!s.purchaseLoading||!!s.backupLoading||!!s.backupBusy||!!s.supplierAccountsLoading||!!s.workflowLoading||!!s.inventoryHistoryLoading||!!s.reportLoading||!!s.saLoading||!!s.loginPending||!!s.registrationSaving||s.paymentState==="processing"||(!!s.mgrNotifOpen&&!!s.notificationLoading),
+      dataLoading:(s.pendingLoads||0)>0||(!!s.purchaseLoading&&["purchaseOrders","mgrRequest","mgrRequestView","mgrPurchaseHistory","mgrPO","mgrSupplier","admSuppliers","admPurchasedOrders","admForwarded","admDisapproved","admReceivingApprovals"].includes(s.screen))||!!s.backupLoading||!!s.backupBusy||!!s.supplierAccountsLoading||!!s.workflowLoading||!!s.inventoryHistoryLoading||!!s.reportLoading||!!s.saLoading||!!s.loginPending||!!s.registrationSaving||s.paymentState==="processing"||(!!s.mgrNotifOpen&&!!s.notificationLoading),
       dataLoadingLabel:s.backupBusy?"Creating your backup...":s.backupLoading?"Loading backups...":s.purchaseLoading?"Loading purchase records...":"Loading your workspace data...",dataError:s.dataError,activePortalColor:activePortal.fg,activePortalBg:activePortal.bg,activePortalIcon:activePortal.icon,activePortalLabel:activePortal.label,activePortalDesc:activePortal.desc,backToPortalSelect:this.backToPortalSelect,
       showLogin,showOtp,showApp,loginUsername:s.loginUsername,onUsernameChange:this.onUsernameChange,loginPassword:s.loginPassword,onPasswordChange:this.onPasswordChange,
       otpEmail:s.otpEmail,otpCode:s.otpCode,onOtpChange:this.onOtpChange,verifyOtp:this.verifyOtp,backToPassword:this.backToPassword,
