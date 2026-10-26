@@ -1757,3 +1757,15 @@ body:has(.loading-overlay) button[aria-busy="true"]::before { display: none; }
 
 .report-type-filter { max-width:100%; }
 .report-type-filter select { min-height:44px; width:220px; max-width:100%; font:inherit; font-size:13px; }
+
+/* Shared viewing-table scrollbar; layout changes never fetch or reload data. */
+.sticky-table-frame { min-width:0; max-width:100%; position:relative; }
+.sticky-table-scrollbar { position:sticky; bottom:0; z-index:15; height:20px; overflow-x:scroll; overflow-y:hidden; background:#f5f8fc; border:1px solid #dce6f7; border-radius:6px; box-shadow:0 -2px 8px #152c4a12; scrollbar-color:#7b8ca5 #e8edf4; scrollbar-width:auto; }
+.sticky-table-scrollbar[hidden] { display:none; }
+.sticky-table-scrollbar-width { height:1px; pointer-events:none; }
+.sticky-table-scrollbar::-webkit-scrollbar { height:16px; }
+.sticky-table-scrollbar::-webkit-scrollbar-track { background:#e8edf4; border-radius:6px; }
+.sticky-table-scrollbar::-webkit-scrollbar-thumb { background:#7b8ca5; border:3px solid #e8edf4; border-radius:8px; }
+.sticky-table-scrollbar:focus-visible { outline:3px solid #1747e8; outline-offset:2px; }
+.reports-page .record-list,.receiving-dashboard .record-list { overflow:clip; }
+@media print { .sticky-table-scrollbar { display:none !important; } .sticky-table-frame { position:static; } }

@@ -121,10 +121,39 @@ function peso(n){ n=Number(n)||0; return "â‚±"+n.toLocaleString("en-PH",{min
 function badge(status){ const c=statusStyle(status); return React.createElement("span",{className:"status-badge",style:{background:c.bg,color:c.fg,fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:20,display:"inline-block",whiteSpace:"nowrap"}},status); }
 function card(children, style){ return React.createElement("div",{className:"kita-card",style:Object.assign({background:COLORS.surface,border:"1px solid "+COLORS.border,borderRadius:12,padding:18},style||{})},children); }
 function sectionTitle(t, sub){ return React.createElement("div",{className:"section-heading",style:{marginBottom:16}},[React.createElement("h1",{key:"t",style:{fontSize:24,fontWeight:800,margin:0,letterSpacing:-0.7}},t), sub?React.createElement("div",{key:"s",style:{fontSize:13,color:COLORS.textSoft,marginTop:2}},sub):null]); }
-function table(headers, rows, emptyMessage="No records yet."){ return React.createElement("div",{className:"table-scroll",tabIndex:0,role:"region","aria-label":headers.filter(h=>typeof h==="string"&&h).join(", "),style:{"--table-min-width":Math.max(540,headers.length*110)+"px",overflowX:"auto",border:"1px solid "+COLORS.border,borderRadius:10}}, React.createElement("table",{style:{width:"100%",borderCollapse:"collapse",fontSize:13}},[
+// A synchronized native scrollbar stays within its table while sticking to the viewport.
+function stickyTable(content){
+  let cleanup;
+  const ref=frame=>{
+    if(cleanup){cleanup();cleanup=null;}
+    if(!frame)return;
+    const viewport=frame.firstElementChild,rail=frame.lastElementChild,spacer=rail.firstElementChild;
+    const syncFromTable=()=>{if(rail.scrollLeft!==viewport.scrollLeft)rail.scrollLeft=viewport.scrollLeft;};
+    const syncFromRail=()=>{if(viewport.scrollLeft!==rail.scrollLeft)viewport.scrollLeft=rail.scrollLeft;};
+    const measure=()=>{
+      const overflow=viewport.scrollWidth>viewport.clientWidth+1;
+      rail.hidden=!overflow;
+      spacer.style.width=(viewport.scrollWidth+rail.clientWidth-viewport.clientWidth)+'px';
+      syncFromTable();
+    };
+    viewport.addEventListener('scroll',syncFromTable,{passive:true});
+    rail.addEventListener('scroll',syncFromRail,{passive:true});
+    const observer=typeof ResizeObserver!=='undefined'?new ResizeObserver(measure):null;
+    observer?.observe(viewport);
+    if(viewport.firstElementChild)observer?.observe(viewport.firstElementChild);
+    window.addEventListener('resize',measure);
+    measure();
+    cleanup=()=>{observer?.disconnect();window.removeEventListener('resize',measure);viewport.removeEventListener('scroll',syncFromTable);rail.removeEventListener('scroll',syncFromRail);};
+  };
+  return React.createElement('div',{className:'sticky-table-frame',ref},[
+    content,
+    React.createElement('div',{className:'sticky-table-scrollbar',hidden:true,tabIndex:0,role:'region','aria-label':'Scroll table horizontally'},React.createElement('div',{className:'sticky-table-scrollbar-width','aria-hidden':true})),
+  ]);
+}
+function table(headers, rows, emptyMessage="No records yet."){ return stickyTable(React.createElement("div",{className:"table-scroll",tabIndex:0,role:"region","aria-label":headers.filter(h=>typeof h==="string"&&h).join(", "),style:{"--table-min-width":Math.max(540,headers.length*110)+"px",overflowX:"auto",border:"1px solid "+COLORS.border,borderRadius:10}}, React.createElement("table",{style:{width:"100%",borderCollapse:"collapse",fontSize:13}},[
   React.createElement("thead",{key:"h"},React.createElement("tr",null, headers.map((hd,i)=>React.createElement("th",{key:i,style:{position:"sticky",top:0,background:"#f8faff",textAlign:"left",padding:"10px 14px",fontSize:11,fontWeight:700,color:COLORS.textMuted,letterSpacing:0.4,borderBottom:"1px solid "+COLORS.border}},hd)))),
   React.createElement("tbody",{key:"b"},rows.length?rows:React.createElement("tr",null,React.createElement("td",{colSpan:headers.length,style:{padding:20,textAlign:"center",color:COLORS.textMuted,fontSize:13}},emptyMessage))),
-])); }
+]))); }
 function td(children, style){ return React.createElement("td",{style:Object.assign({padding:"10px 14px",borderBottom:"1px solid #eef1f6"},style||{})},children); }
 function tr(children,key){ return React.createElement("tr",{key},children); }
 function uiIcon(name){
@@ -1874,7 +1903,7 @@ class Component extends DCLogic {
         h('div',{className:'inspection-po-details'},[field('Purchase Order No.',order.id,null,{readOnly:true}),field('Supplier',order.supplierName||this.purchaseSupplier(order.supplierId),null,{readOnly:true}),field('PO Date',String(order.created||'').slice(0,10),null,{readOnly:true}),h('div',null,[h('small',null,'PO Status'),badge(order.status)])]),
         this.state.inspectionReview?h('section',{className:'inspection-review'},[h('h3',null,'Review stock receipt'),h('p',null,'One stock receipt will retain all original PO allocations. Exceptions are saved for approval without adding inventory.'),h('div',{className:'inspection-table-wrap'},table(['PO','Product','Receiving type','Delivered','Damaged','Accepted','Remaining'],d.entries.filter(e=>Number(e.delivered)>0).map(e=>tr([td(e.poId),td(this.inspectionProduct(e)?.name),td(e.type==='current'?'Current PO':e.type==='damaged'?'Damaged replacement':e.type==='missing'?'Previously missing':'Previous outstanding'),td(e.delivered),td(e.damaged||0),td(this.inspectionAccepted(e)),td(Math.max(0,this.carryoverAvailable(this.inspectionLine(e)||{})-this.inspectionAccepted(e)))],e.key)))),...d.entries.filter(e=>Number(e.delivered)>0).map(e=>h('p',{key:e.key},[h('strong',null,(this.inspectionProduct(e)?.name||'')+' — '+e.poId),': '+e.lots.map(l=>l.quantity+' units / lot '+(l.supplierLot||'not supplied')+' / expiry '+(l.expiryDate||'not applicable')).join('; ')]))]):h(React.Fragment,null,[
           h('details',{className:'inspection-delivery-info'},[h('summary',null,'Delivery information · '+d.deliveryDate),h('div',{className:'inspection-delivery-grid'},[field('Delivery date',d.deliveryDate,ev=>this.setState({inspection:{...d,deliveryDate:ev.target.value}}),{type:'date',max:this.state.data?.BUSINESS_DATE}),field('Supplier delivery / invoice reference (optional)',d.supplierReference,ev=>this.setState({inspection:{...d,supplierReference:ev.target.value}}),{maxLength:100}),field('Received by',this.state.authenticatedUser?.name||'',null,{readOnly:true})])]),
-          h('section',null,[h('div',{className:'inspection-section-title'},[h('h3',null,'1. Products for this Purchase Order'),h('span',null,primary.length+' products')]),h('p',{className:'inspection-help'},'Delivered includes damaged units. Accepted = delivered − damaged. Outstanding includes undelivered goods and replacements still due.'),h('div',{className:'inspection-table-wrap'},h('table',null,[h('thead',null,h('tr',null,['Product','SKU / Code','Unit','Ordered','Outstanding','Delivered','Damaged','Accepted','Undelivered','Expiration'].map(t=>h('th',{key:t},t)))),h('tbody',null,primary.map(row))]))]),
+          h('section',null,[h('div',{className:'inspection-section-title'},[h('h3',null,'1. Products for this Purchase Order'),h('span',null,primary.length+' products')]),h('p',{className:'inspection-help'},'Delivered includes damaged units. Accepted = delivered − damaged. Outstanding includes undelivered goods and replacements still due.'),stickyTable(h('div',{className:'inspection-table-wrap'},h('table',null,[h('thead',null,h('tr',null,['Product','SKU / Code','Unit','Ordered','Outstanding','Delivered','Damaged','Accepted','Undelivered','Expiration'].map(t=>h('th',{key:t},t)))),h('tbody',null,primary.map(row))])))]),
           h('section',{className:'inspection-additional'},[h('div',{className:'inspection-section-title'},[h('div',null,[h('h3',null,'2. Add Outstanding Item (Optional)'),h('p',null,'Receive previous shortages or damaged-item replacements from the same supplier.')]),h('button',{type:'button',className:'inspection-add-button',disabled:!sourceOrders.length,onClick:()=>this.setState({inspection:{...d,entries:[...d.entries,this.newInspectionEntry(null,null,'outstanding')]}})},'+ Add Outstanding Item')]),!sourceOrders.length?h('small',null,'No other eligible previous POs for this supplier.'):null,...extra.map(e=>{
             const source=sourceOrders.find(o=>o.id===e.poId),l=this.inspectionLine(e),b=l?.obligation;
             return h('div',{className:'inspection-previous-card',key:e.key},[h('div',{className:'inspection-section-title'},[h('strong',null,'Previous Purchase Order Item'),h('button',{type:'button',className:'inspection-text-button',onClick:()=>this.setState({inspection:{...d,entries:d.entries.filter(x=>x.key!==e.key)}})},'Remove')]),
@@ -1883,7 +1912,7 @@ class Component extends DCLogic {
                 h('label',null,['Original product',h('select',{'aria-label':'Outstanding product '+e.key,value:e.productId||'',onChange:ev=>{const l=source?.lines.find(l=>Number(l.productId)===Number(ev.target.value));this.updateInspection(e.key,{...this.newInspectionEntry(source,l,(!l?.obligation||l.obligation.unclassified)?'outstanding':l?.obligation?.missing>0?'missing':'damaged'),key:e.key});}},[h('option',{value:''},'Select product'),...(source?.lines||[]).filter(l=>this.carryoverAvailable(l)>0).map(l=>h('option',{value:l.productId,key:l.productId},l.name+' · '+this.carryoverAvailable(l)+' outstanding'))])]),
                 h('label',null,['Receiving type',h('select',{'aria-label':'Receiving type '+e.key,value:e.type,onChange:ev=>this.updateInspection(e.key,{type:ev.target.value,delivered:'',damaged:'',lots:[{quantity:0,supplierLot:'',expiryDate:'',manufacturedDate:''}]})},b?.unclassified||!b||!l?[h('option',{value:'outstanding'},'Previous outstanding item')]:[...(Number(b?.missing??this.carryoverAvailable(l))>0?[h('option',{value:'missing'},'Previously missing item')]:[]),...(Number(b?.damaged)>0?[h('option',{value:'damaged'},'Damaged replacement')]:[])])])
               ]),b?.unclassified?h('p',{className:'inspection-help'},'Earlier records do not separate the remaining missing and damaged quantities. This entry resolves the recorded outstanding balance without inventing a damage claim.'):null,
-              l?h('div',{className:'inspection-table-wrap'},h('table',null,[h('thead',null,h('tr',null,['Product','SKU / Code','Unit','Ordered','Outstanding','Delivered','Damaged','Accepted','Undelivered','Expiration'].map(t=>h('th',{key:t},t)))),h('tbody',null,row(e))])):null
+              l?stickyTable(h('div',{className:'inspection-table-wrap'},h('table',null,[h('thead',null,h('tr',null,['Product','SKU / Code','Unit','Ordered','Outstanding','Delivered','Damaged','Accepted','Undelivered','Expiration'].map(t=>h('th',{key:t},t)))),h('tbody',null,row(e))]))):null
             ]);
           })]),
           h('section',null,[h('h3',null,'3. Receiving Notes'),h('textarea',{'aria-label':'Receiving notes',rows:2,maxLength:2000,placeholder:'Optional remarks; explain substitutions, cost changes, or excess delivery here.',value:d.notes,onChange:ev=>this.setState({inspection:{...d,notes:ev.target.value}})})])
@@ -3034,10 +3063,10 @@ class Component extends DCLogic {
   buildSaAdmins(){ return this.buildAdmManagers(); }
   buildSaRoles(){ const {rolesMatrix}=this.state; if(!rolesMatrix) return null;
     return React.createElement("div",null,[sectionTitle("Roles & Permissions","Toggle access per module"),
-      React.createElement("div",{className:"table-scroll",tabIndex:0,role:"region","aria-label":"Role permissions",style:{overflowX:"auto",border:"1px solid "+COLORS.border,borderRadius:10}},React.createElement("table",{style:{width:"100%",borderCollapse:"collapse",fontSize:13}},[
+      stickyTable(React.createElement("div",{className:"table-scroll",tabIndex:0,role:"region","aria-label":"Role permissions",style:{overflowX:"auto",border:"1px solid "+COLORS.border,borderRadius:10}},React.createElement("table",{style:{width:"100%",borderCollapse:"collapse",fontSize:13}},[
         React.createElement("thead",{key:"h"},React.createElement("tr",null,[React.createElement("th",{key:"m",style:{textAlign:"left",padding:"10px 14px",background:"#f8faff",fontSize:11,color:COLORS.textMuted}},"Module"),...rolesMatrix.roles.map(r=>React.createElement("th",{key:r,style:{padding:"10px 14px",background:"#f8faff",fontSize:11,color:COLORS.textMuted}},r))])),
         React.createElement("tbody",{key:"b"},rolesMatrix.grid.map((row,mi)=>tr([td(row.module,{fontWeight:600}),...row.cells.map((c,ri)=>td(React.createElement("div",{onClick:this.toggleRolePerm(mi,ri),style:{width:36,height:20,borderRadius:10,background:c?COLORS.green:"#e3e6ec",position:"relative",cursor:"pointer",margin:"0 auto"}},React.createElement("div",{style:{width:16,height:16,borderRadius:"50%",background:"#fff",position:"absolute",top:2,left:c?18:2}})),{textAlign:"center"}))],mi)))
-      ]))]);
+      ])))]);
   }
   buildSaBackup(){
     const h=React.createElement,d=this.state.backupData,items=d?.backups||[],id=this.state.backupRestoreId;
