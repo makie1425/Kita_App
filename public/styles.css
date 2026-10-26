@@ -1769,3 +1769,9 @@ body:has(.loading-overlay) button[aria-busy="true"]::before { display: none; }
 .sticky-table-scrollbar:focus-visible { outline:3px solid #1747e8; outline-offset:2px; }
 .reports-page .record-list,.receiving-dashboard .record-list { overflow:clip; }
 @media print { .sticky-table-scrollbar { display:none !important; } .sticky-table-frame { position:static; } }
+
+.inventory-batch-groups { display:grid; gap:12px; }
+.inventory-batch-group { min-width:0; border:1px solid #dce6f7; border-radius:10px; background:#fff; padding:12px; }
+.inventory-batch-group > summary { cursor:pointer; padding:8px; color:#173b78; overflow-wrap:anywhere; }
+.inventory-batch-group > summary span,.inventory-batch-group > summary small { margin-left:14px; color:#526579; }
+.inspection-lot-grid input[type=checkbox] { width:auto; min-width:0; }

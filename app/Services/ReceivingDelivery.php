@@ -53,7 +53,7 @@ class ReceivingDelivery
                     $prices[$product]=$price;
                 }
             }
-            $batch=ReceivingNumber::next('BATCH'); $receipts=[];
+            $batch=ReceivingNumber::next('BATCH'); $receipts=[]; $receivedAt=now();
             foreach ($data['orders'] as $order) {
                 $child=Request::create('/', 'POST', [
                     'idempotencyKey'=>(string)Str::uuid(), 'version'=>$order['version'],
@@ -61,6 +61,7 @@ class ReceivingDelivery
                 ]);
                 $child->setUserResolver(fn ()=>$request->user());
                 $result=app(PurchasingController::class)->receive($child,$order['poId'],$batch)->getData(true);
+                DB::table('receiving_records')->where('id',$result['id'])->update(['received_at'=>$receivedAt]);
                 $receipts[]=['poId'=>$order['poId'],'receiptId'=>$result['id'],'status'=>$result['status']];
             }
             DB::table('receiving_deliveries')->insert(['batchNumber'=>$batch,'requestKey'=>$data['requestKey'],'payloadHash'=>$hash,'supplierId'=>$data['supplierId'],'receivedDate'=>$data['receivedDate'],'receivedBy'=>$request->user()->id,'receipts'=>json_encode($receipts),'created_at'=>now()]);

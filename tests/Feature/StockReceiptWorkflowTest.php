@@ -22,9 +22,9 @@ class StockReceiptWorkflowTest extends TestCase {
   $this->actingAs($this->manager);return $id;
  }
  private function entry($po,$delivered,$damaged=0,$version=0,$type='current') {
-  return ['poId'=>$po,'version'=>$version,'productId'=>$this->product,'type'=>$type,'delivered'=>$delivered,'damaged'=>$damaged,'damageReason'=>$damaged?'Crushed packaging':null,'disposition'=>'return','unitCost'=>100,'lots'=>$delivered>$damaged?[['quantity'=>$delivered-$damaged,'supplierLot'=>'SUP-123']]:[]];
+  return ['poId'=>$po,'version'=>$version,'productId'=>$this->product,'type'=>$type,'delivered'=>$delivered,'damaged'=>$damaged,'damageReason'=>$damaged?'Crushed packaging':null,'disposition'=>'return','unitCost'=>100,'lots'=>$delivered>$damaged?[['quantity'=>$delivered-$damaged,'supplierLot'=>'SUP-123','manufacturedDate'=>now()->subDays(10)->toDateString(),'noExpiry'=>true]]:[]];
  }
- private function body($po,$entries) {return ['requestKey'=>(string)Str::uuid(),'primaryPo'=>$po,'supplierId'=>$this->supplier,'deliveryDate'=>now()->toDateString(),'entries'=>$entries];}
+ private function body($po,$entries) {return ['requestKey'=>(string)Str::uuid(),'primaryPo'=>$po,'supplierId'=>$this->supplier,'deliveryDate'=>now()->toDateString(),'supplierReference'=>'INV-TEST','notes'=>'No remarks','entries'=>$entries];}
  public function test_purchasing_listing_batches_database_reads():void {
   $old=$this->order(50);
   $this->postJson('/api/stock-receipts',$this->body($old,[$this->entry($old,45,5)]))->assertCreated();
@@ -47,7 +47,7 @@ class StockReceiptWorkflowTest extends TestCase {
   $first=$this->body($old,[$this->entry($old,45,5)]);
   $id=$this->postJson('/api/stock-receipts',$first)->assertCreated()->assertJsonPath('status','Posted')->json('id');
   $this->assertMatchesRegularExpression('/^SR-\d{2}-\d{2}-\d{2}-\d{5,}$/',$id);
-  $this->assertMatchesRegularExpression('/^BATCH-\d{2}-\d{2}-\d{2}-\d{5,}$/',DB::table('physical_inventory_lots')->where('stockReceipt',$id)->value('id'));
+  $this->assertMatchesRegularExpression('/^BATCH-\d{2}-\d{2}-\d{2}-\d{5,}-L\d{3,}$/',DB::table('physical_inventory_lots')->where('stockReceipt',$id)->value('id'));
   $this->assertMatchesRegularExpression('/^RCV-\d{2}-\d{2}-\d{2}-\d{5,}$/',DB::table('receiving_records')->where('deliveryBatch',$id)->value('id'));
   $this->postJson('/api/stock-receipts',$first)->assertOk()->assertJsonPath('id',$id);
   $this->assertDatabaseHas('products',['id'=>$this->product,'stock'=>40]);
@@ -126,11 +126,44 @@ class StockReceiptWorkflowTest extends TestCase {
  }
  public function test_multiple_lots_preserve_separate_expiration_and_purchase_costs():void {
   $po=$this->order(10);$e=$this->entry($po,10);
-  $e['lots']=[['quantity'=>4,'supplierLot'=>'A','expiryDate'=>now()->addDays(10)->toDateString()],['quantity'=>6,'supplierLot'=>'B','expiryDate'=>now()->addDays(20)->toDateString()]];
+  $e['lots']=[['quantity'=>4,'supplierLot'=>'A','manufacturedDate'=>now()->subDays(10)->toDateString(),'expiryDate'=>now()->addDays(10)->toDateString()],['quantity'=>6,'supplierLot'=>'B','manufacturedDate'=>now()->subDays(10)->toDateString(),'expiryDate'=>now()->addDays(20)->toDateString()]];
   $this->postJson('/api/stock-receipts',$this->body($po,[$e]))->assertCreated();
   $this->assertDatabaseCount('physical_inventory_lots',2);
+  $this->assertSame(1,DB::table('inventory_batches')->distinct()->count('batchNumber'));
   $this->assertDatabaseHas('inventory_batches',['quantityReceived'=>4,'unitCost'=>100,'lotNumber'=>'A']);
   $this->assertDatabaseHas('inventory_batches',['quantityReceived'=>6,'unitCost'=>100,'lotNumber'=>'B']);
+ }
+
+ public function test_blank_receiving_inputs_cannot_create_receipts():void {
+  $po=$this->order(10);$valid=$this->body($po,[$this->entry($po,5)]);
+  foreach(['supplierReference','notes','deliveryDate','entries.0.delivered','entries.0.damaged','entries.0.unitCost','entries.0.lots.0.supplierLot','entries.0.lots.0.manufacturedDate'] as $field){
+   $body=$valid;data_set($body,$field,'');
+   $this->postJson('/api/stock-receipts',$body)->assertUnprocessable();
+  }
+  $body=$valid;unset($body['entries'][0]['lots'][0]['noExpiry']);
+  $this->postJson('/api/stock-receipts',$body)->assertUnprocessable();
+  $this->assertDatabaseCount('stock_receipts',0);
+  $this->assertDatabaseCount('inventory_batches',0);
+ }
+ public function test_one_confirmation_groups_multiple_products_and_requires_explicit_zero_lines():void {
+  $other=$this->postJson('/api/products',['name'=>'Second item','category'=>'Supplies','barcode'=>'SECOND','stock'=>0,'unitPrice'=>100,'price'=>150,'purchaseUnit'=>'Piece','conversionFactor'=>1,'stockUnit'=>'Piece','supplierId'=>$this->supplier])->assertCreated()->json('product.id');
+  $po=$this->postJson('/api/purchase-requests',['category'=>'Supplies','lines'=>[['productId'=>$this->product,'qty'=>10,'supplierId'=>$this->supplier],['productId'=>$other,'qty'=>10,'supplierId'=>$this->supplier]]])->assertCreated()->json('id');
+  $this->actingAs($this->admin)->patchJson('/api/purchase-requests/'.$po,['action'=>'approved','revision'=>0])->assertOk();$this->actingAs($this->manager);
+  $first=$this->entry($po,5);$second=$this->entry($po,0);$second['productId']=$other;
+  $this->postJson('/api/stock-receipts',$this->body($po,[$first]))->assertUnprocessable();
+  $this->postJson('/api/stock-receipts',$this->body($po,[$first,$second]))->assertCreated();
+  $this->assertDatabaseHas('products',['id'=>$other,'stock'=>0]);
+  $this->assertDatabaseHas('purchase_order_lines',['poId'=>$po,'productId'=>$other,'deliveredQty'=>0]);
+  $first=$this->entry($po,5,0,1);$second=$this->entry($po,10,0,1);$second['productId']=$other;
+  $body=$this->body($po,[$first,$second]);
+  $id=$this->postJson('/api/stock-receipts',$body)->assertCreated()->json('id');
+  $receipts=DB::table('receiving_records')->where('deliveryBatch',$id)->pluck('id');
+  $batches=DB::table('inventory_batches')->whereIn('receiptId',$receipts)->get();
+  $this->assertCount(2,$batches);$this->assertCount(1,$batches->pluck('batchNumber')->unique());
+  $this->assertCount(2,$batches->pluck('physicalLotId')->unique());
+  $this->assertNotSame(DB::table('inventory_batches')->orderBy('id')->value('batchNumber'),$batches->first()->batchNumber);
+  $this->postJson('/api/stock-receipts',$body)->assertOk()->assertJsonPath('id',$id);
+  $this->assertSame(3,DB::table('inventory_batches')->count());
  }
 
 }

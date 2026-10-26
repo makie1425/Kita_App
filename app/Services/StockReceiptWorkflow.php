@@ -27,10 +27,10 @@ class StockReceiptWorkflow
 
     private function data(Request $request): array
     {
-        return $request->validate([
+        $data = $request->validate([
             'requestKey'=>['required','uuid'],'primaryPo'=>['required','string'], 'supplierId'=>['required','integer'],
             'deliveryDate'=>['required','date_format:Y-m-d','before_or_equal:today'],
-            'supplierReference'=>['nullable','string','max:100'],'notes'=>['nullable','string','max:2000'],
+            'supplierReference'=>['required','string','max:100'],'notes'=>['required','string','max:2000'],
             'entries'=>['required','array','min:1','max:200'],
             'entries.*.poId'=>['required','string'],'entries.*.version'=>['required','integer','min:0'],
             'entries.*.productId'=>['required','integer'],'entries.*.type'=>['required','in:current,missing,damaged,outstanding'],
@@ -41,10 +41,22 @@ class StockReceiptWorkflow
             'entries.*.sellingPrice'=>['prohibited'],
             'entries.*.lots'=>['present','array','max:100'],
             'entries.*.lots.*.quantity'=>['required','integer','between:1,1000000'],
-            'entries.*.lots.*.supplierLot'=>['nullable','string','max:40'],
+            'entries.*.lots.*.supplierLot'=>['required','string','max:40'],
             'entries.*.lots.*.expiryDate'=>['nullable','date_format:Y-m-d','after:today'],
-            'entries.*.lots.*.manufacturedDate'=>['nullable','date_format:Y-m-d','before_or_equal:deliveryDate'],
+            'entries.*.lots.*.manufacturedDate'=>['required','date_format:Y-m-d','before_or_equal:deliveryDate'],
+            'entries.*.lots.*.noExpiry'=>['sometimes','boolean'],
         ]);
+        foreach ($data['entries'] as $entry) {
+            foreach ($entry['lots'] as $lot) {
+                abort_unless(!empty($lot['expiryDate']) || !empty($lot['noExpiry']),422,'Enter each expiration date or explicitly select No expiration date.');
+                abort_if(!empty($lot['expiryDate']) && !empty($lot['noExpiry']),422,'Choose an expiration date or No expiration date, not both.');
+            }
+        }
+        $entered=collect($data['entries'])->where('poId',$data['primaryPo'])->pluck('productId')->map(fn($id)=>(int)$id);
+        foreach (DB::table('purchase_order_lines')->where('poId',$data['primaryPo'])->get() as $line) {
+            if (ReceivingCarryover::remaining($line)>0) abort_unless($entered->contains((int)$line->productId),422,'Complete every item on this PO. Enter 0 for items not delivered.');
+        }
+        return $data;
     }
 
     /** Locks and revalidates the complete receipt; never trusts browser calculations. */
@@ -78,7 +90,7 @@ class StockReceiptWorkflow
             $seen[$key.'|'.$entry['type']]=true;
             $balance=$balances[$key] ?? self::obligation($line);
             $delivered=(int)$entry['delivered'];$damaged=(int)$entry['damaged'];$accepted=$delivered-$damaged;
-            abort_if($delivered===0 || $damaged>$delivered,422,'Delivered quantity must be positive and damaged quantity cannot exceed it.');
+            abort_if(($delivered===0 && $entry['type']!=='current') || $damaged>$delivered,422,'Outstanding-item deliveries must be positive and damaged quantity cannot exceed delivery.');
             abort_if($damaged && (!trim($entry['damageReason'] ?? '') || empty($entry['disposition'])),422,'Choose a damage disposition and enter a reason.');
             $type=$entry['type'];
             if ($balance['unclassified'] && in_array($type,['missing','damaged'])) abort(422,'Older quantities are unclassified. Choose Previous outstanding item; do not guess a damage balance.');
@@ -109,12 +121,14 @@ class StockReceiptWorkflow
             $balances[$key]=['total'=>$afterTotal,'damaged'=>$afterDamage,'missing'=>$afterTotal-$afterDamage,'unclassified'=>false];
             $entryDue=$type==='missing'?$balance['missing']:($type==='damaged'?$balance['damaged']:$balance['total']);
             $summary[]=$entry+['name'=>$target->name,'originalName'=>$line->name,'sku'=>$target->sku ?? $target->barcode,'unit'=>$line->unit,'accepted'=>$accepted,'undelivered'=>max(0,$entryDue-$delivered),'remaining'=>$afterTotal,'damageDue'=>$afterDamage,'missingDue'=>$afterTotal-$afterDamage,'orderLine'=>$line->id,'targetProductId'=>$target->id];
+            if ($delivered===0) continue;
             if (isset($groups[$key])) abort_unless($groups[$key]['targetProductId']===$target->id && (float)$groups[$key]['unitCost']===(float)$entry['unitCost'],422,'Use one received product and unit cost for each original PO line.');
             $group=$groups[$key] ?? ['poId'=>$order->id,'version'=>$entry['version'],'productId'=>$line->productId,'targetProductId'=>$target->id,'substituteProductId'=>$substitute?$target->id:null,'substitutionReason'=>$type==='damaged'?'damaged':'missing','unitCost'=>$entry['unitCost'],'qty'=>0,'damagedQty'=>0,'damageReason'=>'','lots'=>[]];
             $group['qty']+=$accepted;$group['damagedQty']+=$damaged;$group['damageReason'].=($entry['damageReason'] ?? '').' ';$group['lots']=array_merge($group['lots'],$entry['lots']);
             PurchaseBudget::checkLine($line, InventoryRules::lineTotal($group['qty'],$group['unitCost']));
             $groups[$key]=$group;
         }
+        abort_unless(count($groups)>0,422,'Enter a positive delivered quantity for at least one item.');
         foreach ($orders as $order) {
             $value=collect($groups)->where('poId',$order->id)->sum(fn($g)=>InventoryRules::lineTotal($g['qty'],$g['unitCost']));
             PurchaseBudget::check($order,round($order->deliveredValue+$value,2));
@@ -181,6 +195,8 @@ class StockReceiptWorkflow
     private function postChecked(Request $request,string $id,array $data,array $checked,bool $approved): void
     {
         $lotMap=[];$receipts=[];
+        $deliveryBatch=ReceivingNumber::next('BATCH');
+        $receivedAt=now();
         foreach ($checked['orders'] as $order) {
             $groups=collect($checked['groups'])->where('poId',$order->id);
             if ($groups->isEmpty()) continue;
@@ -193,10 +209,10 @@ class StockReceiptWorkflow
                     // Unknown manufacturer lots are never merged just because dates match.
                     $key=!empty($lot['supplierLot'])?json_encode([$group['targetProductId'],trim($lot['supplierLot']),$lot['expiryDate'] ?? null,$lot['manufacturedDate'] ?? null]):(string)Str::uuid();
                     if (!isset($lotMap[$key])) {
-                        $lotId=ReceivingNumber::next('BATCH');$lotMap[$key]=$lotId;
+                        $lotId=$deliveryBatch.'-L'.str_pad((string)(count($lotMap)+1),3,'0',STR_PAD_LEFT);$lotMap[$key]=$lotId;
                         DB::table('physical_inventory_lots')->insert(['id'=>$lotId,'productId'=>$group['targetProductId'],'supplierId'=>$data['supplierId'],'supplierLot'=>trim($lot['supplierLot'] ?? '') ?: null,'expiryDate'=>$lot['expiryDate'] ?? null,'manufacturedDate'=>$lot['manufacturedDate'] ?? null,'stockReceipt'=>$id,'created_at'=>now()]);
                     }
-                    $lots[]=$lot+['batchNumber'=>$lotMap[$key],'physicalLotId'=>$lotMap[$key]];
+                    $lots[]=$lot+['batchNumber'=>$deliveryBatch,'physicalLotId'=>$lotMap[$key]];
                 }
                 $lotsByProduct[$group['productId']]=$lots;
                 $lines[]=array_diff_key($group,array_flip(['lots','poId','version','targetProductId']));
@@ -209,13 +225,14 @@ class StockReceiptWorkflow
             $child=Request::create('/','POST',['idempotencyKey'=>(string)Str::uuid(),'version'=>$order->receivingVersion,'receivedDate'=>$data['deliveryDate'],'supplierDocument'=>$data['supplierReference'] ?? null,'notes'=>$data['notes'] ?? '', 'lines'=>$lines]);
             $child->setUserResolver(fn()=>$request->user());
             $receipt=app(PurchasingController::class)->receive($child,$order->id,$id,$lotsByProduct)->getData(true);
-            $receipts[]=['poId'=>$order->id,'receiptId'=>$receipt['id']];
+            DB::table('receiving_records')->where('id',$receipt['id'])->update(['received_at'=>$receivedAt]);
+            $receipts[]=['poId'=>$order->id,'receiptId'=>$receipt['id'],'batchNumber'=>$deliveryBatch];
         }
         foreach ($checked['summary'] as $entry) {
             DB::table('receiving_obligation_events')->insert(['stockReceipt'=>$id,'orderLine'=>$entry['orderLine'],'type'=>$entry['type'],'delivered'=>$entry['delivered'],'accepted'=>$entry['accepted'],'damaged'=>$entry['damaged'],'missingAfter'=>$entry['missingDue'],'damageAfter'=>$entry['damageDue'],'disposition'=>$entry['disposition'] ?? null,'reason'=>$entry['damageReason'] ?? null,'created_at'=>now()]);
             DB::table('purchase_order_lines')->where('id',$entry['orderLine'])->update(['damageOutstanding'=>$entry['damageDue']]);
         }
-        DB::table('stock_receipts')->where('id',$id)->update(['status'=>'Posted','receipts'=>json_encode($receipts),'posted_at'=>now(),'updated_at'=>now()]);
+        DB::table('stock_receipts')->where('id',$id)->update(['status'=>'Posted','receipts'=>json_encode($receipts),'posted_at'=>$receivedAt,'updated_at'=>$receivedAt]);
         InventoryRules::audit($request->user()->name,'Posted stock receipt',$id,null,json_encode($receipts));
     }
 
@@ -227,7 +244,7 @@ class StockReceiptWorkflow
         $supplier=DB::table('suppliers')->where('id',$receipt->supplierId)->value('name');
         $receiver=DB::table('users')->where('id',$receipt->requestedBy)->value('name');
         $lots=DB::table('physical_inventory_lots')->where('stockReceipt',$id)->get();
-        foreach ($lots as $lot) $lot->allocations=DB::table('receiving_record_lines as l')->join('receiving_records as r','r.id','=','l.receivingId')->where('l.physicalLotId',$lot->id)->select('r.poId','l.deliveredQty','l.unitCost')->get();
+        foreach ($lots as $lot) $lot->allocations=DB::table('receiving_record_lines as l')->join('receiving_records as r','r.id','=','l.receivingId')->where('l.physicalLotId',$lot->id)->select('r.poId','l.deliveredQty','l.unitCost','l.batchNumber')->get();
         return response()->view('stock-receipt',compact('receipt','summary','payload','supplier','receiver','lots'))->header('Cache-Control','private, no-store');
     }
 }
