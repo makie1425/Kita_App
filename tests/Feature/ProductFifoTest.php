@@ -32,7 +32,7 @@ class ProductFifoTest extends TestCase
         $brand = $this->postJson('/api/product-master/brands', ['name' => 'Coca-Cola', 'status' => 'Active'])->assertOk()->json('record.id');
         $sub = $this->postJson('/api/product-master/subcategories', ['name' => 'Soft Drinks', 'category' => 'Beverages', 'status' => 'Active'])->assertOk()->json('record.id');
         $supplier = $this->postJson('/api/suppliers', ['name' => 'Beverage Supplier'])->assertCreated()->json('supplier.id');
-        $this->input = ['name' => 'Coke', 'brandId' => $brand, 'subcategoryId' => $sub, 'category' => 'Beverages', 'size' => 1, 'sizeUnit' => 'Liter',
+        $this->input = ['manufacturer'=>'Example Manufacturer','status'=>'Active','name' => 'Coke', 'brandId' => $brand, 'subcategoryId' => $sub, 'category' => 'Beverages', 'size' => 1, 'sizeUnit' => 'Liter',
             'stockUnit' => 'Bottle', 'purchaseUnit' => 'Bottle', 'conversionFactor' => 1, 'barcode' => 'COKE-1L', 'price' => 80, 'unitPrice' => 55, 'supplierId' => $supplier, 'minStock' => 10];
         $this->product = $this->postJson('/api/products', $this->input)->assertCreated()->assertJsonPath('product.stock', 0)->json('product.id');
     }
@@ -281,6 +281,18 @@ class ProductFifoTest extends TestCase
         }
         $input = array_merge($this->input, ['barcode'=>'INVALID-UNIT','sizeUnit'=>'invalid-unit']);
         $this->postJson('/api/products', $input)->assertUnprocessable();
+    }
+
+    public function test_registration_rejects_every_blank_required_field(): void
+    {
+        foreach (['name','manufacturer','brandId','subcategoryId','category','size','sizeUnit','stockUnit','barcode','supplierId','minStock','status'] as $field) {
+            $input = array_merge($this->input, ['name'=>'New item', 'barcode'=>'NEW-ITEM', $field=>'']);
+            $this->postJson('/api/products', $input)->assertUnprocessable()->assertJsonValidationErrors($field);
+        }
+        $input = array_merge($this->input, ['name'=>'New item', 'barcode'=>'NEW-ITEM', 'minStock'=>0]);
+        $id=$this->postJson('/api/products',$input)->assertCreated()->json('product.id');
+        $this->patchJson('/api/products/'.$id,$input)->assertUnprocessable()->assertJsonValidationErrors('reason');
+        $this->patchJson('/api/products/'.$id,array_merge($input,['reason'=>'Verified details']))->assertOk();
     }
 
 }

@@ -1034,6 +1034,10 @@ class Component extends DCLogic {
   };
   saveRegistration=()=>{
     if(this.registrationBusy)return;
+    const requiredFields={regProductName:'Product name',regManufacturer:'Manufacturer',regScannedBarcode:'Barcode',regCategory:'Category',regBrandId:'Brand',regSubcategoryId:'Subcategory',regSize:'Size',regSizeUnit:'Measurement Unit',regSupplier:'Supplier',regStatus:'Status',regStockUnit:'Stock Unit',regReorderLevel:'Minimum Stock',...(this.state.regParentId?{regVariantLabel:'Variant label'}:{}),...(this.state.regEditing?{regUnitPrice:'Purchase cost',regRetailPrice:'Selling price',regEditReason:'Reason for changes'}:{})};
+    const missing=Object.entries(requiredFields).filter(([key])=>this.state[key]==null||String(this.state[key]).trim()==='').map(([,label])=>label);
+    if(missing.length){this.toast('Complete all required fields: '+missing.join(', ')+'.','error');return;}
+
     const {data,productsLocal,regProductName,regCategory,regSupplier,regScannedBarcode,regQuantity,regCostPrice,regUnitPrice,regRetailPrice,regBatch,regLot,regExpiry,regStockUnit,regStatus,regVatClass}=this.state;
     const duplicate=this.registrationDuplicate();
     if(duplicate){this.setState({registrationError:'This product already exists in inventory (Item Code '+duplicate.id+'). Use the existing product to receive stock or edit its details.'});return;}
@@ -2485,7 +2489,7 @@ class Component extends DCLogic {
   buildSubcategorySelect(category,value,onChange,{registration=false,includeInactive=false}={}){
     const h=React.createElement,options=this.subcategoriesFor(category,includeInactive);
     const placeholder=!category?'Select category first':!options.length?'No subcategories':registration?'Select subcategory':'All subcategories';
-    return h('label',{key:'subcategory',className:'field-group'},['Subcategory',h('select',{'aria-label':'Subcategory',value:value||'',onChange,disabled:!category||!options.length,required:registration&&options.length>0},[
+    return h('label',{key:'subcategory',className:'field-group'},['Subcategory',h('select',{'aria-label':'Subcategory',value:value||'',onChange,disabled:!category||!options.length,required:registration},[
       h('option',{key:'empty',value:''},placeholder),...options.map(c=>h('option',{key:c.id,value:c.id},c.name))
     ])]);
   }
@@ -2497,12 +2501,13 @@ class Component extends DCLogic {
     const units=[...new Set(["Piece","Pair","Set","Dozen","Pack","Packet","Pouch","Bag","Box","Case","Carton","Sack","Tray","Bottle","Can","Jar","Tub","Cup","Tube","Roll","Sheet","Bundle","Bunch","Bar","Stick","Sachet","Strip","Blister pack","Tablet","Capsule","Vial","Ampoule","Drum","Bucket","Pail","Crate","Pallet","Kg","g","Liter","mL","m",s.regStockUnit].filter(Boolean))];
     const measurement=h('div',{className:'field-group'},[
       h('label',{htmlFor:'registration-regSizeUnit'},'Measurement Unit'),
-      h('select',{id:'registration-regSizeUnit',value:s.regSizeUnit||'',onChange:this.setRegField('regSizeUnit')},[
+      h('select',{id:'registration-regSizeUnit',required:true,'aria-required':true,value:s.regSizeUnit||'',onChange:this.setRegField('regSizeUnit')},[
         h('option',{value:''},'Select measurement unit'),
         ...Object.entries(PRODUCT_MEASUREMENT_UNITS).map(([group,values])=>h('optgroup',{key:group,label:group},Object.entries(values).map(([value,label])=>h('option',{key:value,value},label)))),
       ]),
     ]);
     const field=(key,label,options={})=>{
+      options={...options,required:!options.readOnly};
       const id="registration-"+key,helpId=id+"-help";
       return h("div",{key,className:"field-group"},[
         h("label",{key:"label",htmlFor:id},[label,options.required?h("span",{className:"required-marker","aria-hidden":true}," *"):null]),
@@ -2510,7 +2515,7 @@ class Component extends DCLogic {
         options.help?h("small",{key:"help",id:helpId},options.help):null,
       ]);
     };
-    const select=(key,label,values,required=false)=>h("div",{key,className:"field-group"},[
+    const select=(key,label,values,required=true)=>h("div",{key,className:"field-group"},[
       h("label",{key:"label",htmlFor:"registration-"+key},[label,required?h("span",{className:"required-marker","aria-hidden":true}," *"):null]),
       h("select",{key:"input",id:"registration-"+key,value:s[key],onChange:this.setRegField(key),required,"aria-required":required},[h("option",{key:"empty",value:""},"Select "+label.toLowerCase()),...values.map(value=>h("option",{key:value,value},["regSizeUnit","regStockUnit"].includes(key)?({mL:"mL (Milliliter)",Liter:"L (Liter)",g:"g (Gram)",kg:"kg (Kilogram)",Kg:"kg (Kilogram)",cm:"cm (Centimeter)",m:"m (Meter)"}[value]||value):value))]),
     ]);
@@ -2529,14 +2534,14 @@ class Component extends DCLogic {
       h("datalist",{key:"names",id:"reg-product-options"},[...new Set(products.map(p=>p.name))].filter(name=>searchMatches(name,s.regProductName)).map(name=>h("option",{key:name,value:name}))),
       (s.registrationError||(!s.regSaved&&this.registrationDuplicate()))?h('p',{role:'alert',className:'alert'},s.registrationError||'This product already exists in inventory (Item Code '+this.registrationDuplicate().id+'). Use the existing product or choose a different brand or size.'):null,
       group("01","Product details","Identify the item and choose its category and supplier.",[
-        field("regProductName","Product name",{required:true}),field("regManufacturer","Manufacturer (optional)",{help:"Company that makes the product; separate from brand and supplier."}),s.regEditing?field("regStockId","Item Code",{type:"number",step:1,readOnly:true}):null,
-        h('label',{className:'field-group'},['Variant of (optional)',h('select',{value:s.regParentId||'',onChange:this.setRegField('regParentId')},[h('option',{value:''},'Main product / no parent'),...products.filter(p=>!p.parentId&&p.id!==s.regEditing&&p.status==='Active'&&p.category===s.regCategory).map(p=>h('option',{key:p.id,value:p.id},p.name+' (#'+p.id+')'))])]),
+        field("regProductName","Product name",{required:true}),field("regManufacturer","Manufacturer",{help:"Company that makes the product; separate from brand and supplier."}),s.regEditing?field("regStockId","Item Code",{type:"number",step:1,readOnly:true}):null,
+        h('label',{className:'field-group'},['Product type *',h('select',{required:true,value:s.regParentId||'main',onChange:e=>this.setRegField('regParentId')({target:{value:e.target.value==='main'?'':e.target.value}})},[h('option',{value:'main'},'Main product / no parent'),...products.filter(p=>!p.parentId&&p.id!==s.regEditing&&p.status==='Active'&&p.category===s.regCategory).map(p=>h('option',{key:p.id,value:p.id},p.name+' (#'+p.id+')'))])]),
         s.regParentId?field('regVariantLabel','Variant label',{required:true,help:'For example: Red, Vanilla or Family pack. Each variant has its own barcode and stock.'}):null,
         field("regScannedBarcode","Barcode",{required:true,placeholder:"Scan or enter the item barcode"}),
         h('div',{className:'registration-category'},[select("regCategory","Category",data.CATEGORIES.filter(c=>c.status==="Active").map(c=>c.name),true),btn('+ Add Category',this.openCategoryModal)]),
-        h("label",{className:"field-group"},["Brand",h("select",{value:s.regBrandId||"",onChange:this.setRegField("regBrandId")},[h("option",{value:""},"Unbranded / not applicable"),...(data.BRANDS||[]).filter(b=>b.status==="Active").map(b=>h("option",{value:b.id,key:b.id},b.name))])]),
+        h("label",{className:"field-group"},["Brand *",h("select",{required:true,"aria-required":true,value:s.regBrandId||"",onChange:this.setRegField("regBrandId")},[h("option",{value:""},"Select brand"),...(data.BRANDS||[]).filter(b=>b.status==="Active").map(b=>h("option",{value:b.id,key:b.id},b.name))])]),
         this.buildSubcategorySelect(s.regCategory,s.regSubcategoryId,this.setRegField("regSubcategoryId"),{registration:true}),
-        h('div',{className:'registration-size'},[h('div',{className:'registration-size-fields'},[field("regSize","Size (optional)",{type:"number",step:"0.001",placeholder:'e.g. 500'}),measurement]),h('small',null,'Size of one stock unit. Example: 500 mL per Bottle, or 1 kg per Pack. Leave both fields blank if not applicable.')]),
+        h('div',{className:'registration-size'},[h('div',{className:'registration-size-fields'},[field("regSize","Size",{type:"number",step:"0.001",placeholder:'e.g. 500'}),measurement]),h('small',null,'Size of one stock unit. Example: 500 mL per Bottle, or 1 kg per Pack. Enter 1 Piece for an item without a weight, volume, or length specification.')]),
         select("regSupplier","Supplier",data.SUPPLIERS.filter(sp=>sp.status==="Active").map(sp=>sp.name)),
         select("regStatus","Status",["Active","Inactive"]),
       ]),
@@ -2547,11 +2552,11 @@ class Component extends DCLogic {
       s.regEditing?group("03","Pricing","Purchase cost and selling price are recorded separately.",[
         field("regUnitPrice","Purchase cost per stock unit (\u20B1)",{type:"number",required:true}),
 
-        field("regRetailPrice","Selling price per stock unit (\u20B1)",{type:"number",help:"If blank, the purchase cost is used."}),
+        field("regRetailPrice","Selling price per stock unit (\u20B1)",{type:"number",help:"Enter the selling price for one stock unit."}),
       ]):null,
       s.regEditing?field("regEditReason","Reason for changes"):null,
       h("div",{key:"save",className:"form-actions"},[
-        h("span",{className:"form-action-note"},"Choose an active supplier before requesting a purchase."),
+        h("span",{className:"form-action-note"},"All editable fields are required. Enter 0 for Minimum Stock if no low-stock threshold is needed."),
         h("button",{type:"button",className:"primary-button",disabled:!!s.registrationSaving,"aria-busy":!!s.registrationSaving,onClick:this.saveRegistration},s.registrationSaving?"Saving product...":s.regSaved?"Product registered":"Save product registration"),
       ]),
       s.categoryModalOpen?this.buildCategoryModal():null,

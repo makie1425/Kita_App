@@ -15,3 +15,7 @@ assert(all.some(n=>n.type==='button'&&JSON.stringify(n.children).includes('Add C
 assert(JSON.stringify(tree).includes('Minimum Stock'));
 assert(all.indexOf(find('registration-feedback'))<all.indexOf(find('registration-regProductName')));
 console.log('Registration unit choices, backend parity, simplified fields, category access and feedback placement passed.');
+
+for(const node of all.filter(n=>['input','select'].includes(n.type)&&!n.props?.readOnly&&n.props?.id?.startsWith('registration-'))){assert.equal(node.props.required,true,node.props.id);}
+let message='';app.toast=text=>{message=text;};app.saveRegistration();assert(message.includes('Complete all required fields'));assert(message.includes('Manufacturer'));assert(message.includes('Subcategory'));
+console.log('Registration requires editable fields and blocks incomplete submission.');
