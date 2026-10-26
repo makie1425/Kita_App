@@ -303,10 +303,9 @@ class Component extends DCLogic {
   }
   componentDidUpdate() {
     // The custom logic runtime supplies no previous state. Keep our own snapshot
-    // before triggering updates so entering Reports loads once, without a loop.
+    // before triggering updates so nested state changes use the correct snapshot.
     const prevState=this.previousAppState||{};
     this.previousAppState=this.state;
-    if(this.state.screen==='admReports' && prevState.screen!=='admReports') this.generateReport();
     if(this.state.discountManagerPin && (prevState.cart!==this.state.cart || prevState.seniorApplied!==this.state.seniorApplied || prevState.employeeDiscount!==this.state.employeeDiscount || prevState.role!==this.state.role)){
       this.setState({discountManagerPin:""});
     }
@@ -2017,7 +2016,7 @@ class Component extends DCLogic {
     const entries=(d?.settlements||[]).filter(e=>ids.has(e.receiptId));
     const edit=(key,value)=>this.setState({settlementForm:{...f,[key]:value,requestKey:crypto.randomUUID()}});
     return h('div',{className:'inventory-workspace'},[sectionTitle('Supplier Accounts','Accepted purchase receipts create payable balances. Record completed payments or supplier-issued credit notes; KITA does not transfer money.'),
-      h('div',{className:'purchase-filters'},[h('label',null,['Supplier',h('select',{value:s.accountSupplier||'',onChange:e=>this.setState({accountSupplier:e.target.value})},[h('option',{value:''},'All suppliers'),...(s.data?.SUPPLIERS||[]).map(v=>h('option',{value:v.id},v.name))])]),h('button',{className:'kita-button',disabled:s.supplierAccountsLoading,onClick:this.loadSupplierAccounts},s.supplierAccountsLoading?'Refreshing...':'Refresh'),btn('Reports / Export',()=>{this.setState({screen:'admReports',reportFilters:{type:'payables',supplierId:s.accountSupplier||''}});this.generateReport();})]),
+      h('div',{className:'purchase-filters'},[h('label',null,['Supplier',h('select',{value:s.accountSupplier||'',onChange:e=>this.setState({accountSupplier:e.target.value})},[h('option',{value:''},'All suppliers'),...(s.data?.SUPPLIERS||[]).map(v=>h('option',{value:v.id},v.name))])]),h('button',{className:'kita-button',disabled:s.supplierAccountsLoading,onClick:this.loadSupplierAccounts},s.supplierAccountsLoading?'Refreshing...':'Refresh'),btn('Reports / Export',()=>{this.setState({screen:'admReports',reportFilters:{type:'payables',supplierId:s.accountSupplier||''}});})]),
       s.supplierAccountsError?h('p',{role:'alert'},s.supplierAccountsError):null,
       h('div',{className:'inventory-summary'},[kpi('Accepted Purchases',peso(receipts.reduce((n,r)=>n+Number(r.receivedValue),0))),kpi('Recorded Payments',peso(receipts.reduce((n,r)=>n+Number(r.payments),0))),kpi('Supplier Credits',peso(receipts.reduce((n,r)=>n+Number(r.credits),0))),kpi('Unpaid Balance',peso(receipts.reduce((n,r)=>n+Number(r.balance),0)))]),
       h('p',{className:'inventory-help'},'Amounts use receipt costs. Missing due dates remain unspecified. Records marked for legacy review are excluded from unpaid totals and need reconciliation before further settlement. Payments and credit notes are recorded by an admin.'),
@@ -2814,8 +2813,8 @@ class Component extends DCLogic {
     return React.createElement("div",null,[sectionTitle("Supplier Records","Contact info, address, category, status (Active/Inactive only)"),
       this.recordTable("supplier-records",["Supplier","Category","Status","Details"],data.SUPPLIERS.map(s=>tr([td(s.name,{fontWeight:600}),td(s.category),td(badge(s.status)),td(React.createElement("button",{onClick:this.openSupplierDetail(s.id),style:{color:COLORS.brand,background:"none",border:"none",fontWeight:700,cursor:"pointer"}},"View â†’"))],s.id)))]);
   }
-  setReportFilter=(key,value)=>this.setState(s=>({reportFilters:{...(s.reportFilters||{type:'sales'}),[key]:value,...(key==='category'?{subcategoryId:'',productId:''}:['brandId','subcategoryId','supplierId','type'].includes(key)?{productId:''}:{}),...(key==='type'?{status:'',audit:'',expiryStatus:'',lowStock:'',manager:'',category:'',brandId:'',subcategoryId:'',...(value==='inventory'?{from:'',to:''}:{})}:{})},reportFilterOpen:['from','to'].includes(key)?s.reportFilterOpen:null}),this.generateReport);
-  resetReportFilters=()=>this.setState({reportFilters:{type:this.state.reportFilters?.type||'sales'},reportFilterOpen:null},this.generateReport);
+  setReportFilter=(key,value)=>this.setState(s=>({reportFilters:{...(s.reportFilters||{type:'sales'}),[key]:value,...(key==='category'?{subcategoryId:'',productId:''}:['brandId','subcategoryId','supplierId','type'].includes(key)?{productId:''}:{}),...(key==='type'?{status:'',audit:'',expiryStatus:'',lowStock:'',manager:'',category:'',brandId:'',subcategoryId:'',...(value==='inventory'?{from:'',to:''}:{})}:{})},reportFilterOpen:['from','to'].includes(key)?s.reportFilterOpen:null}));
+  resetReportFilters=()=>this.setState({reportFilters:{type:this.state.reportFilters?.type||'sales'},reportFilterOpen:null});
   generateReport=async()=>{
     const filters={...(this.state.reportFilters||{type:'sales'})};
     const requestId=(this.reportRequestId||0)+1;this.reportRequestId=requestId;
@@ -2886,6 +2885,9 @@ class Component extends DCLogic {
   }
   buildAdmReports(){
     const h=React.createElement,s=this.state,d=s.data,f=s.reportFilters||{type:'sales'},loaded=s.reportResult;
+    const resultType=s.reportAppliedFilters?.type||f.type;
+    const normalizeFilters=filters=>JSON.stringify(Object.entries(filters||{type:'sales'}).filter(([,value])=>value).sort(([a],[b])=>a.localeCompare(b)));
+    const pendingFilters=!!loaded&&normalizeFilters(f)!==normalizeFilters(s.reportAppliedFilters);
     const common={'Product':'product','Category':'category','Brand':'brand','Subcategory':'subcategory'};
     const schemas={
       receiving:{'PO Number':'reportPo','Receipt ID':'reference','Supplier':'supplier','Product':'product','Remarks':'remarks','Discrepancy':'discrepancyType','Condition':'condition','Received':'quantity'},
@@ -2897,7 +2899,7 @@ class Component extends DCLogic {
     };
     const r=loaded||{title:'Report results',columns:schemas[f.type]||schemas.sales,rows:[],labels:{},summary:{}};
     const appliedLabels=Object.entries(r?.labels||{}).filter(([key])=>key!=='Type').map(([key,value])=>key+': '+value).join(', ');
-    const emptyMessage=h('div',{className:'report-table-message',role:s.reportError?'alert':'status','aria-live':'polite'},s.reportLoading?'Loading report records. Please wait...':s.reportError?'Unable to update the report. '+s.reportError:!loaded?'Preparing your report...':'No results found'+(appliedLabels?' for '+appliedLabels:'')+'. Change or clear the filters and try again.');
+    const emptyMessage=h('div',{className:'report-table-message',role:s.reportError?'alert':'status','aria-live':'polite'},s.reportLoading?'Loading report records. Please wait...':s.reportError?'Unable to update the report. '+s.reportError:!loaded?'Choose your filters, then click Refresh to load the report.':'No results found'+(appliedLabels?' for '+appliedLabels:'')+'. Change or clear the filters and try again.');
     const reportGroups=[
       ['Sales',[['sales','Sales details','View sold items, sales amounts, and transaction status.']]],
       ['Inventory',[['inventory','Stock on hand','Check current quantities and stock availability.'],['receipts','Stock received','See products received, with supplier and batch details.'],['movements','Stock changes','Track stock added, removed, or adjusted.'],['expiry','Expiring products','Check expiration dates and print a monitoring report.']]],
@@ -2912,7 +2914,7 @@ class Component extends DCLogic {
     const labelFor=(options,value)=>options.find(([id])=>String(id)===String(value))?.[1]||value;
     const url=format=>'/reports/data?'+new URLSearchParams({...Object.fromEntries(Object.entries(s.reportAppliedFilters||{}).filter(([,v])=>v)),format});
     const filterButton=(key,label,active,disabled=false)=>h('button',{key,type:'button',className:'report-filter-button'+(active?' is-selected':''),'aria-expanded':open===key,'aria-controls':'report-filter-options',disabled,onClick:()=>this.setState({reportFilterOpen:open===key?null:key}),title:disabled?'Choose a category first':undefined},[label,h('span',{'aria-hidden':true},open===key?'\u25b4':'\u25be')]);
-    return h('div',{className:'reports-page'},[sectionTitle('Reports','Choose what you want to review, then use the filters to narrow your results.'),
+    return h('div',{className:'reports-page'},[sectionTitle('Reports','Choose a report and filters, then click Refresh to load the results.'),
       ['purchase_orders','outstanding_orders','purchases','supplier_book','payables'].includes(f.type)?h('label',{className:'purchase-notes'},['Requested / Recorded by (exact name)',h('input',{value:f.manager||'',onChange:e=>this.setReportFilter('manager',e.target.value)})]):null,
       f.type==='expiry'?h('div',{className:'expiry-quick-filters',role:'group','aria-label':'Expiration status filters'},[
         ...[['','All'],['Nearly expired','Nearly expired'],['Expired','Expired']].map(([value,label])=>h('button',{key:label,type:'button',className:'report-type-button'+((f.expiryStatus||'')===value?' is-selected':''),'aria-pressed':(f.expiryStatus||'')===value,onClick:()=>this.setReportFilter('expiryStatus',value)},label)),
@@ -2927,27 +2929,28 @@ class Component extends DCLogic {
           f.type==='receiving'?h('label',{className:'report-status-filter'},['Discrepancy audit',h('select',{'aria-label':'Report discrepancy',value:f.audit||'',onChange:e=>this.setReportFilter('audit',e.target.value)},[['','All'],['missing','Missing'],['damaged','Damaged'],['flagged','Other discrepancies'],['none','No discrepancy']].map(([value,label])=>h('option',{key:value,value},label)))]):null,
           filterButton('more','More filters',!!(f.brandId||f.supplierId||f.productId||f.lowStock||f.expiryStatus)),
           activeCount?h('button',{type:'button',className:'report-clear',onClick:this.resetReportFilters},'Clear all'):null,
+          h('button',{type:'button',className:'kita-button kita-button--primary',disabled:!!s.reportLoading,onClick:this.generateReport},s.reportLoading?'Refreshing...':'Refresh'),
           h('label',{className:'report-search'},[h('span',{className:'sr-only'},'Search report records'),h('input',{type:'search',placeholder:'Search transaction, product, category...',value:s.tableViews['generated-report']?.query||'',onChange:e=>this.setTableView('generated-report',{query:e.target.value,page:1})})])
         ]),
         open?h('div',{id:'report-filter-options',className:'report-filter-options',onKeyDown:e=>{if(e.key==='Escape'){this.setState({reportFilterOpen:null});e.currentTarget.parentElement.querySelector('[aria-expanded="true"]')?.focus();}}},[
           open==='more'?h('div',{className:'report-date-options'},[f.type==='expiry'?h('label',null,['Expiration status',h('select',{'aria-label':'Expiration status',value:f.expiryStatus||'',onChange:e=>this.setReportFilter('expiryStatus',e.target.value)},['','Nearly expired','Expired','Critical','Warning','Good','Unknown'].map(value=>h('option',{key:value,value},value||'All statuses')))]):null,...facets.filter(([key])=>!['category','subcategoryId'].includes(key)).map(([key,label,options])=>h('label',{key},[label,h('select',{value:f[key]||'',onChange:e=>this.setReportFilter(key,e.target.value)},[['','All '+label.toLowerCase()+' options'],...options].map(([value,name])=>h('option',{key:value,value},name)))])),f.type==='inventory'?h('label',null,[h('input',{type:'checkbox',checked:!!f.lowStock,onChange:e=>this.setReportFilter('lowStock',e.target.checked?'1':'')}),'Low stock only']):null]):open==='date'?h('div',{className:'report-date-options'},[
             h('label',null,['From',h('input',{type:'date',value:f.from||'',max:f.to||undefined,onChange:e=>this.setReportFilter('from',e.target.value)})]),
             h('label',null,['To',h('input',{type:'date',value:f.to||'',min:f.from||undefined,onChange:e=>this.setReportFilter('to',e.target.value)})]),
-            h('button',{type:'button',className:'report-clear',onClick:()=>this.setState({reportFilters:{...f,from:'',to:''},reportFilterOpen:null},this.generateReport)},'All dates')
+            h('button',{type:'button',className:'report-clear',onClick:()=>this.setState({reportFilters:{...f,from:'',to:''},reportFilterOpen:null})},'All dates')
           ]):facet?h('fieldset',{className:'report-facet'},[h('legend',null,facet[1]),h('div',{className:'report-facet-options'},[['','All '+facet[1].toLowerCase()+' options'],...facet[2]].map(([value,label])=>h('label',{key:value,className:'report-facet-choice'},[h('input',{type:'radio',name:'report-'+open,value,checked:String(f[open]||'')===String(value),onChange:()=>this.setReportFilter(open,String(value))}),label])))]):null
         ]):null,
         activeCount?h('div',{className:'report-active-actions','aria-label':'Selected filters'},[
           ...selected.map(([key,label,options])=>h('button',{key,type:'button',className:'report-filter-chip','aria-label':'Remove '+label+' filter',onClick:()=>this.setReportFilter(key,'')},label+': '+labelFor(options,f[key])+' \u00d7')),
-          f.from||f.to?h('button',{type:'button',className:'report-filter-chip',onClick:()=>this.setState({reportFilters:{...f,from:'',to:''}},this.generateReport)},'Dates: '+(f.from||'Any')+' to '+(f.to||'Any')+' \u00d7'):null,
+          f.from||f.to?h('button',{type:'button',className:'report-filter-chip',onClick:()=>this.setState({reportFilters:{...f,from:'',to:''}})},'Dates: '+(f.from||'Any')+' to '+(f.to||'Any')+' \u00d7'):null,
           f.lowStock?h('button',{type:'button',className:'report-filter-chip',onClick:()=>this.setReportFilter('lowStock','')},'Low stock only \u00d7'):null
         ]):null,
         f.type==='inventory'?h('p',{className:'report-filter-hint'},'Current stock snapshot. Use Stock movements to filter by date.'):null
       ]),
-      h('p',{role:'status','aria-live':'polite',className:'report-filter-hint'},s.reportLoading?'Updating results below...':s.reportError?'Results could not be updated.':r?r.rows.length+(f.type==='expiry'?' tracked batch items':' matching records'):'Loading report...'),
+      h('p',{role:'status','aria-live':'polite',className:'report-filter-hint'},s.reportLoading?'Updating results below...':s.reportError?'Results could not be updated.':pendingFilters?'Filters changed. Click Refresh to update the results.':loaded?r.rows.length+(resultType==='expiry'?' tracked batch items':' matching records'):'Click Refresh to load your report.'),
       s.reportError?h('div',{role:'alert'},[s.reportError,btn('Retry',this.generateReport)]):null,
       h('section',{key:'report-results',className:'report-results','aria-label':'Report results','aria-busy':!!s.reportLoading},[
-        h('div',{className:'report-results-header'},[h('h2',null,r.title),loaded?h('div',{className:'action-group'},[h('a',{className:'kita-button',href:url('pdf'),download:true},'Download PDF Summary'),h('a',{className:'kita-button',href:url('csv'),download:true},'Export CSV'),h('a',{className:'kita-button',href:url('print'),target:'_blank',rel:'noopener'},f.type==='expiry'?'Print Expiration Report':'Print report')]):null]),
-        loaded?h('p',{className:'report-filter-hint'},(s.reportLoading||s.reportError?'Showing the last successfully loaded results. ':'')+'Exports include all filtered records, before table search or pagination. Generated: '+r.generated):null,
+        h('div',{className:'report-results-header'},[h('h2',null,r.title),loaded?h('div',{className:'action-group'},[h('a',{className:'kita-button',href:url('pdf'),download:true},'Download PDF Summary'),h('a',{className:'kita-button',href:url('csv'),download:true},'Export CSV'),h('a',{className:'kita-button',href:url('print'),target:'_blank',rel:'noopener'},resultType==='expiry'?'Print Expiration Report':'Print report')]):null]),
+        loaded?h('p',{className:'report-filter-hint'},(s.reportLoading||s.reportError||pendingFilters?'Showing the last successfully loaded results. ':'')+'Exports include all filtered records, before table search or pagination. Generated: '+r.generated):null,
         h('p',{className:'report-filter-hint'},Object.entries(r.labels||{}).map(([key,value])=>key+': '+value).join(' | ')),
         h('div',{className:'report-summary'},Object.entries(r.summary||{}).map(([label,value])=>h('div',{key:label,className:'report-metric'},[h('span',null,label),h('strong',null,value)]))),
         loaded&&(s.reportAppliedFilters?.type||f.type)==='sales'?this.buildReportCharts(r.rows):null,

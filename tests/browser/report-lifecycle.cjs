@@ -17,13 +17,15 @@ const app = new context.Harness();
 // Match support.js: componentDidUpdate receives props only, never prevState.
 assert.doesNotThrow(() => app.componentDidUpdate({}));
 app.setState({screen: 'admReports'});
-assert.equal(app.requests, 1, 'Opening Reports automatically requests its data');
+assert.equal(app.requests, 0, 'Opening Reports waits for Refresh');
 app.setState({reportLoading: false, reportResult: {rows: []}});
 app.setState({reportFilterOpen: 'category'});
-assert.equal(app.requests, 1, 'Rendering results and opening filters must not reload');
+assert.equal(app.requests, 0, 'Rendering results and opening filters must not reload');
 app.setState({screen: 'admDashboard'});
 app.setState({screen: 'admReports'});
-assert.equal(app.requests, 2, 'Returning to Reports refreshes the data');
+assert.equal(app.requests, 0, 'Returning to Reports waits for Refresh');
+app.generateReport();
+assert.equal(app.requests, 1, 'Explicit Refresh requests data');
 app.setState({discountManagerPin: '1234', cart: []});
 assert.equal(app.state.discountManagerPin, '', 'Cart changes still clear the discount authorization');
 console.log('Report lifecycle regression checks passed.');
