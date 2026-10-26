@@ -67,10 +67,10 @@
         <section class="receipt"><strong class="mono">{{ $receipt->id }}</strong> · Receipt reference: {{ $receipt->deliveryReference ?? 'Not recorded' }}
         <p>Supplier document: {{ ($receipt->supplierDocument ?? null) ?: "Not recorded" }} ? Payment due: {{ ($receipt->paymentDueDate ?? null) ?: "Not recorded" }}</p>
         @if($receipt->deliveryBatch)
-        <p><strong>Receiving Batch / Lot:</strong> {{ $receipt->deliveryBatch }}<br><strong>POs in this delivery:</strong> {{ $sharedReceipts->get($receipt->deliveryBatch, collect())->pluck('poId')->unique()->implode(', ') }}</p>
+        <p><strong>Receiving Batch:</strong> {{ $receipt->deliveryBatch }}<br><strong>POs in this delivery:</strong> {{ $sharedReceipts->get($receipt->deliveryBatch, collect())->pluck('poId')->unique()->implode(', ') }}</p>
         @endif
         <p>Date received: {{ $receipt->date }} · Recorded at: {{ $receipt->received_at ?? 'Not recorded' }}<br>Received by: {{ $receipt->receivedBy ?? 'Not recorded' }} · Remarks: {{ \App\Services\ReceivingRemarks::forReceipt($receipt) }}</p>
-        <div class="table-wrap" tabindex="0" role="region" aria-label="Delivery items"><table><thead><tr><th>Product ID</th><th>Item / Category</th><th>Manufacturer</th><th>Ordered Qty</th><th>Received Order</th><th>Unit</th><th>Actual unit cost</th><th>Batch / Lot</th><th>Expiry</th></tr></thead><tbody>
+        <div class="table-wrap" tabindex="0" role="region" aria-label="Delivery items"><table><thead><tr><th>Product ID</th><th>Item / Category</th><th>Manufacturer</th><th>Ordered Qty</th><th>Received Order</th><th>Unit</th><th>Actual unit cost</th><th>Batch</th><th>Expiry</th></tr></thead><tbody>
         @foreach($receiptLines->get($receipt->id, collect()) as $line)<tr><td>{{ $line->productId }}</td><td>{{ $line->name ?? 'Item #'.$line->productId }}<br>{{ $line->category ?? 'Not recorded' }}</td><td>{{ $line->manufacturer ?? 'Not recorded' }}</td><td>{{ $line->poQty }}</td><td>{{ $line->deliveredQty }}</td><td>{{ $line->unit ?? 'Not recorded' }}</td><td>{{ $line->unitCost === null ? 'Not recorded' : number_format($line->unitCost, 2) }}</td><td>{{ $line->batchNumber ?? '-' }}</td><td>{{ $line->expiryDate ?? '-' }}</td></tr>@endforeach
         </tbody></table></div>
         @foreach($receiptLines->get($receipt->id, collect()) as $line)

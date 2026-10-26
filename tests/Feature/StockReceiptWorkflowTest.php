@@ -166,4 +166,32 @@ class StockReceiptWorkflowTest extends TestCase {
   $this->assertSame(3,DB::table('inventory_batches')->count());
  }
 
+ public function test_legacy_batch_standardization_and_complete_print_report():void {
+  $po=$this->order(10);$entry=$this->entry($po,10);
+  $entry['lots']=[['quantity'=>4,'supplierLot'=>'SUP-A','manufacturedDate'=>now()->subDay()->toDateString(),'noExpiry'=>true],['quantity'=>6,'supplierLot'=>'SUP-B','manufacturedDate'=>now()->subDay()->toDateString(),'noExpiry'=>true]];
+  $id=$this->postJson('/api/stock-receipts',$this->body($po,[$entry]))->assertCreated()->json('id');
+  $rows=DB::table('inventory_batches')->orderBy('id')->get();
+  foreach($rows as $i=>$row){
+   $legacy='LOT-OLD-'.$i;
+   DB::table('inventory_batches')->where('id',$row->id)->update(['batchNumber'=>$legacy]);
+   DB::table('receiving_record_lines')->where('physicalLotId',$row->physicalLotId)->update(['batchNumber'=>$legacy,'internalBatch'=>$legacy]);
+  }
+  \App\Services\StandardizeLegacyBatches::run();
+  $updated=DB::table('inventory_batches')->orderBy('id')->get();
+  $this->assertCount(1,$updated->pluck('batchNumber')->unique());
+  $number=$updated->first()->batchNumber;
+  $this->assertMatchesRegularExpression('/^BATCH-\d{2}-\d{2}-\d{2}-\d{5,}$/',$number);
+  $this->assertSame($rows->pluck('physicalLotId')->all(),$updated->pluck('physicalLotId')->all());
+  $this->assertSame($rows->pluck('quantityRemaining')->all(),$updated->pluck('quantityRemaining')->all());
+  $this->assertDatabaseCount('batch_number_history',2);
+  $this->assertDatabaseHas('batch_number_history',['previousNumber'=>'LOT-OLD-0','batchNumber'=>$number]);
+  $this->assertSame(1,DB::table('receiving_record_lines')->distinct()->count('batchNumber'));
+  \App\Services\StandardizeLegacyBatches::run();
+  $this->assertSame($number,DB::table('inventory_batches')->value('batchNumber'));
+  $this->get('/inventory/batches/'.$rows[0]->id.'/print?productId=999')->assertOk()->assertSee($number)->assertSee('2 stock entries')->assertSee('Print / Save PDF');
+  $this->get('/inventory/batches/999999/print')->assertNotFound();
+  $cashier=User::factory()->create(['role'=>'cashier']);
+  $this->actingAs($cashier)->get('/inventory/batches/'.$rows[0]->id.'/print')->assertForbidden();
+ }
+
 }

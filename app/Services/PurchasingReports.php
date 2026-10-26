@@ -36,7 +36,7 @@ class PurchasingReports
             $rows = DB::table('receiving_record_lines as l')->join('receiving_records as r','r.id','=','l.receivingId')->join('purchase_orders as po','po.id','=','r.poId')
                 ->leftJoin('products as p','p.id','=','l.productId')->get(['l.*','r.date','r.poId as reportPo','r.supplierName as supplier','po.supplierId','r.receivedBy as manager','r.supplierDocument','r.inspection','r.outcome','p.brandId','p.subcategoryId']);
             foreach ($rows as $row) { $row->amount = round($row->deliveredQty * ($row->unitCost ?? 0), 2); $row->remarks = ReceivingRemarks::forReceipt($row); }
-            $columns = ['Receipt Date'=>'date','PO Number'=>'reportPo','Receipt ID'=>'receivingId','Supplier Document'=>'supplierDocument','Supplier'=>'supplier','Received By'=>'manager','Item Code'=>'productId','Item'=>'name','Stock Unit'=>'unit','Accepted Qty'=>'deliveredQty','Unit Cost (PHP)'=>'unitCost','Received Value (PHP)'=>'amount','Batch / Lot'=>'batchNumber','Inspection Remarks'=>'remarks'];
+            $columns = ['Receipt Date'=>'date','PO Number'=>'reportPo','Receipt ID'=>'receivingId','Supplier Document'=>'supplierDocument','Supplier'=>'supplier','Received By'=>'manager','Item Code'=>'productId','Item'=>'name','Stock Unit'=>'unit','Accepted Qty'=>'deliveredQty','Unit Cost (PHP)'=>'unitCost','Received Value (PHP)'=>'amount','Batch'=>'batchNumber','Inspection Remarks'=>'remarks'];
             $note .= ' Date filters use receipt date. Each delivery is listed separately, including later receipts on the same PO.';
         } else {
             $receipts = SupplierAccounts::receipts()->get()->map(fn ($r)=>SupplierAccounts::describe($r));

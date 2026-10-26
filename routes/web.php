@@ -98,6 +98,7 @@ Route::middleware('role:manager,admin,super_admin')->group(function () {
     Route::post('/api/product-master/{kind}', [ProductMasterController::class, 'save'])->whereIn('kind', ['brands', 'subcategories']);
     Route::patch('/api/product-master/{kind}/{id}', [ProductMasterController::class, 'save'])->whereIn('kind', ['brands', 'subcategories'])->whereNumber('id');
     Route::get('/api/inventory-history', [ProductMasterController::class, 'inventory']);
+    Route::get('/inventory/batches/{id}/print', \App\Http\Controllers\BatchReportController::class)->whereNumber('id');
 });
 
 Route::middleware('role:manager,admin,super_admin')->prefix('api/inventory/workflows')->group(function () {

@@ -39,3 +39,17 @@ non-perishable product. Damage and substitution details are required when those
 conditions apply. Automatic identifiers and calculated quantities are read-only.
 Historic receipts are preserved; existing pending approvals retain their saved
 payload and are still revalidated against current quantities before posting.
+
+## Standardizing older records and printing
+
+Migration `2026_10_26_000001_standardize_legacy_batch_numbers` assigns standard
+BATCH-MM-DD-YY-NNNNN labels to older inventory entries, using the recorded receipt
+date. Receipt/physical-entry keys, supplier references, quantities, and costs stay
+unchanged. Entries with the same saved stock receipt or delivery link are grouped;
+matching timestamps alone are not sufficient. The previous number is retained in
+batch_number_history. The migration is idempotent and keeps its history on rollback.
+Run the normal `php artisan migrate --force` deployment step to update old labels.
+
+Every batch group has Print batch. The authenticated print route reads all current
+entries for that batch from the database, independently of UI filters/pagination.
+Managers and administrators can print or save the report as PDF.

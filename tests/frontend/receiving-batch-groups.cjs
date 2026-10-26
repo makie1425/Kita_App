@@ -16,3 +16,5 @@ const rows=[{id:1,productId:1,batchNumber:'B1',name:'A'},{id:2,productId:2,batch
 assert.equal(app.inventoryBatchGroups(rows).length,2);assert.equal(app.inventoryBatchGroups(rows)[0].items.length,2);
 const tree=app.groupedBatchTables('test',rows,['Product'],r=>({type:'tr',children:[r.name]}));const nodes=n=>!n||typeof n!=='object'?[]:Array.isArray(n)?n.flatMap(nodes):[n,...nodes(n.children||n.props?.children)];assert.equal(nodes(tree).filter(n=>n.type==='details'&&n.props?.className==='inventory-batch-group').length,2);
 console.log('Required receiving fields, explicit zero items, and batch grouping passed.');
+
+const printLinks=nodes(tree).filter(n=>n.type==='a'&&n.props?.className==='kita-button batch-print-button');assert.equal(printLinks.length,2);assert.equal(printLinks[0].props.href,'/inventory/batches/1/print');

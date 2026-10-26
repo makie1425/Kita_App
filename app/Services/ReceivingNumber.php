@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\DB;
 class ReceivingNumber
 {
     /** Allocate on the server's issue date, independently of a backdated delivery. */
-    public static function next(string $kind): string
+    public static function next(string $kind, ?string $date = null): string
     {
         $targets = match ($kind) {
             'BATCH' => [['inventory_batches', 'batchNumber'], ['physical_inventory_lots', 'id'], ['receiving_deliveries', 'batchNumber']],
@@ -15,7 +15,7 @@ class ReceivingNumber
             'RCV' => [['receiving_records', 'id']],
             default => throw new \InvalidArgumentException('Unknown receiving number type.'),
         };
-        $prefix = $kind.'-'.now()->format('m-d-y').'-';
+        $prefix = $kind.'-'.($date ? \Illuminate\Support\Carbon::parse($date) : now())->format('m-d-y').'-';
         return DB::transaction(function () use ($prefix, $targets) {
             $name = 'receiving:'.$prefix;
             DB::table('inventory_sequences')->insertOrIgnore(['name' => $name, 'lastValue' => 0]);

@@ -74,7 +74,7 @@ class ReportController extends Controller
             $title = 'Printable Expiration & Shelf-Life Audit';
             $query->join('inventory_batches as b', 'b.productId', '=', 'p.id')->where('b.quantityRemaining', '>', 0);
             $dateColumn = 'b.expiryDate';
-            $columns = ['Product ID' => 'code', 'Batch / Lot' => 'batch', 'Product name' => 'product', 'Category' => 'category', 'Manufacturer'=>'manufacturer', 'Expiration date' => 'expiryDate', 'Stock remaining' => 'remaining', 'Unit' => 'unit', 'Expiration status' => 'status'];
+            $columns = ['Product ID' => 'code', 'Batch' => 'batch', 'Product name' => 'product', 'Category' => 'category', 'Manufacturer'=>'manufacturer', 'Expiration date' => 'expiryDate', 'Stock remaining' => 'remaining', 'Unit' => 'unit', 'Expiration status' => 'status'];
             $select = array_merge($select, ['p.id as code', 'b.id', 'b.manufacturer', 'b.batchNumber as batch', 'b.lotNumber as lot', 'b.expiryDate', 'b.quantityRemaining as remaining', 'p.stockUnit as unit']);
             $note = 'Current remaining batches, including recalled stock. Dates filter expiration dates. Expired: today or earlier; critical: within 7 days; warning: within 30 days. Shelf locations are not recorded in this system.';
         } elseif ($type === 'receipts') {
