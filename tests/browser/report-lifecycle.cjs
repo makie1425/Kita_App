@@ -30,7 +30,7 @@ app.setState({discountManagerPin: '1234', cart: []});
 assert.equal(app.state.discountManagerPin, '', 'Cart changes still clear the discount authorization');
 console.log('Report lifecycle regression checks passed.');
 
-// Background polling must not redraw the Reports screen between manual refreshes.
+// Mounting the app must not schedule automatic refreshes on any module.
 const timers=[];
 const pollingContext=vm.createContext({
   DCLogic:class {}, React:{}, window:{addEventListener(){}},
@@ -38,17 +38,10 @@ const pollingContext=vm.createContext({
 });
 vm.runInContext(source+';globalThis.app=new Component();',pollingContext);
 const pollingApp=pollingContext.app;
-let stockCalls=0,notificationCalls=0;
 pollingApp.syncNavigationViewport=()=>{};
-pollingApp.refreshStockAvailability=()=>{stockCalls++;return Promise.resolve([]);};
-pollingApp.reloadNotifications=()=>{notificationCalls++;};
-Object.assign(pollingApp.state,{role:'admin',screen:'admReports'});
-pollingApp.componentDidMount();
-timers.forEach(callback=>callback());
-assert.equal(stockCalls,0,'Stock polling is paused on Reports');
-assert.equal(notificationCalls,0,'Notification polling is paused on Reports');
-pollingApp.state.screen='admDashboard';
-timers.forEach(callback=>callback());
-assert.equal(stockCalls,1,'Stock polling resumes outside Reports');
-assert.equal(notificationCalls,1,'Notification polling resumes outside Reports');
-console.log('Report background polling checks passed.');
+for(const screen of ['mgrInventory','admReports','admDashboard','mgrPO','admNotifications']) {
+  Object.assign(pollingApp.state,{role:'admin',screen});
+  pollingApp.componentDidMount();
+  assert.equal(timers.length,0,screen+' must not start background polling');
+}
+console.log('All modules remain free of scheduled background refreshes.');
