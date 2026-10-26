@@ -2898,7 +2898,14 @@ class Component extends DCLogic {
     const r=loaded||{title:'Report results',columns:schemas[f.type]||schemas.sales,rows:[],labels:{},summary:{}};
     const appliedLabels=Object.entries(r?.labels||{}).filter(([key])=>key!=='Type').map(([key,value])=>key+': '+value).join(', ');
     const emptyMessage=h('div',{className:'report-table-message',role:s.reportError?'alert':'status','aria-live':'polite'},s.reportLoading?'Loading report records. Please wait...':s.reportError?'Unable to update the report. '+s.reportError:!loaded?'Preparing your report...':'No results found'+(appliedLabels?' for '+appliedLabels:'')+'. Change or clear the filters and try again.');
-    const types=[['sales','Sales lines'],['inventory','Current inventory'],['receipts','Received stock'],['movements','Stock movements'],['expiry','Expiration Monitoring'],['receiving','Receiving Audit'],['purchase_orders','Purchase Orders'],['outstanding_orders','Outstanding Deliveries'],['purchases','Purchases'],['supplier_book','Supplier Book'],['payables','Accounts Payable']];
+    const reportGroups=[
+      ['Sales',[['sales','Sales details','View sold items, sales amounts, and transaction status.']]],
+      ['Inventory',[['inventory','Stock on hand','Check current quantities and stock availability.'],['receipts','Stock received','See products received, with supplier and batch details.'],['movements','Stock changes','Track stock added, removed, or adjusted.'],['expiry','Expiring products','Check expiration dates and print a monitoring report.']]],
+      ['Purchasing',[['purchase_orders','Purchase orders','Review orders placed with suppliers and their status.'],['outstanding_orders','Pending deliveries','Find ordered items that still need to be received.'],['receiving','Delivery discrepancies','Review missing, damaged, and other flagged deliveries.'],['purchases','Purchase history','Review recorded purchases and their costs.']]],
+      ['Suppliers & payments',[['supplier_book','Supplier records','Review purchasing records by supplier.'],['payables','Supplier balances','Check amounts owed to suppliers.']]],
+    ];
+    const types=reportGroups.flatMap(([,reports])=>reports);
+    const selectedReport=types.find(([value])=>value===f.type)||types[0];
     const products=d.PRODUCTS.filter(p=>(!f.category||p.category===f.category)&&(!f.subcategoryId||String(p.subcategoryId)===String(f.subcategoryId))&&(!f.brandId||String(p.brandId)===String(f.brandId))&&(f.type==='receipts'||!f.supplierId||String(p.supplierId)===String(f.supplierId)));
     const facets=[['category','Category',d.CATEGORIES.map(c=>[c.name,c.name])],['subcategoryId','Subcategory',this.subcategoriesFor(f.category,true).map(c=>[c.id,c.name])],['brandId','Brand',(d.BRANDS||[]).map(b=>[b.id,b.name])],['supplierId','Supplier',d.SUPPLIERS.map(p=>[p.id,p.name])],['productId','Product',products.map(p=>[p.id,this.productLabel(p)+' #'+p.id])]].filter(([key])=>!['supplier_book','payables'].includes(f.type)||key==='supplierId');
     const selected=facets.filter(([key])=>f[key]);
@@ -2907,8 +2914,12 @@ class Component extends DCLogic {
     const labelFor=(options,value)=>options.find(([id])=>String(id)===String(value))?.[1]||value;
     const url=format=>'/reports/data?'+new URLSearchParams({...Object.fromEntries(Object.entries(s.reportAppliedFilters||{}).filter(([,v])=>v)),format});
     const filterButton=(key,label,active,disabled=false)=>h('button',{key,type:'button',className:'report-filter-button'+(active?' is-selected':''),'aria-expanded':open===key,'aria-controls':'report-filter-options',disabled,onClick:()=>this.setState({reportFilterOpen:open===key?null:key}),title:disabled?'Choose a category first':undefined},[label,h('span',{'aria-hidden':true},open===key?'\u25b4':'\u25be')]);
-    return h('div',{className:'reports-page'},[sectionTitle('Reports','Choose a report and filter the records below. Results update automatically.'),
-      h('div',{className:'report-type-actions',role:'group','aria-label':'Report type'},types.map(([value,label])=>h('button',{key:value,type:'button','aria-pressed':f.type===value,className:'report-type-button'+(f.type===value?' is-selected':''),onClick:()=>this.setReportFilter('type',value)},label))),
+    return h('div',{className:'reports-page'},[sectionTitle('Reports','Choose what you want to review, then use the filters to narrow your results.'),
+      h('div',{className:'report-picker','aria-label':'Choose a report'},reportGroups.map(([group,reports],index)=>h('section',{key:group,className:'report-picker-group','aria-labelledby':'report-group-'+index},[
+        h('h3',{id:'report-group-'+index,className:'report-picker-heading'},group),
+        h('div',{className:'report-picker-options'},reports.map(([value,label,description])=>h('button',{key:value,type:'button','aria-pressed':f.type===value,className:'report-type-button'+(f.type===value?' is-selected':''),title:description,onClick:()=>this.setReportFilter('type',value)},[h('span',null,label),f.type===value?h('span',{'aria-hidden':true},'\u2713'):null])))
+      ]))),
+      h('div',{className:'report-selection-summary','aria-live':'polite'},[h('strong',null,selectedReport[1]),h('span',null,selectedReport[2]),h('small',null,'Results update automatically when you change a filter.')]),
       ['purchase_orders','outstanding_orders','purchases','supplier_book','payables'].includes(f.type)?h('label',{className:'purchase-notes'},['Requested / Recorded by (exact name)',h('input',{value:f.manager||'',onChange:e=>this.setReportFilter('manager',e.target.value)})]):null,
       f.type==='expiry'?h('div',{className:'expiry-quick-filters',role:'group','aria-label':'Expiration status filters'},[
         ...[['','All'],['Nearly expired','Nearly expired'],['Expired','Expired']].map(([value,label])=>h('button',{key:label,type:'button',className:'report-type-button'+((f.expiryStatus||'')===value?' is-selected':''),'aria-pressed':(f.expiryStatus||'')===value,onClick:()=>this.setReportFilter('expiryStatus',value)},label)),
