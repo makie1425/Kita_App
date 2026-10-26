@@ -321,8 +321,8 @@ class Component extends DCLogic {
     if(window.KITA_AUTH?.loginError)this.setState({loginError:window.KITA_AUTH.loginError});
     const sessionUser=window.KITA_AUTH?.user;
     if(sessionUser) this.enterApp(sessionUser.role,null,sessionUser);
-    this.notificationTimer=setInterval(()=>{if(this.state.role)this.reloadNotifications();},15000);
-    this.stockRefreshTimer=setInterval(()=>{if(this.state.role&&!this.stockPolling){this.stockPolling=true;this.refreshStockAvailability().then(()=>{if(this.state.screen==='mgrInventory'&&!this.state.workflowSaving){if(this.state.inventoryHistoryOpen)return this.loadInventoryHistory();if(['writeoffs','recall','expiry'].includes(this.state.invTab))return this.loadInventoryWorkflows();}}).catch(error=>this.setState({stockAvailabilityError:error.message})).finally(()=>{this.stockPolling=false;});}},5000);
+    this.notificationTimer=setInterval(()=>{if(this.state.role&&this.state.screen!=='admReports')this.reloadNotifications();},15000);
+    this.stockRefreshTimer=setInterval(()=>{if(this.state.role&&this.state.screen!=='admReports'&&!this.stockPolling){this.stockPolling=true;this.refreshStockAvailability().then(()=>{if(this.state.screen==='mgrInventory'&&!this.state.workflowSaving){if(this.state.inventoryHistoryOpen)return this.loadInventoryHistory();if(['writeoffs','recall','expiry'].includes(this.state.invTab))return this.loadInventoryWorkflows();}}).catch(error=>this.setState({stockAvailabilityError:error.message})).finally(()=>{this.stockPolling=false;});}},5000);
     this.purchaseRefreshTimer=setInterval(()=>{
       if(["manager","admin","superadmin"].includes(this.state.role)&&["mgrRequestView","mgrPurchaseHistory","mgrPO","admPurchasedOrders","admForwarded","admDisapproved","admReceivingApprovals"].includes(this.state.screen)&&!this.state.purchaseLoading&&!this.reviewBusy&&!this.state.purchaseReviewId&&!this.state.purchaseReceivingId){
         this.reloadPurchasing().catch(()=>{});
