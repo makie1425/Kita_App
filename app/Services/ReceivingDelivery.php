@@ -53,7 +53,7 @@ class ReceivingDelivery
                     $prices[$product]=$price;
                 }
             }
-            $batch='BATCH-'.Str::ulid(); $receipts=[];
+            $batch=ReceivingNumber::next('BATCH'); $receipts=[];
             foreach ($data['orders'] as $order) {
                 $child=Request::create('/', 'POST', [
                     'idempotencyKey'=>(string)Str::uuid(), 'version'=>$order['version'],

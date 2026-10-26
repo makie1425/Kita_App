@@ -46,7 +46,10 @@ class StockReceiptWorkflowTest extends TestCase {
   $old=$this->order(50);
   $first=$this->body($old,[$this->entry($old,45,5)]);
   $id=$this->postJson('/api/stock-receipts',$first)->assertCreated()->assertJsonPath('status','Posted')->json('id');
-  $this->postJson('/api/stock-receipts',$first)->assertOk();
+  $this->assertMatchesRegularExpression('/^SR-\d{2}-\d{2}-\d{2}-\d{5,}$/',$id);
+  $this->assertMatchesRegularExpression('/^BATCH-\d{2}-\d{2}-\d{2}-\d{5,}$/',DB::table('physical_inventory_lots')->where('stockReceipt',$id)->value('id'));
+  $this->assertMatchesRegularExpression('/^RCV-\d{2}-\d{2}-\d{2}-\d{5,}$/',DB::table('receiving_records')->where('deliveryBatch',$id)->value('id'));
+  $this->postJson('/api/stock-receipts',$first)->assertOk()->assertJsonPath('id',$id);
   $this->assertDatabaseHas('products',['id'=>$this->product,'stock'=>40]);
   $this->assertDatabaseHas('receiving_obligation_events',['stockReceipt'=>$id,'missingAfter'=>5,'damageAfter'=>5]);
   $new=$this->order(30);

@@ -135,7 +135,7 @@ class StockReceiptWorkflow
                 abort_unless($existing->payloadHash===$hash,409,'This receipt key was already used. Reopen the form for another delivery.');
                 return response()->json(['id'=>$existing->id,'status'=>$existing->status,'message'=>'Stock receipt already saved.']);
             }
-            $checked=$this->inspect($data);$id='SR-'.now()->format('Y').'-'.Str::ulid();
+            $checked=$this->inspect($data);$id=ReceivingNumber::next('SR');
             $status=$checked['exceptions']?'Pending Approval':'Ready';
             DB::table('stock_receipts')->insert(['id'=>$id,'requestKey'=>$data['requestKey'],'payloadHash'=>$hash,'supplierId'=>$data['supplierId'],'deliveryDate'=>$data['deliveryDate'],'status'=>$status,'payload'=>json_encode($data),'summary'=>json_encode($checked['summary']),'exceptions'=>json_encode($checked['exceptions']),'requestedBy'=>$request->user()->id,'created_at'=>now(),'updated_at'=>now()]);
             if ($status==='Ready') $this->postChecked($request,$id,$data,$checked,false);
@@ -193,7 +193,7 @@ class StockReceiptWorkflow
                     // Unknown manufacturer lots are never merged just because dates match.
                     $key=!empty($lot['supplierLot'])?json_encode([$group['targetProductId'],trim($lot['supplierLot']),$lot['expiryDate'] ?? null,$lot['manufacturedDate'] ?? null]):(string)Str::uuid();
                     if (!isset($lotMap[$key])) {
-                        $lotId='LOT-'.Str::ulid();$lotMap[$key]=$lotId;
+                        $lotId=ReceivingNumber::next('BATCH');$lotMap[$key]=$lotId;
                         DB::table('physical_inventory_lots')->insert(['id'=>$lotId,'productId'=>$group['targetProductId'],'supplierId'=>$data['supplierId'],'supplierLot'=>trim($lot['supplierLot'] ?? '') ?: null,'expiryDate'=>$lot['expiryDate'] ?? null,'manufacturedDate'=>$lot['manufacturedDate'] ?? null,'stockReceipt'=>$id,'created_at'=>now()]);
                     }
                     $lots[]=$lot+['batchNumber'=>$lotMap[$key],'physicalLotId'=>$lotMap[$key]];
