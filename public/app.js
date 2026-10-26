@@ -2904,8 +2904,6 @@ class Component extends DCLogic {
       ['Purchasing',[['purchase_orders','Purchase orders','Review orders placed with suppliers and their status.'],['outstanding_orders','Pending deliveries','Find ordered items that still need to be received.'],['receiving','Delivery discrepancies','Review missing, damaged, and other flagged deliveries.'],['purchases','Purchase history','Review recorded purchases and their costs.']]],
       ['Suppliers & payments',[['supplier_book','Supplier records','Review purchasing records by supplier.'],['payables','Supplier balances','Check amounts owed to suppliers.']]],
     ];
-    const types=reportGroups.flatMap(([,reports])=>reports);
-    const selectedReport=types.find(([value])=>value===f.type)||types[0];
     const products=d.PRODUCTS.filter(p=>(!f.category||p.category===f.category)&&(!f.subcategoryId||String(p.subcategoryId)===String(f.subcategoryId))&&(!f.brandId||String(p.brandId)===String(f.brandId))&&(f.type==='receipts'||!f.supplierId||String(p.supplierId)===String(f.supplierId)));
     const facets=[['category','Category',d.CATEGORIES.map(c=>[c.name,c.name])],['subcategoryId','Subcategory',this.subcategoriesFor(f.category,true).map(c=>[c.id,c.name])],['brandId','Brand',(d.BRANDS||[]).map(b=>[b.id,b.name])],['supplierId','Supplier',d.SUPPLIERS.map(p=>[p.id,p.name])],['productId','Product',products.map(p=>[p.id,this.productLabel(p)+' #'+p.id])]].filter(([key])=>!['supplier_book','payables'].includes(f.type)||key==='supplierId');
     const selected=facets.filter(([key])=>f[key]);
@@ -2915,11 +2913,6 @@ class Component extends DCLogic {
     const url=format=>'/reports/data?'+new URLSearchParams({...Object.fromEntries(Object.entries(s.reportAppliedFilters||{}).filter(([,v])=>v)),format});
     const filterButton=(key,label,active,disabled=false)=>h('button',{key,type:'button',className:'report-filter-button'+(active?' is-selected':''),'aria-expanded':open===key,'aria-controls':'report-filter-options',disabled,onClick:()=>this.setState({reportFilterOpen:open===key?null:key}),title:disabled?'Choose a category first':undefined},[label,h('span',{'aria-hidden':true},open===key?'\u25b4':'\u25be')]);
     return h('div',{className:'reports-page'},[sectionTitle('Reports','Choose what you want to review, then use the filters to narrow your results.'),
-      h('div',{className:'report-picker','aria-label':'Choose a report'},reportGroups.map(([group,reports],index)=>h('section',{key:group,className:'report-picker-group','aria-labelledby':'report-group-'+index},[
-        h('h3',{id:'report-group-'+index,className:'report-picker-heading'},group),
-        h('div',{className:'report-picker-options'},reports.map(([value,label,description])=>h('button',{key:value,type:'button','aria-pressed':f.type===value,className:'report-type-button'+(f.type===value?' is-selected':''),title:description,onClick:()=>this.setReportFilter('type',value)},[h('span',null,label),f.type===value?h('span',{'aria-hidden':true},'\u2713'):null])))
-      ]))),
-      h('div',{className:'report-selection-summary','aria-live':'polite'},[h('strong',null,selectedReport[1]),h('span',null,selectedReport[2]),h('small',null,'Results update automatically when you change a filter.')]),
       ['purchase_orders','outstanding_orders','purchases','supplier_book','payables'].includes(f.type)?h('label',{className:'purchase-notes'},['Requested / Recorded by (exact name)',h('input',{value:f.manager||'',onChange:e=>this.setReportFilter('manager',e.target.value)})]):null,
       f.type==='expiry'?h('div',{className:'expiry-quick-filters',role:'group','aria-label':'Expiration status filters'},[
         ...[['','All'],['Nearly expired','Nearly expired'],['Expired','Expired']].map(([value,label])=>h('button',{key:label,type:'button',className:'report-type-button'+((f.expiryStatus||'')===value?' is-selected':''),'aria-pressed':(f.expiryStatus||'')===value,onClick:()=>this.setReportFilter('expiryStatus',value)},label)),
@@ -2927,6 +2920,7 @@ class Component extends DCLogic {
       ]):null,
       h('section',{className:'report-filter-bar','aria-label':'Report filters'},[
         h('div',{className:'report-filter-actions'},[h('strong',null,'Filters'+(activeCount?' ('+activeCount+')':'')),
+          h('label',{className:'report-status-filter report-type-filter'},['Report type',h('select',{'aria-label':'Report type',value:f.type,onChange:e=>this.setReportFilter('type',e.target.value)},reportGroups.map(([group,reports])=>h('optgroup',{key:group,label:group},reports.map(([value,label])=>h('option',{key:value,value},label)))))]),
           f.type!=='inventory'?filterButton('date','Date range: '+(f.from||f.to?((f.from||'Any')+' to '+(f.to||'Any')):'All time'),f.from||f.to):null,
           ...facets.filter(([key])=>['category','subcategoryId'].includes(key)).map(([key,label])=>filterButton(key,label+': '+(f[key]?labelFor(facets.find(item=>item[0]===key)[2],f[key]):'All'),!!f[key],key==='subcategoryId'&&!f.category)),
           ['sales','inventory'].includes(f.type)?h('label',{className:'report-status-filter'},['Status',h('select',{'aria-label':'Report status',value:f.status||'',onChange:e=>this.setReportFilter('status',e.target.value)},['',...(f.type==='sales'?['Completed','Paid','Pending Payment','Partially Refunded','Refunded','Voided','Cancelled','Payment Failed']:f.type==='inventory'?['Active','Inactive']:['Fully Received','Partially Received','Received with Discrepancy'])].map(value=>h('option',{key:value,value},value||'All statuses')))]):null,
