@@ -1,9 +1,18 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Batch {{ $number }}</title>
-<style>body{font:13px Arial,sans-serif;color:#172033;margin:24px}h1{font-size:22px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #cbd5e1;padding:8px;text-align:left;overflow-wrap:anywhere}th{background:#edf3ff}button{padding:10px 18px;cursor:pointer}.scroll{overflow:auto}small{color:#526579}@media print{button{display:none}.scroll{overflow:visible}table{table-layout:fixed;font-size:10px}thead{display:table-header-group}tr{break-inside:avoid}@page{size:A4 landscape;margin:12mm}}</style></head>
+<style>
+body{font:13px Arial,sans-serif;color:#172033;margin:24px}h1{font-size:22px}h2{font-size:16px;margin-top:26px;break-after:avoid}table{width:100%;border-collapse:collapse}th,td{border:1px solid #cbd5e1;padding:8px;text-align:left;overflow-wrap:anywhere}th,tfoot{background:#edf3ff}button{padding:10px 18px;cursor:pointer}.scroll{overflow:auto}.num{text-align:right}.totals{margin:24px 0 0 auto;width:340px;max-width:100%;break-inside:avoid}.total{font-weight:bold;background:#edf3ff}@media print{button{display:none}.scroll{overflow:visible}table{table-layout:fixed;font-size:11px}thead{display:table-header-group}tfoot{display:table-row-group}tr{break-inside:avoid}@page{size:A4 landscape;margin:12mm}}
+</style></head>
 <body><button type="button" onclick="window.print()">Print / Save PDF</button><h1>Batch {{ $number }}</h1>
-<p>{{ $rows->pluck('productId')->unique()->count() }} products · {{ $rows->count() }} stock entries<br>Generated: {{ $generatedAt }} ({{ config('app.timezone') }})</p>
-<p>This report includes every stock entry in this batch, regardless of screen filters or pagination. Quantities use each product's stock unit.</p>
-<div class="scroll"><table><thead><tr><th>Product / ID</th><th>Supplier</th><th>PO / Receipt</th><th>Received at / By</th><th>Received</th><th>On hand</th><th>Unit</th><th>Unit cost</th><th>Expiry</th><th>Status</th></tr></thead><tbody>
-@foreach($rows as $row)<tr><td>{{ $row->name }}<br><small>{{ $row->productId }}</small></td><td>{{ $row->supplier ?? 'Not recorded' }}</td><td>{{ $row->poId ?? 'Not recorded' }}<br>{{ $row->receiptId ?? '' }}</td><td>{{ $row->received_at ?? $row->receivedDate }}<br>{{ $row->receivedBy ?? 'Not recorded' }}</td><td>{{ $row->quantityReceived }}</td><td>{{ $row->quantityRemaining }}</td><td>{{ $row->stockUnit }}</td><td>{{ number_format($row->unitCost, 2) }}</td><td>{{ $row->expiryDate ?? 'No expiration date' }}</td><td>{{ $row->recalled ? 'Recalled' : 'Not recalled' }}{{ $row->expiryDate && $row->expiryDate <= now()->toDateString() ? ' / Expired' : '' }}</td></tr>@endforeach
-</tbody></table></div></body></html>
+<p>{{ $rows->pluck('productId')->unique()->count() }} products &middot; {{ $rows->count() }} stock entries<br>Generated: {{ $generatedAt }} ({{ config('app.timezone') }})</p>
+<p>All entries in this batch are included, regardless of screen filters or pagination. Quantities use stock units. Order qty is the quantity due for this delivery; received qty is accepted stock in this batch. Deductions cover outstanding missing or damaged units. Amounts are in PHP.</p>
+@foreach($tables as $title => $items)
+<h2>{{ $title }}</h2>
+<div class="scroll"><table><thead><tr><th>Item</th><th>Category</th><th>Order qty</th><th>Rcv qty</th><th>Discrepancies</th><th>Unit</th><th>Unit cost</th><th>Subtotal</th></tr></thead><tbody>
+@foreach($items as $item)
+<tr><td>{{ $item->name }}</td><td>{{ $item->category ?? 'Not recorded' }}</td><td class="num">{{ $item->ordered }}</td><td class="num">{{ $item->received }}</td><td>{{ $item->discrepancies }}</td><td>{{ $item->unit }}</td><td class="num">{{ number_format($item->unitCost, 2) }}</td><td class="num">{{ number_format($item->subtotalCents / 100, 2) }}</td></tr>
+@endforeach
+</tbody><tfoot><tr><th colspan="7">Table subtotal</th><th class="num">{{ number_format($items->sum('subtotalCents') / 100, 2) }}</th></tr></tfoot></table></div>
+@endforeach
+<table class="totals"><tbody><tr><th>Subtotal of all tables</th><td class="num">{{ number_format($subtotal, 2) }}</td></tr><tr><th>Deductions</th><td class="num">{{ number_format($deductions, 2) }}</td></tr><tr class="total"><th>Total cost</th><td class="num">{{ number_format($totalCost, 2) }}</td></tr></tbody></table>
+</body></html>

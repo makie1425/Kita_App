@@ -19,9 +19,10 @@ class BatchReportController extends Controller
         if ($entry->batchNumber) $query->where('b.batchNumber', $entry->batchNumber);
         else $query->where('b.id', $entry->id);
         $rows = $query->orderBy('p.name')->orderBy('b.id')->get([
-            'b.*', 'p.name', 'p.stockUnit', 's.name as supplier', 'r.poId', 'r.received_at', 'r.receivedBy',
+            'b.*', 'p.name', 'p.category', 'p.stockUnit', 's.name as supplier', 'r.poId', 'r.received_at', 'r.receivedBy',
         ]);
         return response()->view('reports.batch', ['number' => $entry->batchNumber ?: 'Batch #'.$id,
-            'rows' => $rows, 'generatedAt' => now()])->header('Cache-Control', 'private, no-store');
+            'rows' => $rows, ...\App\Services\BatchPrintReport::build($rows),
+            'generatedAt' => now()])->header('Cache-Control', 'private, no-store');
     }
 }
