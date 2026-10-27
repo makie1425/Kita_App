@@ -2134,10 +2134,21 @@ class Component extends DCLogic {
   };
   groupedBatchTables=(key,rows,headers,renderRow,options={})=>{
     const h=React.createElement,groups=this.inventoryBatchGroups(rows);
-    return groups.length?h('div',{className:'inventory-batch-groups'},groups.map(({batch,items})=>h('details',{key:batch,className:'inventory-batch-group',open:!!this.state.expandedBatches?.[key+'-'+batch],onToggle:e=>{const open=e.currentTarget.open,id=key+'-'+batch;if(!!this.state.expandedBatches?.[id]!==open)this.setState(s=>({expandedBatches:{...s.expandedBatches,[id]:open}}));}},[
-      h('summary',null,[h('strong',null,batch),h('span',null,new Set(items.map(r=>r.productId)).size+' products / '+items.length+' stock entries'),h('small',null,items[0].receivedAt||items[0].receivedDate||''),h('a',{className:'kita-button batch-print-button',href:'/inventory/batches/'+encodeURIComponent(items[0].id)+'/print',target:'_blank',rel:'noopener',onClick:e=>e.stopPropagation()},'Print batch')]),
-      this.state.expandedBatches?.[key+'-'+batch]?this.recordTable(key+'-'+batch,headers,items.map(renderRow),options):null,
-    ]))):h('p',{className:'record-empty'},'No batches match these filters.');
+    const close=()=>this.setState({viewingBatch:null});
+    return groups.length?h('div',{className:'inventory-batch-groups'},groups.map(({batch,items})=>{
+      const id=key+'-'+batch,summary=new Set(items.map(r=>r.productId)).size+' products / '+items.length+' stock entries';
+      const print=()=>h('a',{className:'kita-button batch-print-button',href:'/inventory/batches/'+encodeURIComponent(items[0].id)+'/print',target:'_blank',rel:'noopener'},'Print batch');
+      return h('div',{key:batch,className:'inventory-batch-group'},[
+        h('div',{className:'inventory-batch-summary'},[
+          h('div',{className:'inventory-batch-info'},[h('strong',null,batch),h('span',null,summary),h('small',null,items[0].receivedAt||items[0].receivedDate||'')]),
+          h('div',{className:'inventory-batch-actions'},[h('button',{type:'button',className:'kita-button batch-view-button','aria-haspopup':'dialog','aria-label':'View '+batch,onClick:()=>this.setState({viewingBatch:id})},'View'),print()]),
+        ]),
+        this.state.viewingBatch===id?h('dialog',{className:'inventory-batch-dialog','aria-label':'Batch '+batch,ref:node=>{if(node&&!node.open)node.showModal();},onCancel:e=>{e.preventDefault();close();}},[
+          h('div',{className:'inventory-batch-dialog-header'},[h('div',null,[h('h2',null,batch),h('p',null,summary)]),h('div',{className:'inventory-batch-actions'},[print(),h('button',{type:'button',className:'kita-button',autoFocus:true,onClick:close},'Close')])]),
+          h('div',{className:'inventory-batch-dialog-body',tabIndex:0,'aria-label':'Batch items, scroll for more'},this.recordTable(id,headers,items.map(renderRow),options)),
+        ]):null,
+      ]);
+    })):h('p',{className:'record-empty'},'No batches match these filters.');
   };
   buildInventoryWorkflows(tab){
     const h=React.createElement,s=this.state,d=s.inventoryWorkflows,f=s.workflowForm||{};

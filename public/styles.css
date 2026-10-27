@@ -1772,12 +1772,20 @@ body:has(.loading-overlay) button[aria-busy="true"]::before { display: none; }
 
 .inventory-batch-groups { display:grid; gap:12px; }
 .inventory-batch-group { min-width:0; border:1px solid #dce6f7; border-radius:10px; background:#fff; padding:12px; }
-.inventory-batch-group > summary { cursor:pointer; padding:8px; color:#173b78; overflow-wrap:anywhere; }
-.inventory-batch-group > summary span,.inventory-batch-group > summary small { margin-left:14px; color:#526579; }
+.inventory-batch-summary { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:8px; color:#173b78; overflow-wrap:anywhere; }
+.inventory-batch-info { display:flex; align-items:center; flex-wrap:wrap; gap:8px 14px; min-width:0; }
+.inventory-batch-info span,.inventory-batch-info small { color:#526579; }
+.inventory-batch-actions { display:flex; gap:8px; flex-shrink:0; flex-wrap:wrap; }
+.inventory-batch-dialog { width: min(1500px,calc(100vw - 32px)); max-width:calc(100vw - 32px); max-height:calc(100dvh - 32px); padding:0; border:1px solid #dce6f7; border-radius:14px; background:#fff; color:#173b78; box-shadow:0 24px 80px #0f1f4a33; overflow:hidden; }
+.inventory-batch-dialog[open] { display:flex; flex-direction:column; }
+.inventory-batch-dialog::backdrop { background:#0f1f4a66; }
+.inventory-batch-dialog-header { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:18px 20px; border-bottom:1px solid #dce6f7; flex-shrink:0; }
+.inventory-batch-dialog-header h2 { margin:0; font-size:18px; overflow-wrap:anywhere; }
+.inventory-batch-dialog-header p { margin:6px 0 0; color:#526579; }
+.inventory-batch-dialog-body { min-height:0; overflow:auto; overscroll-behavior:contain; padding:16px 20px; }
 .inspection-lot-grid input[type=checkbox] { width:auto; min-width:0; }
 
-.inventory-batch-group > summary .batch-print-button { float:right; margin:-5px 0 5px 12px; }
-@media(max-width:600px){.inventory-batch-group > summary .batch-print-button{float:none;display:inline-flex;margin:8px 0 0 12px;}}
+@media(max-width:600px){.inventory-batch-summary,.inventory-batch-dialog-header{align-items:flex-start;flex-direction:column}.inventory-batch-dialog-body{padding:12px}.inventory-batch-dialog-header{padding:14px}}
 
 .registration-size { max-width:420px; min-width:0; }
 .registration-size-fields { grid-template-columns:minmax(80px,0.65fr) minmax(0,1.65fr); }
