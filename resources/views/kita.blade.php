@@ -96,7 +96,7 @@
 
   <main class="main-shell" inert="{{ navigationInert }}" aria-hidden="{{ navigationHidden }}">
     <header class="topbar">
-      <div class="topbar-heading"><button id="sidebar-toggle" class="menu-toggle" aria-label="Open navigation" aria-controls="app-sidebar" aria-expanded="{{ sidebarOpen }}" onClick="{{ toggleSidebar }}">&#9776;</button><div><div class="topbar-eyebrow">KITA / {{ screenGroup }}</div><div class="topbar-title">{{ screenTitle }}</div></div></div>
+      <div class="topbar-heading"><button id="sidebar-toggle" class="menu-toggle" aria-label="Open navigation" aria-controls="app-sidebar" aria-expanded="{{ sidebarOpen }}" onClick="{{ toggleSidebar }}">&#9776;</button><div><div class="topbar-eyebrow">KITA / {{ screenGroup }}</div><h1 class="topbar-title">{{ screenTitle }}</h1></div></div>
       <div class="topbar-actions">
         <div class="user-summary"><span class="user-avatar">{{ roleIcon }}</span><div><div class="user-name">{{ currentUserName }}</div><div class="user-role">{{ roleLabel }}</div></div></div>
         <sc-if value="{{ showMgrBell }}" hint-placeholder-val="{{ false }}">

@@ -122,6 +122,11 @@ function peso(n){ n=Number(n)||0; return "â‚±"+n.toLocaleString("en-PH",{min
 function badge(status){ const c=statusStyle(status); return React.createElement("span",{className:"status-badge",style:{background:c.bg,color:c.fg,fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:20,display:"inline-block",whiteSpace:"nowrap"}},status); }
 function card(children, style){ return React.createElement("div",{className:"kita-card",style:Object.assign({background:COLORS.surface,border:"1px solid "+COLORS.border,borderRadius:12,padding:18},style||{})},children); }
 function sectionTitle(t, sub){ return React.createElement("div",{className:"section-heading",style:{marginBottom:16}},[React.createElement("h1",{key:"t",style:{fontSize:24,fontWeight:800,margin:0,letterSpacing:-0.7}},t), sub?React.createElement("div",{key:"s",style:{fontSize:13,color:COLORS.textSoft,marginTop:2}},sub):null]); }
+function moduleTitle(title, subtitle){
+  return React.createElement('div',{className:'module-page-heading'+(subtitle?' has-subtitle':'')},[
+    React.createElement('h1',null,title),subtitle?React.createElement('div',null,subtitle):null
+  ]);
+}
 // A synchronized native scrollbar stays within its table while sticking to the viewport.
 function stickyTable(content){
   let cleanup;
@@ -1354,7 +1359,7 @@ class Component extends DCLogic {
     if(this.state.exchangeReceiptOpen&&this.state.exchangeTransaction){const t=this.state.exchangeTransaction;return this.buildTransactionView({...t,cart:t.lines,totals:{subtotal:t.subtotal,discount:t.discountAmount,grandTotal:t.total,vatExempt:t.total}},true);}
     const field=(key,label,type="text")=>React.createElement("input",{key,type,placeholder:label,"aria-label":label,value:this.state[key]||"",onChange:e=>this.setState({[key]:e.target.value}),maxLength:type==="password"?4:255,...(type==="number"?{min:0,step:"0.01"}:{}),inputMode:type==="password"?"numeric":undefined,autoComplete:"off",style:{padding:10,marginBottom:10,width:"100%",boxSizing:"border-box"}});
     return React.createElement("div",null,[
-      sectionTitle("Refunds, Exchanges & Voids"),
+      moduleTitle("Refunds, Exchanges & Voids"),
       card([field("refundLookup","Transaction number"),btn("Look Up",this.doRefundLookup,"primary")],{marginBottom:16}),
       refundError?React.createElement("p",{key:"error",role:"alert",style:{color:COLORS.red}},refundError):null,
       refundTxn?card([
@@ -1401,7 +1406,7 @@ class Component extends DCLogic {
     const total=sales.reduce((sum,t)=>sum+Number(t.total),0);
     const rows=transactions.map(t=>tr([td(t.uuid),td(t.date),td(t.paymentMode),td(badge(t.status)),td(peso(t.total)),td(t.status==="Pending Payment"?React.createElement("a",{href:"/payment/cancelled?uuid="+encodeURIComponent(t.uuid),style:{color:COLORS.brand,fontWeight:700}},"Review payment"):null)],t.uuid));
     return React.createElement("div",null,[
-      sectionTitle("My Shift Transactions",`${me.name} ? Today, ${today||""}`),
+      moduleTitle("My Shift Transactions",`${me.name} ? Today, ${today||""}`),
       btn("Refresh transactions",()=>this.reloadCatalog().catch(()=>this.toast("Could not refresh shift transactions.","error"))),
       React.createElement("div",{style:{display:"flex",gap:14,marginTop:16,marginBottom:16}},[
         kpi("Transactions Today",transactions.length),kpi("Completed Sales",sales.length),kpi("Total Sales",peso(total),null,COLORS.green),
@@ -1466,7 +1471,7 @@ class Component extends DCLogic {
     const heading=(title,description,extra)=>h('div',{className:'dashboard-panel-heading'},[h('div',null,[h('h2',{className:'panel-title'},title),null]),extra]);
     return h('div',{className:'operations-dashboard'},[
       h('header',{key:'header',className:'dashboard-header'},[
-        sectionTitle('Analytics Overview'),
+        moduleTitle('Analytics Overview'),
         this.buildDashboardSalesFilter(sales),
         h('button',{type:'button',className:'kita-button',disabled:!!this.state.pendingLoads,onClick:()=>this.reloadCatalog().catch(error=>this.toast(error.message,'error'))},this.state.pendingLoads?'Refreshing...':'Refresh dashboard'),
       ]),
@@ -1582,14 +1587,14 @@ class Component extends DCLogic {
     if(tab==='history')return this.buildPurchaseHistory();
     if(tab==='view'){
       const state=this.purchasingState();if(state)return state;
-      return h('div',null,[sectionTitle('Purchase Orders'),this.purchaseFilters(),
+      return h('div',null,[moduleTitle('Purchase Orders'),this.purchaseFilters(),
         this.recordTable('purchase-requests',['Purchase ID','PO Date','Supplier','Items','Received batches','Status','Admin notes / decline reason','Actions'],this.filterPurchases(s.purchaseData.requests).map(r=>tr([td(r.id),td(r.requested_at||r.dateRequested),td(r.supplierName||this.purchaseSupplier(r.lines[0]?.supplierId)),td(r.lines.length),td(this.purchaseBatchSummary(r.poId||r.id)),td(badge(r.status)),td(r.disapprovalReason||r.adminNote||''),td(this.purchaseRequestActions(r))],r.id))),
         this.purchaseRequestDetails(),this.purchaseReviewDetails()
       ]);
     }
     if(!s.data)return h('p',null,loadingStatus('Loading inventory and suppliers...'));
     return h('div',{className:'purchase-create-page'},[
-      h('header',{className:'purchase-create-header'},[sectionTitle('Create Purchase Order'),btn('+ Add Items',this.openItemPicker,'primary')]),
+      h('header',{className:'purchase-create-header'},[moduleTitle('Create Purchase Order'),btn('+ Add Items',this.openItemPicker,'primary')]),
       h('div',{className:'purchase-create-summary'},[h('div',null,[h('small',null,'SUPPLIER'),h('strong',null,s.newReqCart.length&&s.newReqSupplier?this.purchaseSupplier(s.newReqSupplier):'Choose a supplier when adding items')]),h('div',null,[h('small',null,'REQUEST ITEMS'),h('strong',null,s.newReqCart.length+' item'+(s.newReqCart.length===1?'':'s'))])]),
       this.recordTable('purchase-cart',['Item','Category','Quantity','Purchase Unit','Cost per Stock Unit (PHP)','Action'],s.newReqCart.map((l,i)=>tr([td(l.name),td(l.category),td(h('input',{'aria-label':'Quantity for '+l.name,type:'number',min:1,step:1,value:l.qty,onChange:this.setReqCartQty(i)})),td(this.buildRequestUnit(l,i)),td(h('input',{'aria-label':'Cost per stock unit for '+l.name,type:'number',min:0,step:'0.01',value:l.unitCost??(s.data.PRODUCTS.find(p=>p.id===l.productId)?.unitPrice||0),onChange:e=>this.setState({newReqCart:s.newReqCart.map((line,n)=>n===i?{...line,unitCost:e.target.value}:line)})})),td(btn('Remove',this.removeReqLine(i)))],i))),
       h('label',{className:'purchase-notes'},['Expected delivery date (optional)',h('input',{type:'date',value:s.purchaseExpectedDate||'',min:s.data?.BUSINESS_DATE,onChange:e=>this.setState({purchaseExpectedDate:e.target.value})})]),
@@ -1680,7 +1685,7 @@ class Component extends DCLogic {
   buildPurchaseReview(){
     const h=React.createElement,state=this.purchasingState();if(state)return state;
     const requests=this.filterPurchases(this.state.purchaseData.requests);
-    return h('div',null,[sectionTitle('Purchase Orders'),this.purchaseFilters(),this.buildReceivingBudgetReviews(),this.buildStockReceiptHistory(true),
+    return h('div',null,[moduleTitle('Purchase Orders'),this.purchaseFilters(),this.buildReceivingBudgetReviews(),this.buildStockReceiptHistory(true),
       this.recordTable('purchase-review',['Purchase ID','PO Date','Supplier','Requested By','Items','Total Cost','Status','Actions'],requests.map(r=>tr([td(r.id),td(r.requested_at||r.dateRequested),td(r.supplierName||this.purchaseSupplier(r.lines[0]?.supplierId)),td(r.requestedBy),td(r.lines.length),td(peso(r.lines.reduce((sum,l)=>sum+Number(l.confirmedQty??l.qty)*Number(l.unitCost||0),0))),td(badge(r.status)),td(this.purchaseRequestActions(r))],r.id))),this.purchaseRequestDetails(),this.purchaseReviewDetails()
     ]);
   }
@@ -1950,7 +1955,7 @@ class Component extends DCLogic {
     const close=()=>{if(!this.receivingBusy)this.setState({purchaseReceivingId:null});};
     const receiptIds=new Set(receipts.filter(r=>r.date===this.state.data?.BUSINESS_DATE).map(r=>r.deliveryBatch||r.id));
     return h('div',{className:'receiving-workspace'},[
-      sectionTitle('Stock Receiving'),
+      moduleTitle('Stock Receiving'),
       h('div',{className:'receiving-card-metrics'},[kpi('Purchase Orders Awaiting Receipt',pending.length+' POs'),kpi('Stock Receipts Today',receiptIds.size),kpi('Outstanding Items',pending.reduce((n,o)=>n+o.lines.filter(l=>this.carryoverAvailable(l)>0).length,0)+' lines'),kpi('Fully Received Purchase Orders',orders.filter(o=>o.fulfillmentStatus==='Fully Received'||o.status==='Fully Received').length+' POs')]),
       h('section',{className:'receiving-card-panel'},[
         h('div',{className:'receiving-card-tabs','aria-label':'Receiving views'},[
@@ -1984,7 +1989,7 @@ class Component extends DCLogic {
     const isReplacement=r=>(r.lines||[]).some(l=>/replacement|substitut/i.test(l.conditionText||''));
     const filtered=all.filter(({o,r})=>(!type||(type==='replacement'?isReplacement(r):!isReplacement(r)))&&(!from||r.date>=from)&&(!to||r.date<=to)&&searchMatches([r.id,o.id,o.supplierName,r.receivedBy,r.remarks,...(r.lines||[]).map(l=>l.name)].join(' '),query));
     return h('div',{className:'receiving-workspace'},[
-      sectionTitle('Transaction History'),
+      moduleTitle('Transaction History'),
       h('div',{className:'receiving-card-metrics'},[kpi('Posted PO Receipts',all.length),kpi('Purchase Orders Received',orders.filter(o=>o.receipts?.length).length),kpi('Replacement / Substitution Receipts',all.filter(({r})=>isReplacement(r)).length),kpi('Latest Receipt Date',all[0]?.r.date||'No receipts')]),
       h('section',{className:'receiving-card-panel'},[
         h('div',{className:'receiving-card-row'},[h('h3',null,'Receipt Transactions'),h('button',{type:'button',className:'kita-button',onClick:()=>{this.setState({screen:'mgrInventory'});this.openInventoryView('movements');}},'Inventory Ledger')]),
@@ -2023,7 +2028,7 @@ class Component extends DCLogic {
     const f=this.state.deliveryPlan,requests=this.state.purchaseData.requests||[],posted=this.state.purchaseData.orders;
     const orders=this.filterPurchases([...posted.map(o=>({...o,sourceRequest:requests.find(r=>r.id===o.id||r.poId===o.id),posted:true})),...requests.filter(r=>!posted.some(o=>o.id===(r.poId||r.id))).map(r=>({...r,created:r.dateRequested,sourceRequest:r,posted:false}))]);
     const edit=(key,value)=>this.setState({deliveryPlan:{...f,[key]:value}});
-    return h('div',{className:'inventory-workspace'},[sectionTitle('Purchase Orders'),
+    return h('div',{className:'inventory-workspace'},[moduleTitle('Purchase Orders'),
       h('div',{className:'inventory-view-tabs'},[btn('Create Purchase Order',this.goScreen('mgrRequest')),btn('Stock Receiving',this.goScreen(this.state.role==='manager'?'mgrPO':'admReceivingApprovals')),btn('Supplier Accounts',this.goScreen('supplierAccounts'))]),this.purchaseFilters(),
       this.recordTable('purchase-order-workspace',['Purchase ID','PO Date','Supplier','Items','Expected Delivery','Status','Actions'],orders.map(o=>tr([td(o.id),td(o.sourceRequest?.dateRequested||o.created),td(o.supplierName||this.purchaseSupplier(o.supplierId??o.lines[0]?.supplierId)),td(o.lines.length),td(o.expectedDeliveryDate||'Not scheduled'),td(badge(o.status)),td([...(o.sourceRequest?this.purchaseRequestActions(o.sourceRequest):[this.purchaseReportLink(o.id)]),...(o.posted?[btn('Delivery Plan',()=>this.setState({deliveryPlan:{...o}})),h('a',{className:'kita-button',href:'/purchase-orders/'+encodeURIComponent(o.id)+'/order',target:'_blank',rel:'noopener'},'Print Supplier PO'),this.state.role==='admin'&&!['Cancelled','Closed'].includes(o.status)&&o.lines.some(l=>this.receivingOutstanding(l)>0)?btn('Cancel Remaining',()=>this.cancelPurchaseRemainder(o.id)):null]:[])])],o.id))),this.purchaseRequestDetails(),this.purchaseReviewDetails(),
       f?card([h('h3',null,'Delivery plan ? '+f.id),null,h('div',{className:'purchase-filters'},[
@@ -2049,7 +2054,7 @@ class Component extends DCLogic {
     const receipts=(d?.receipts||[]).filter(r=>!s.accountSupplier||String(r.supplierId)===s.accountSupplier),ids=new Set(receipts.map(r=>r.id));
     const entries=(d?.settlements||[]).filter(e=>ids.has(e.receiptId));
     const edit=(key,value)=>this.setState({settlementForm:{...f,[key]:value,requestKey:crypto.randomUUID()}});
-    return h('div',{className:'inventory-workspace'},[sectionTitle('Supplier Accounts'),
+    return h('div',{className:'inventory-workspace'},[moduleTitle('Supplier Accounts'),
       h('div',{className:'purchase-filters'},[h('label',null,['Supplier',h('select',{value:s.accountSupplier||'',onChange:e=>this.setState({accountSupplier:e.target.value})},[h('option',{value:''},'All suppliers'),...(s.data?.SUPPLIERS||[]).map(v=>h('option',{value:v.id},v.name))])]),h('button',{className:'kita-button',disabled:s.supplierAccountsLoading,onClick:this.loadSupplierAccounts},s.supplierAccountsLoading?'Refreshing...':'Refresh'),btn('Reports / Export',()=>{this.setState({screen:'admReports',reportFilters:{type:'payables',supplierId:s.accountSupplier||''}});})]),
       s.supplierAccountsError?h('p',{role:'alert'},s.supplierAccountsError):null,
       h('div',{className:'inventory-summary'},[kpi('Accepted Purchases',peso(receipts.reduce((n,r)=>n+Number(r.receivedValue),0))),kpi('Recorded Payments',peso(receipts.reduce((n,r)=>n+Number(r.payments),0))),kpi('Supplier Credits',peso(receipts.reduce((n,r)=>n+Number(r.credits),0))),kpi('Unpaid Balance',peso(receipts.reduce((n,r)=>n+Number(r.balance),0)))]),
@@ -2061,7 +2066,7 @@ class Component extends DCLogic {
   buildPurchaseStatusList(declined=false){
     const h=React.createElement,state=this.purchasingState();if(state)return state;
     const records=this.filterPurchases(this.state.purchaseData.requests).filter(r=>declined?['Declined','Disapproved'].includes(r.status):!!r.poId);
-    return h('div',null,[sectionTitle(declined?'Declined Requests':'Approved Purchase Orders'),this.purchaseFilters(),this.recordTable('purchase-status',['PO ID','Supplier','Received batches','Status','Admin / reason','Actions'],records.map(r=>tr([td(r.poId||r.id),td(r.supplierName||this.purchaseSupplier(r.lines[0]?.supplierId)),td(this.purchaseBatchSummary(r.poId||r.id)),td(badge(r.status)),td(r.disapprovalReason||r.adminNote||r.approvedBy),td([btn('View',()=>this.setState({purchaseRequestDetail:r.id})),r.poId?this.purchaseReportLink(r.poId):null])],r.id))),this.purchaseRequestDetails()]);
+    return h('div',null,[moduleTitle(declined?'Declined Requests':'Approved Purchase Orders'),this.purchaseFilters(),this.recordTable('purchase-status',['PO ID','Supplier','Received batches','Status','Admin / reason','Actions'],records.map(r=>tr([td(r.poId||r.id),td(r.supplierName||this.purchaseSupplier(r.lines[0]?.supplierId)),td(this.purchaseBatchSummary(r.poId||r.id)),td(badge(r.status)),td(r.disapprovalReason||r.adminNote||r.approvedBy),td([btn('View',()=>this.setState({purchaseRequestDetail:r.id})),r.poId?this.purchaseReportLink(r.poId):null])],r.id))),this.purchaseRequestDetails()]);
   }
 
   buildMgrRequest(){ return this.buildPurchaseRequests(); }
@@ -2256,7 +2261,7 @@ class Component extends DCLogic {
     return React.createElement("div",null,[
       React.createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:10}},[
         this.state.stockAvailabilityError?React.createElement("p",{role:"alert"},"Live stock update failed: "+this.state.stockAvailabilityError):null,
-        sectionTitle("Inventory"),
+        moduleTitle("Inventory"),
         React.createElement("div",{key:"actions",style:{display:"flex",gap:8}},[btn("Inventory Ledger",()=>this.openInventoryView("movements")),btn("Batch Records",()=>this.openInventoryView("batches")),btn("+ Add Item",this.goScreen("mgrRegistration"),"primary"),btn("+ Add Category",this.openCategoryModal),btn("âš  Add Damage",this.openAddDamage,"danger")]),
       ]),
       React.createElement("div",{style:{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap"}},tabs.map(([k,l])=>React.createElement("button",{key:k,onClick:this.setInvTab(k),style:{padding:"8px 14px",borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer",background:invTab===k?COLORS.brand:"#fff",color:invTab===k?"#fff":COLORS.text,border:"1px solid "+(invTab===k?COLORS.brand:COLORS.border)}},l))),
@@ -2334,7 +2339,7 @@ class Component extends DCLogic {
   buildMgrCategories(){
     const categories=(this.state.categoriesLocal||[]).filter(c=>!c.archivedAt);
     return React.createElement("div",null,[
-      sectionTitle("Categories, Subcategories and Brands"),
+      moduleTitle("Categories, Subcategories and Brands"),
       React.createElement("div",{key:"actions",style:{display:"flex",gap:8,flexWrap:"wrap",marginBottom:16}},[
         btn("+ Add Category",this.openCategoryModal,"primary"),
         btn("Register New Product",this.goScreen("mgrRegistration")),
@@ -2530,7 +2535,7 @@ class Component extends DCLogic {
       h("legend",null,[h("span",{className:"section-number"},number),title]),null,h("div",{className:"form-grid"},fields),
     ]);
     return h("div",{className:"registration-page"},[
-      sectionTitle(s.regEditing?"Edit Product":"Product Registration"),
+      s.regEditing?sectionTitle("Edit Product"):moduleTitle("Product Registration"),
       h("div",{key:"actions",className:"page-toolbar"},[btn("New Product",()=>this.setState({regEditing:null,regParentId:"",regVariantLabel:"",registrationNotice:null,registrationError:"",regStockId:"",regProductName:"",regManufacturer:"",regScannedBarcode:"",regSaved:false,regBatch:"",regLot:"",regExpiry:"",regUnitPrice:"",regRetailPrice:"",regCategory:"",regSupplier:"",regReorderLevel:0,regPurchaseUnit:"Piece",regStockUnit:"Piece",regConversionFactor:"1",regStatus:"Active",regBrandId:"",regSubcategoryId:"",regSize:"",regSizeUnit:"",regEditReason:""}))]),
       h('div',{id:'registration-feedback',className:'registration-feedback'},[s.registrationNotice?h('p',{role:s.registrationNotice.tone==='error'?'alert':'status',className:'registration-notice registration-notice--'+s.registrationNotice.tone},s.registrationNotice.message):null,
       s.regSaved?h("div",{key:"print",className:"kita-card registration-receipt"},[
@@ -2680,7 +2685,7 @@ class Component extends DCLogic {
     const list=suppliersLocal.filter(sp=>sp.status==="Active"&&searchMatches(sp.name,q));
     const selCount=Object.values(supMgrSelected).filter(Boolean).length;
     return React.createElement("div",null,[
-      React.createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}},[sectionTitle("Supplier"),btn("+ Add Supplier",this.openSupMgrModal(null),"primary")]),
+      React.createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}},[moduleTitle("Supplier"),btn("+ Add Supplier",this.openSupMgrModal(null),"primary")]),
       React.createElement("div",{style:{display:"flex",gap:10,alignItems:"center",marginBottom:12}},[
         React.createElement("input",{value:supMgrSearch,onChange:this.setSupMgrSearch,placeholder:"Search suppliersâ€¦",style:{padding:8,border:"1px solid "+COLORS.border,borderRadius:7,width:260}}),
         selCount>0?btn(`Move to Archive (${selCount})`,this.moveSupMgrSelectedToArchive,"danger"):null,
@@ -2841,7 +2846,7 @@ class Component extends DCLogic {
     else { const list=suppliersLocal.filter(s=>s.status==="Inactive"); headers=["","Supplier","Category","Archived On","Archived By"]; keyOf=s=>String(s.id);
       rows=list.map(s=>tr([td(React.createElement("input",{type:"checkbox",checked:!!archiveChecked[keyOf(s)],onChange:this.toggleArchiveCheck(keyOf(s))})),td(s.name),td(s.category),td(s.archivedAt||"â€”"),td(s.archivedBy||"â€”")],s.id)); }
     return React.createElement("div",null,[
-      sectionTitle("Archive"),btn("Refresh",()=>this.reloadCatalog().catch(e=>this.toast(e.message,"error"))),
+      moduleTitle("Archive"),btn("Refresh",()=>this.reloadCatalog().catch(e=>this.toast(e.message,"error"))),
       React.createElement("div",{style:{display:"flex",gap:6,marginBottom:14}},tabs.map(([k,l])=>React.createElement("button",{key:k,onClick:this.setArchiveTab(k),style:{padding:"8px 14px",borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer",background:archiveTab===k?COLORS.brand:"#fff",color:archiveTab===k?"#fff":COLORS.text,border:"1px solid "+(archiveTab===k?COLORS.brand:COLORS.border)}},l))),
       checkedCount?React.createElement("div",{style:{display:"flex",gap:8,alignItems:"center",marginBottom:10}},[React.createElement("span",{style:{fontSize:12,fontWeight:700,color:COLORS.textSoft}},checkedCount+" selected"),btn("Restore",this.restoreArchived,"green"),btn("Delete Permanently",this.openArchiveConfirm,"danger")]):null,
       rows.length===0?card(React.createElement("div",{style:{padding:20,textAlign:"center",color:COLORS.textMuted,fontSize:13}},"Nothing archived in this category.")):this.recordTable("archive-"+archiveTab,headers,rows),
@@ -2855,7 +2860,7 @@ class Component extends DCLogic {
   }
   buildAdmReceivingApprovals(){ return this.buildPurchaseHistory(); }
   buildAdmInventoryApprovals(){ const {adjustmentsLocal,data}=this.state; if(!adjustmentsLocal) return null;
-    return React.createElement("div",null,[sectionTitle("Inventory Adjustment Approvals"),
+    return React.createElement("div",null,[moduleTitle("Inventory Adjustment Approvals"),
       ...adjustmentsLocal.map(a=>{ const p=data.PRODUCTS.find(pp=>pp.id===a.productId); return card([
         React.createElement("div",{key:"h",style:{display:"flex",justifyContent:"space-between"}},[React.createElement("div",null,[React.createElement("div",{style:{fontWeight:700}},a.id+" Â· "+(p?p.name:"â€”")),React.createElement("div",{style:{fontSize:12,color:COLORS.textSoft}},a.reason+" Â· Î”"+a.qtyChange+" Â· "+a.remarks)]),badge(a.status)]),
         a.photo?this.evidenceLink(a.id):null,
@@ -2877,7 +2882,7 @@ class Component extends DCLogic {
         card([React.createElement("div",{key:"t",style:{fontWeight:800,marginBottom:8}},"Supplier Callback Log")].concat(callbackRows)),
       ]);
     }
-    return React.createElement("div",null,[sectionTitle("Supplier Records"),
+    return React.createElement("div",null,[moduleTitle("Supplier Records"),
       this.recordTable("supplier-records",["Supplier","Category","Status","Details"],data.SUPPLIERS.map(s=>tr([td(s.name,{fontWeight:600}),td(s.category),td(badge(s.status)),td(React.createElement("button",{onClick:this.openSupplierDetail(s.id),style:{color:COLORS.brand,background:"none",border:"none",fontWeight:700,cursor:"pointer"}},"View â†’"))],s.id)))]);
   }
   setReportFilter=(key,value)=>{if(key==='type'){this.reportRequestId=(this.reportRequestId||0)+1;this.reportController?.abort();}return this.setState(s=>({reportFilters:{...(s.reportFilters||{type:'sales'}),[key]:value,...(key==='category'?{subcategoryId:'',productId:''}:['brandId','subcategoryId','supplierId','type'].includes(key)?{productId:''}:{}),...(key==='type'?{batch:'',supplierId:'',status:'',audit:'',expiryStatus:'',lowStock:'',manager:'',category:'',brandId:'',subcategoryId:'',...(value==='inventory'?{from:'',to:''}:{})}:{})},reportFilterOpen:['from','to'].includes(key)?s.reportFilterOpen:null,...(key==='type'?{reportResult:null,reportAppliedFilters:null,reportError:'',reportLoading:false}:{})}));};
@@ -2987,7 +2992,7 @@ class Component extends DCLogic {
     const labelFor=(options,value)=>options.find(([id])=>String(id)===String(value))?.[1]||value;
     const url=format=>'/reports/data?'+new URLSearchParams({...Object.fromEntries(Object.entries(s.reportAppliedFilters||{}).filter(([,v])=>v)),format});
     const filterButton=(key,label,active,disabled=false)=>h('button',{key,type:'button',className:'report-filter-button'+(active?' is-selected':''),'aria-expanded':open===key,'aria-controls':'report-filter-options',disabled,onClick:()=>this.setState({reportFilterOpen:open===key?null:key}),title:disabled?'Choose a category first':undefined},[label,h('span',{'aria-hidden':true},open===key?'\u25b4':'\u25be')]);
-    return h('div',{className:'reports-page'},[sectionTitle('Reports'),
+    return h('div',{className:'reports-page'},[moduleTitle('Reports'),
       ['purchase_orders','outstanding_orders','purchases','supplier_book','payables'].includes(f.type)?h('label',{className:'purchase-notes'},['Requested / Recorded by (exact name)',h('input',{value:f.manager||'',onChange:e=>this.setReportFilter('manager',e.target.value)})]):null,
       f.type==='expiry'?h('div',{className:'expiry-quick-filters',role:'group','aria-label':'Expiration status filters'},[
         ...[['','All'],['Nearly expired','Nearly expired'],['Expired','Expired']].map(([value,label])=>h('button',{key:label,type:'button',className:'report-type-button'+((f.expiryStatus||'')===value?' is-selected':''),'aria-pressed':(f.expiryStatus||'')===value,onClick:()=>this.setReportFilter('expiryStatus',value)},label)),
@@ -3041,7 +3046,7 @@ class Component extends DCLogic {
     const roles=this.state.role==="manager"?["cashier"]:this.state.role==="superadmin"?["admin","manager","cashier","superadmin"]:["cashier","manager"];
     const title=this.state.role==="superadmin"?"User Management":this.state.role==="manager"?"Cashier Accounts":"Manage Accounts";
     const input=(key,label,type="text")=>h("label",{key,style:{display:"block",fontSize:12,fontWeight:700,marginBottom:10}},[label,h("input",{type,value:f[key]||"",onChange:this.setAcctField(key),autoComplete:type==="password"?"new-password":"off",style:{width:"100%",boxSizing:"border-box",padding:10,marginTop:4,border:"1px solid "+COLORS.border,borderRadius:8}})]);
-    return h("div",null,[sectionTitle(title),btn("Create Account",this.openAcctModal("create"),"primary"),
+    return h("div",null,[moduleTitle(title),btn("Create Account",this.openAcctModal("create"),"primary"),
       h("div",{className:"sa-filters"},[
         h("label",null,["Role ",h("select",{value:this.state.acctRoleFilter,onChange:e=>{this.setState({acctRoleFilter:e.target.value});this.setTableView("accounts",{page:1});}},[h("option",{value:""},"All roles"),...roles.map(r=>h("option",{value:r,key:r},r))])]),
         h("label",null,["Status ",h("select",{value:this.state.acctStatusFilter,onChange:e=>{this.setState({acctStatusFilter:e.target.value});this.setTableView("accounts",{page:1});}},[h("option",{value:""},"All statuses"),...['Active','Inactive'].map(v=>h("option",{value:v,key:v},v))])])
@@ -3060,7 +3065,7 @@ class Component extends DCLogic {
   }
 
   buildAdmNotifications(){
-    return React.createElement('div',null,[sectionTitle('Your Notifications'),btn('Refresh',this.retryNotifications),
+    return React.createElement('div',null,[moduleTitle('Your Notifications'),btn('Refresh',this.retryNotifications),
       this.state.notificationError?React.createElement('p',{role:'alert'},this.state.notificationError):null,
       this.recordTable('notifications',['Time','Event','Message','Status','Action'],(this.state.mgrNotificationsLocal||[]).map(n=>tr([td(n.created_at),td(n.type),td(n.message),td(n.read_at?'Read':'Unread'),td(btn('Open',this.openMgrNotification(n)))],n.id))),
       this.state.notificationNext?btn('Load older notifications',this.loadMoreNotifications):null]);
@@ -3101,7 +3106,7 @@ class Component extends DCLogic {
     const metrics=[["Total Users",d.total_users],["Active Users",d.active_users],["Inactive Users",d.inactive_users],["Average audit events / day",d.average_daily_events]];
     const max=Math.max(1,...d.activity_days.map(day=>day.events));
     return h("div",{className:"sa-dashboard"},[
-      sectionTitle("System Overview"),
+      moduleTitle("System Overview"),
       h("div",{className:"sa-kpis"},metrics.map(([label,value])=>h("article",{className:"sa-kpi",key:label},[h("div",null,label),h("strong",null,value)]))),
       h("div",{className:"sa-panels"},[
         h("section",{className:"sa-panel"},[h("h2",null,"System Performance"),...[["Application",d.application_status],["Database",d.database_status],["Database query",ms(d.database_response_ms)],["Dashboard calculation",ms(d.generation_ms)]].map(([label,value],i)=>h("div",{className:"sa-performance-row",key:label},[h("span",null,label),h("strong",{className:i<2?"sa-status sa-status--healthy":""},value)])),h("p",{className:"sa-note"},"Measured for this request: SELECT 1 database round trip and dashboard calculation time. These do not measure browser latency or server uptime."),btn("Refresh measurements",this.reloadSaDashboard)]),
@@ -3114,7 +3119,7 @@ class Component extends DCLogic {
   }
   buildSaAdmins(){ return this.buildAdmManagers(); }
   buildSaRoles(){ const {rolesMatrix}=this.state; if(!rolesMatrix) return null;
-    return React.createElement("div",null,[sectionTitle("Roles & Permissions"),
+    return React.createElement("div",null,[moduleTitle("Roles & Permissions"),
       stickyTable(React.createElement("div",{className:"table-scroll",tabIndex:0,role:"region","aria-label":"Role permissions",style:{overflowX:"auto",border:"1px solid "+COLORS.border,borderRadius:10}},React.createElement("table",{style:{width:"100%",borderCollapse:"collapse",fontSize:13}},[
         React.createElement("thead",{key:"h"},React.createElement("tr",null,[React.createElement("th",{key:"m",style:{textAlign:"left",padding:"10px 14px",background:"#f8faff",fontSize:11,color:COLORS.textMuted}},"Module"),...rolesMatrix.roles.map(r=>React.createElement("th",{key:r,style:{padding:"10px 14px",background:"#f8faff",fontSize:11,color:COLORS.textMuted}},r))])),
         React.createElement("tbody",{key:"b"},rolesMatrix.grid.map((row,mi)=>tr([td(row.module,{fontWeight:600}),...row.cells.map((c,ri)=>td(React.createElement("div",{onClick:this.toggleRolePerm(mi,ri),style:{width:36,height:20,borderRadius:10,background:c?COLORS.green:"#e3e6ec",position:"relative",cursor:"pointer",margin:"0 auto"}},React.createElement("div",{style:{width:16,height:16,borderRadius:"50%",background:"#fff",position:"absolute",top:2,left:c?18:2}})),{textAlign:"center"}))],mi)))
@@ -3122,7 +3127,7 @@ class Component extends DCLogic {
   }
   buildSaBackup(){
     const h=React.createElement,d=this.state.backupData,items=d?.backups||[],id=this.state.backupRestoreId;
-    return h("div",null,[sectionTitle("Backup Configuration"),
+    return h("div",null,[moduleTitle("Backup Configuration"),
       this.state.backupError&&h("p",{role:"alert",style:{color:COLORS.red}},this.state.backupError),
       card([
         h("p",null,d?`Daily schedule: ${d.schedule} (${d.timezone}). Retention: ${d.retention_days} days.`:"Loading backup configuration..."),
@@ -3144,7 +3149,7 @@ class Component extends DCLogic {
     ]);
   }
   buildSaAudit(){ const {data}=this.state; if(!data) return null;
-    return React.createElement("div",null,[sectionTitle("Audit Logs & Activity"),
+    return React.createElement("div",null,[moduleTitle("Audit Logs & Activity"),
       this.recordTable("audit",["Timestamp","User","Action","Record","Changes"],data.AUDIT_LOGS.map((a,i)=>tr([td(a.ts,{fontFamily:"'JetBrains Mono',monospace",fontSize:12}),td(a.user),td(badge(a.action)),td(a.record),td(auditChanges(a.before,a.after,data.PRODUCTS))],i))),
       React.createElement("div",{style:{height:14}}),
       card([React.createElement("div",{key:"t",style:{fontWeight:800,marginBottom:10}},"Field Version History"),
