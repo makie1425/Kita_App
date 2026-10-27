@@ -1745,9 +1745,41 @@ body:has(.receiving-dialog[open]) { overflow:hidden; }
 .inspection-footer-actions { display:flex; gap:8px; }
 .inspection-footer button { font-size:12px; min-height:36px; padding:8px 13px; border-radius:7px; }
 .inspection-error { color:#aa1833!important; background:#fff1f3; padding:10px; border-radius:6px; }
-.stock-receipt-history { margin:18px 0; background:#fff; padding:16px; border:1px solid #dce6f7; border-radius:10px; }
-.stock-receipt-history>details { border-top:1px solid #e8eef9; padding:12px 0; }
-.stock-receipt-history summary { cursor:pointer; overflow-wrap:anywhere; }
+.stock-receipt-history { margin:24px 0; }
+.receipt-history-heading { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:16px; }
+.receipt-history-heading h3 { margin:0; color:#12356b; font-size:20px; }
+.receipt-history-heading > span { color:#60799d; font-size:12px; }
+.receipt-history-list { display:grid; gap:14px; }
+.receipt-history-card { display:flex; align-items:center; justify-content:space-between; gap:24px; padding:22px 24px; background:#fff; border:1px solid #dce6f7; border-radius:16px; }
+.receipt-history-info { min-width:0; }
+.receipt-history-title { display:flex; align-items:center; flex-wrap:wrap; gap:12px; }
+.receipt-history-title strong { color:#12356b; overflow-wrap:anywhere; }
+.receipt-history-status { display:inline-flex; border:1px solid #d8e5ff; border-radius:20px; padding:5px 12px; background:#edf3ff; color:#1747e8; font-size:12px; font-weight:700; white-space:nowrap; }
+.receipt-history-card p { margin:8px 0 0; color:#627ca0; font-size:13px; overflow-wrap:anywhere; }
+.receipt-history-card .receipt-history-products { color:#234875; }
+.receipt-history-card > button { flex-shrink:0; white-space:nowrap; }
+.receipt-history-dialog { padding:0; width:min(1100px,calc(100vw - 32px)); max-width:calc(100vw - 32px); max-height:calc(100dvh - 32px); border:1px solid #dce6f7; border-radius:20px; background:#fff; color:#12356b; overflow:hidden; box-shadow:0 30px 90px #12356b40; }
+.receipt-history-dialog[open] { display:flex; flex-direction:column; }
+.receipt-history-dialog::backdrop { background:#10264d80; }
+.receipt-history-dialog-header { display:flex; justify-content:space-between; align-items:flex-start; gap:20px; padding:24px 28px; background:#1747e8; color:#fff; flex-shrink:0; }
+.receipt-history-eyebrow { font-size:10px; letter-spacing:1.4px; font-weight:700; }
+.receipt-history-dialog-header h2 { margin:8px 0; font-size:19px; color:#fff; overflow-wrap:anywhere; }
+.receipt-history-dialog-header p { margin:0; color:#e2ebff; font-size:13px; }
+.receipt-history-close { width:36px; height:36px; flex-shrink:0; background:transparent; border:1px solid #ffffff66; border-radius:9px; color:#fff; font-size:24px; cursor:pointer; }
+.receipt-history-dialog-body { padding:24px 28px; min-height:0; overflow:auto; overscroll-behavior:contain; }
+.receipt-history-audit { display:flex; align-items:center; gap:14px; padding:14px 16px; background:#f4f7ff; border:1px solid #e0e9fa; border-radius:12px; margin-bottom:20px; font-size:13px; overflow-wrap:anywhere; }
+.receipt-history-dialog .inspection-table-wrap { border-radius:12px; border:1px solid #dce6f7; overflow:auto; }
+.receipt-history-dialog .inspection-table-wrap table { min-width:760px; width:100%; }
+.receipt-history-dialog .inspection-table-wrap th { background:#f3f7ff; color:#52719b; }
+.receipt-history-dialog .inspection-table-wrap :is(th,td) { padding:14px 16px!important; }
+.receipt-history-dialog-footer { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:18px 28px; border-top:1px solid #e4ecfa; flex-shrink:0; background:#fff; }
+.receipt-history-footer-actions { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+@media(max-width:600px) {
+  .receipt-history-card { align-items:flex-start; flex-direction:column; gap:16px; padding:18px; }
+  .receipt-history-dialog-header,.receipt-history-dialog-body { padding:18px; }
+  .receipt-history-dialog-footer { padding:14px 18px; flex-wrap:wrap; }
+  .receipt-history-audit { flex-wrap:wrap; }
+}
 .inspection-approval { display:flex; flex-wrap:wrap; gap:10px; padding-top:10px; }
 .inspection-approval label { flex-basis:100%; }
 @media(max-width:700px) {

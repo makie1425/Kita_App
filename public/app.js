@@ -1873,15 +1873,31 @@ class Component extends DCLogic {
     catch(error){this.toast(error.message,'error');}finally{this.receivingBusy=false;this.setState({receivingSaving:false});}
   };
   buildStockReceiptHistory(review=false){
-    const h=React.createElement,records=(this.state.purchaseData?.stockReceipts||[]).filter(r=>!review||r.status==='Pending Approval');
+    const h=React.createElement,s=this.state,records=(s.purchaseData?.stockReceipts||[]).filter(r=>!review||r.status==='Pending Approval');
     if(!records.length)return null;
-    return h('section',{className:'stock-receipt-history'},[h('h3',null,review?'Stock receipts awaiting approval':'Stock receipts'),null,...records.map(r=>h('details',{key:r.id},[
-      h('summary',null,[h('strong',null,r.id),' · '+r.deliveryDate+' · ',badge(r.status)]),
-      h('p',null,(r.exceptions||[]).join('; ')||'No exceptions'),
-      h('div',{className:'inspection-table-wrap'},table(['Original PO','Product','Type','Delivered','Damaged','Accepted','Outstanding'],(r.summary||[]).map((e,i)=>tr([td(e.poId),td(e.name),td(e.type),td(e.delivered),td(e.damaged),td(e.accepted),td(e.remaining)],i)))),
-      h('div',{className:'purchase-actions'},[h('a',{className:'kita-button',href:'/stock-receipts/'+encodeURIComponent(r.id)+'/report',target:'_blank',rel:'noopener'},'View / Print stock receipt'),!review&&r.status==='Approved'?h('button',{type:'button',className:'primary-button',disabled:!!this.state.receivingSaving,onClick:()=>this.stockReceiptAction(r,'post')},'Post approved receipt'):null]),
-      review?h('div',{className:'inspection-approval'},[h('label',null,['Review note',h('textarea',{value:this.state.stockReceiptReviewNotes?.[r.id]||'',onChange:e=>this.setState(s=>({stockReceiptReviewNotes:{...s.stockReceiptReviewNotes,[r.id]:e.target.value}}))})]),...['Approved','Declined'].map(action=>h('button',{type:'button',className:'kita-button',disabled:!!this.state.receivingSaving,onClick:()=>this.stockReceiptAction(r,action)},action==='Approved'?'Approve receipt':'Decline receipt'))]):null
-    ]))]);
+    const selected=records.find(r=>r.id===s.receiptHistoryId&&s.receiptHistoryReview===review);
+    const close=()=>{if(!this.receivingBusy)this.setState({receiptHistoryId:null});};
+    const status=r=>h('span',{className:'receipt-history-status'},r.status);
+    return h('section',{className:'stock-receipt-history'},[
+      h('div',{className:'receipt-history-heading'},[h('h3',null,review?'Stock receipts awaiting approval':'Stock receipts'),h('span',null,records.length+' receipts')]),
+      h('div',{className:'receipt-history-list'},records.map(r=>{
+        const lines=r.summary||[],names=[...new Set(lines.map(e=>e.name).filter(Boolean))],pos=[...new Set(lines.map(e=>e.poId).filter(Boolean))];
+        return h('article',{key:r.id,className:'receipt-history-card'},[
+          h('div',{className:'receipt-history-info'},[h('div',{className:'receipt-history-title'},[h('strong',null,r.id),status(r)]),
+            h('p',null,[r.deliveryDate||'Date not recorded',' · '+pos.join(', ')]),h('p',{className:'receipt-history-products'},names.slice(0,3).join(', ')+(names.length>3?' +'+(names.length-3)+' more':''))]),
+          h('button',{type:'button',className:'kita-button kita-button--primary','aria-haspopup':'dialog','aria-label':'View details for '+r.id,onClick:()=>this.setState({receiptHistoryId:r.id,receiptHistoryReview:review})},'View Details')
+        ]);
+      })),
+      selected?h('dialog',{className:'receipt-history-dialog','aria-label':'Stock receipt '+selected.id,ref:node=>{if(node&&!node.open)node.showModal();},onCancel:e=>{e.preventDefault();close();}},[
+        h('header',{className:'receipt-history-dialog-header'},[h('div',null,[h('span',{className:'receipt-history-eyebrow'},'STOCK RECEIPT'),h('h2',null,selected.id),h('p',null,'Recorded on '+(selected.deliveryDate||'Not recorded'))]),h('button',{type:'button',className:'receipt-history-close','aria-label':'Close receipt details',disabled:!!s.receivingSaving,onClick:close},'×')]),
+        h('div',{className:'receipt-history-dialog-body',tabIndex:0,'aria-label':'Receipt items, scroll for more'},[
+          h('div',{className:'receipt-history-audit'},[status(selected),h('span',null,(selected.exceptions||[]).join('; ')||'No exceptions')]),
+          h('div',{className:'inspection-table-wrap'},table(['Original PO','Product','Type','Delivered','Damaged','Accepted','Outstanding'],(selected.summary||[]).map((e,i)=>tr([td(e.poId),td(e.name),td({current:'Current order',missing:'Missing items',damaged:'Replacement',outstanding:'Outstanding items'}[e.type]||e.type),td(e.delivered),td(e.damaged),td(e.accepted),td(e.remaining)],i)))),
+          review?h('div',{className:'inspection-approval'},[h('label',null,['Review note',h('textarea',{value:s.stockReceiptReviewNotes?.[selected.id]||'',disabled:!!s.receivingSaving,onChange:e=>this.setState(s=>({stockReceiptReviewNotes:{...s.stockReceiptReviewNotes,[selected.id]:e.target.value}}))})]),...['Approved','Declined'].map(action=>h('button',{type:'button',className:'kita-button',disabled:!!s.receivingSaving,onClick:()=>this.stockReceiptAction(selected,action)},action==='Approved'?'Approve receipt':'Decline receipt'))]):null
+        ]),
+        h('footer',{className:'receipt-history-dialog-footer'},[h('button',{type:'button',className:'kita-button',autoFocus:true,disabled:!!s.receivingSaving,onClick:close},'Close'),h('div',{className:'receipt-history-footer-actions'},[!review&&selected.status==='Approved'?h('button',{type:'button',className:'kita-button',disabled:!!s.receivingSaving,onClick:()=>this.stockReceiptAction(selected,'post')},'Post approved receipt'):null,h('a',{className:'kita-button kita-button--primary',href:'/stock-receipts/'+encodeURIComponent(selected.id)+'/report',target:'_blank',rel:'noopener'},'View / Print stock receipt')])])
+      ]):null
+    ]);
   }
   buildInspectionPopup(order,close){
     const h=React.createElement,d=this.state.inspection;if(!d)return null;
