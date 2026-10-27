@@ -742,7 +742,7 @@ class Component extends DCLogic {
       t?this.recordTable('recall-trace-batches',['Product','Batch','Lot','On hand','Sellable','Status','Action'],t.batches.map(b=>tr([td(b.name),td(b.batchNumber||b.id),td(b.lotNumber||'-'),td(b.stockOnHand),td(b.sellableQuantity),td(b.eligibility),td(btn(b.recalled?'Review recall':'Select for recall',()=>this.setState({workflowForm:{batchId:b.id,recallAction:b.recalled?'Release recall':'Recall',reason:'Recall review'},workflowKey:null})))],b.id))):null,
       t?this.recordTable('recall-trace-sales',['Transaction','Date','Batch','Allocated','Returned','Outstanding','Status'],t.sales.map((s,i)=>tr([td(s.uuid),td(s.date),td(s.batchId),td(s.quantity),td(s.returnedQuantity),td(Math.max(0,s.quantity-s.returnedQuantity)),td(s.status)],i))):null,
       t&&!t.sales.length?h('p',null,'No recorded sales or payment reservations for these batches.'):null,
-      h('p',null,'Sales predating batch tracking cannot be traced automatically. Outstanding allocations include pending payments; returned quantities are shown separately.')]);
+      null]);
   }
 
   saveSupplierContact=async()=>{
@@ -1358,7 +1358,7 @@ class Component extends DCLogic {
     if(this.state.exchangeReceiptOpen&&this.state.exchangeTransaction){const t=this.state.exchangeTransaction;return this.buildTransactionView({...t,cart:t.lines,totals:{subtotal:t.subtotal,discount:t.discountAmount,grandTotal:t.total,vatExempt:t.total}},true);}
     const field=(key,label,type="text")=>React.createElement("input",{key,type,placeholder:label,"aria-label":label,value:this.state[key]||"",onChange:e=>this.setState({[key]:e.target.value}),maxLength:type==="password"?4:255,...(type==="number"?{min:0,step:"0.01"}:{}),inputMode:type==="password"?"numeric":undefined,autoComplete:"off",style:{padding:10,marginBottom:10,width:"100%",boxSizing:"border-box"}});
     return React.createElement("div",null,[
-      sectionTitle("Refunds, Exchanges & Voids","Manager approval is required for every action."),
+      sectionTitle("Refunds, Exchanges & Voids"),
       card([field("refundLookup","Transaction number"),btn("Look Up",this.doRefundLookup,"primary")],{marginBottom:16}),
       refundError?React.createElement("p",{key:"error",role:"alert",style:{color:COLORS.red}},refundError):null,
       refundTxn?card([
@@ -1453,7 +1453,7 @@ class Component extends DCLogic {
     const top=ranked.slice(0,Math.min(3,Math.ceil(ranked.length/2))),topIds=new Set(top.map(p=>p.id));
     const least=ranked.filter(p=>!topIds.has(p.id)).sort((a,b)=>a.qty-b.qty||a.name.localeCompare(b.name)).slice(0,3);
     return card([
-      h('div',{className:'dashboard-panel-heading'},[h('div',null,[h('h2',{className:'panel-title'},'Product Comparison'),h('p',null,'Units sold: top products vs. least-selling products')]),h('div',{className:'comparison-legend'},[h('span',{className:'comparison-top'},'Top selling'),h('span',{className:'comparison-least'},'Least selling')])]),
+      h('div',{className:'dashboard-panel-heading'},[h('div',null,[h('h2',{className:'panel-title'},'Product Comparison'),null]),h('div',{className:'comparison-legend'},[h('span',{className:'comparison-top'},'Top selling'),h('span',{className:'comparison-least'},'Least selling')])]),
       h('div',{className:'product-comparison-bars'},top.length?top.map((a,i)=>{const b=least[i],share=a.qty/(a.qty+(b?.qty||0))*100;return h('div',{key:a.id,className:'comparison-pair'},[
         h('div',{className:'comparison-labels'},[h('span',null,a.name+' ('+a.qty+')'),h('span',null,b?b.name+' ('+b.qty+')':'No comparison product')]),
         h('div',{className:'comparison-track',role:'img','aria-label':a.name+': '+a.qty+' units'+(b?'; '+b.name+': '+b.qty+' units':'' )},[h('span',{className:'comparison-top-bar',style:{width:share+'%'}},Math.round(share)+'%'),b?h('span',{className:'comparison-least-bar',style:{width:(100-share)+'%'}}):null])
@@ -1467,10 +1467,10 @@ class Component extends DCLogic {
     const h=React.createElement;
     const sales=dashboardSales(data,this.state.dashboardPeriod,this.state.dashboardDate);
     const lowStock=this.managerLowStock();
-    const heading=(title,description,extra)=>h('div',{className:'dashboard-panel-heading'},[h('div',null,[h('h2',{className:'panel-title'},title),h('p',null,description)]),extra]);
+    const heading=(title,description,extra)=>h('div',{className:'dashboard-panel-heading'},[h('div',null,[h('h2',{className:'panel-title'},title),null]),extra]);
     return h('div',{className:'operations-dashboard'},[
       h('header',{key:'header',className:'dashboard-header'},[
-        sectionTitle('Analytics Overview','Filter metrics, sales history, and product comparisons'),
+        sectionTitle('Analytics Overview'),
         this.buildDashboardSalesFilter(sales),
         h('button',{type:'button',className:'kita-button',disabled:!!this.state.pendingLoads,onClick:()=>this.reloadCatalog().catch(error=>this.toast(error.message,'error'))},this.state.pendingLoads?'Refreshing...':'Refresh dashboard'),
       ]),
@@ -1500,7 +1500,7 @@ class Component extends DCLogic {
     const h=React.createElement, soon=this.expiringBatches();
     return card([
       h('div',{className:'dashboard-panel-heading'},[
-        h('div',null,[h('h2',{className:'panel-title'},'Near-Expired Products'),h('p',null,'Current batches approaching expiry or already expired')]),
+        h('div',null,[h('h2',{className:'panel-title'},'Near-Expired Products'),null]),
         badge(soon.length+' batches'),
       ]),
       h('div',{className:'dashboard-records',tabIndex:0,'aria-label':'Near-expired products'},soon.length?soon.map((x,i)=>h('div',{key:x.p.batch+'-'+i,className:'dashboard-record'},[
@@ -1586,14 +1586,14 @@ class Component extends DCLogic {
     if(tab==='history')return this.buildPurchaseHistory();
     if(tab==='view'){
       const state=this.purchasingState();if(state)return state;
-      return h('div',null,[sectionTitle('Purchase Orders','One PO ID follows each request through approval and receiving.'),this.purchaseFilters(),
+      return h('div',null,[sectionTitle('Purchase Orders'),this.purchaseFilters(),
         this.recordTable('purchase-requests',['Purchase ID','PO Date','Supplier','Items','Received batches','Status','Admin notes / decline reason','Actions'],this.filterPurchases(s.purchaseData.requests).map(r=>tr([td(r.id),td(r.requested_at||r.dateRequested),td(r.supplierName||this.purchaseSupplier(r.lines[0]?.supplierId)),td(r.lines.length),td(this.purchaseBatchSummary(r.poId||r.id)),td(badge(r.status)),td(r.disapprovalReason||r.adminNote||''),td(this.purchaseRequestActions(r))],r.id))),
         this.purchaseRequestDetails(),this.purchaseReviewDetails()
       ]);
     }
     if(!s.data)return h('p',null,loadingStatus('Loading inventory and suppliers...'));
     return h('div',{className:'purchase-create-page'},[
-      h('header',{className:'purchase-create-header'},[sectionTitle('Create Purchase Order','Add items, review quantities, and submit for approval.'),btn('+ Add Items',this.openItemPicker,'primary')]),
+      h('header',{className:'purchase-create-header'},[sectionTitle('Create Purchase Order'),btn('+ Add Items',this.openItemPicker,'primary')]),
       h('div',{className:'purchase-create-summary'},[h('div',null,[h('small',null,'SUPPLIER'),h('strong',null,s.newReqCart.length&&s.newReqSupplier?this.purchaseSupplier(s.newReqSupplier):'Choose a supplier when adding items')]),h('div',null,[h('small',null,'REQUEST ITEMS'),h('strong',null,s.newReqCart.length+' item'+(s.newReqCart.length===1?'':'s'))])]),
       this.recordTable('purchase-cart',['Item','Category','Quantity','Purchase Unit','Cost per Stock Unit (PHP)','Action'],s.newReqCart.map((l,i)=>tr([td(l.name),td(l.category),td(h('input',{'aria-label':'Quantity for '+l.name,type:'number',min:1,step:1,value:l.qty,onChange:this.setReqCartQty(i)})),td(this.buildRequestUnit(l,i)),td(h('input',{'aria-label':'Cost per stock unit for '+l.name,type:'number',min:0,step:'0.01',value:l.unitCost??(s.data.PRODUCTS.find(p=>p.id===l.productId)?.unitPrice||0),onChange:e=>this.setState({newReqCart:s.newReqCart.map((line,n)=>n===i?{...line,unitCost:e.target.value}:line)})})),td(btn('Remove',this.removeReqLine(i)))],i))),
       h('label',{className:'purchase-notes'},['Expected delivery date (optional)',h('input',{type:'date',value:s.purchaseExpectedDate||'',min:s.data?.BUSINESS_DATE,onChange:e=>this.setState({purchaseExpectedDate:e.target.value})})]),
@@ -1653,7 +1653,7 @@ class Component extends DCLogic {
   buildReceivingBudgetReviews(){
     const h=React.createElement,entries=(this.state.purchaseData?.orders||[]).flatMap(o=>(o.budgetRequests||[]).filter(r=>r.status==='Pending').map(r=>({...r,order:o})));
     if(!entries.length)return null;
-    return h('section',{className:'sa-panel'},[h('h2',null,'Additional receiving amounts'),h('p',null,'Additional receiving amounts are no longer allowed. Existing requests can only be declined.'),...entries.map(r=>h('div',{key:r.id,className:'purchase-budget-review'},[h('strong',null,r.poId+' · '+peso(r.amount)),h('p',null,r.reason),h('small',null,'Remaining approved balance: '+peso(r.order.receivingBalance)),h('div',{className:'purchase-actions'},['Declined'].map(action=>h('button',{type:'button',className:'kita-button',disabled:!!this.state.budgetSaving,onClick:()=>this.reviewReceivingBudget(r,action)},action==='Approved'?'Approve additional amount':'Decline')))]))]);
+    return h('section',{className:'sa-panel'},[h('h2',null,'Additional receiving amounts'),null,...entries.map(r=>h('div',{key:r.id,className:'purchase-budget-review'},[h('strong',null,r.poId+' · '+peso(r.amount)),h('p',null,r.reason),h('small',null,'Remaining approved balance: '+peso(r.order.receivingBalance)),h('div',{className:'purchase-actions'},['Declined'].map(action=>h('button',{type:'button',className:'kita-button',disabled:!!this.state.budgetSaving,onClick:()=>this.reviewReceivingBudget(r,action)},action==='Approved'?'Approve additional amount':'Decline')))]))]);
   }
   requestUsesPackage=line=>{const stock=this.purchaseUnit(line),unit=line.orderUnit||stock;return unit!==stock&&!(['piece','pieces'].includes(stock.toLowerCase())&&unit==='Piece');};
   canReviewPurchase=r=>['admin','superadmin','super_admin'].includes(this.state.role)&&!r.poId&&['Pending','Pending Approval','Proceed to Purchase'].includes(r.status);
@@ -1684,7 +1684,7 @@ class Component extends DCLogic {
   buildPurchaseReview(){
     const h=React.createElement,state=this.purchasingState();if(state)return state;
     const requests=this.filterPurchases(this.state.purchaseData.requests);
-    return h('div',null,[sectionTitle('Purchase Orders','Select a purchase order to view its details or review a pending order.'),this.purchaseFilters(),this.buildReceivingBudgetReviews(),this.buildStockReceiptHistory(true),
+    return h('div',null,[sectionTitle('Purchase Orders'),this.purchaseFilters(),this.buildReceivingBudgetReviews(),this.buildStockReceiptHistory(true),
       this.recordTable('purchase-review',['Purchase ID','PO Date','Supplier','Requested By','Items','Total Cost','Status','Actions'],requests.map(r=>tr([td(r.id),td(r.requested_at||r.dateRequested),td(r.supplierName||this.purchaseSupplier(r.lines[0]?.supplierId)),td(r.requestedBy),td(r.lines.length),td(peso(r.lines.reduce((sum,l)=>sum+Number(l.confirmedQty??l.qty)*Number(l.unitCost||0),0))),td(badge(r.status)),td(this.purchaseRequestActions(r))],r.id))),this.purchaseRequestDetails(),this.purchaseReviewDetails()
     ]);
   }
@@ -1766,7 +1766,7 @@ class Component extends DCLogic {
   buildCarryoverPanel(){
     const h=React.createElement,entries=this.state.purchaseData?.carryovers||[];
     if(!entries.length)return null;
-    return h('details',{className:'carryover-panel'},[h('summary',null,'Earlier shortage links'),h('p',null,'Existing links are preserved. Release unreceived allocations to receive those items under their original PO.'),this.recordTable('carryover-history',['Original PO','Linked PO','Received','Still allocated','Action'],entries.map(a=>tr([td(a.sourcePo),td(a.targetPo),td(a.receivedQty),td(Number(a.quantity)-Number(a.receivedQty)-Number(a.releasedQty)),td(Number(a.quantity)>Number(a.receivedQty)+Number(a.releasedQty)?btn('Release unreceived',()=>this.releaseCarryover(a.id)):null)],a.id)))]);
+    return h('details',{className:'carryover-panel'},[h('summary',null,'Earlier shortage links'),null,this.recordTable('carryover-history',['Original PO','Linked PO','Received','Still allocated','Action'],entries.map(a=>tr([td(a.sourcePo),td(a.targetPo),td(a.receivedQty),td(Number(a.quantity)-Number(a.receivedQty)-Number(a.releasedQty)),td(Number(a.quantity)>Number(a.receivedQty)+Number(a.releasedQty)?btn('Release unreceived',()=>this.releaseCarryover(a.id)):null)],a.id)))]);
   }
   buildSupplierPerformance(supplierId){
     const h=React.createElement,data=this.state.purchaseData;if(!data)return h('p',null,['Loading supplier performance...',btn('Refresh',()=>this.reloadPurchasing().catch(()=>{}))]);
@@ -1780,7 +1780,7 @@ class Component extends DCLogic {
     const history=orders.flatMap(o=>(o.receipts||[]).flatMap(r=>(r.lines||[]).map(l=>({o,r,l}))));
     const resolutions=(data.resolutions||[]).filter(r=>allocations.some(a=>a.id===r.carryoverId));
     const days=(a,r)=>{const source=orders.find(o=>o.id===a.sourcePo),start=source?.receipts?.map(x=>x.received_at||x.date).sort()[0];return start?Math.max(0,Math.floor((new Date(r.created_at)-new Date(start))/86400000)):null;};
-    return h('section',{className:'supplier-performance'},[h('h3',null,'Supplier Performance'),h('div',{className:'supplier-performance-metrics'},[kpi('Ordered units',ordered),kpi('Accepted units',accepted),kpi('Fulfillment rate',ordered?(100*accepted/ordered).toFixed(1)+'%':'No orders'),kpi('Outstanding units',Math.max(0,ordered-accepted)),kpi('Initially missing (recorded)',missing),kpi('Damaged (recorded)',damaged)]),h('p',{className:'receive-compact-hint'},'Carryovers are excluded from new orders. Fulfillment includes later accepted replacements. Missing and damaged counts use recorded inspections; older receipts without inspections are not estimated.'),
+    return h('section',{className:'supplier-performance'},[h('h3',null,'Supplier Performance'),h('div',{className:'supplier-performance-metrics'},[kpi('Ordered units',ordered),kpi('Accepted units',accepted),kpi('Fulfillment rate',ordered?(100*accepted/ordered).toFixed(1)+'%':'No orders'),kpi('Outstanding units',Math.max(0,ordered-accepted)),kpi('Initially missing (recorded)',missing),kpi('Damaged (recorded)',damaged)]),null,
       h('h4',null,'Shortage resolution history'),this.recordTable('supplier-resolutions-'+supplierId,['Original PO','Received under PO','Quantity','Received date','Days to resolve'],resolutions.map(r=>{const a=allocations.find(a=>a.id===r.carryoverId);return tr([td(a.sourcePo),td(a.targetPo),td(r.quantity),td(String(r.created_at).slice(0,10)),td(days(a,r)??'Not recorded')],r.id);})),
       h('h4',null,'Outstanding shortages'),this.recordTable('supplier-open-'+supplierId,['Original PO','Product','Outstanding','First receipt'],orders.flatMap(o=>o.receipts?.length?o.lines.filter(l=>this.receivingOutstanding(l)>0).map(l=>tr([td(o.id),td(l.name),td(this.receivingOutstanding(l)),td(o.receipts.map(r=>r.date).sort()[0])],l.id)):[])),
       h('h4',null,'Delivery and replacement history'),this.recordTable('supplier-deliveries-'+supplierId,['PO','Receipt','Received','Product','Accepted','Batch','Condition / replacement'],history.map(({o,r,l})=>tr([td(o.id),td(r.deliveryReference||r.id),td(r.date),td(l.name),td(l.deliveredQty),td(l.internalBatch||l.batchNumber||l.lotNumber||'Not recorded'),td([l.conditionText,l.followupNote].filter(Boolean).join(' · ')||'Not recorded')],l.id)))
@@ -1874,7 +1874,7 @@ class Component extends DCLogic {
   buildStockReceiptHistory(review=false){
     const h=React.createElement,records=(this.state.purchaseData?.stockReceipts||[]).filter(r=>!review||r.status==='Pending Approval');
     if(!records.length)return null;
-    return h('section',{className:'stock-receipt-history'},[h('h3',null,review?'Stock receipts awaiting approval':'Stock receipts'),h('p',null,review?'Review substitutions, purchase-cost changes, and excess quantities. Approval does not add stock.':'One shared batch per confirmed delivery. Product entries and original PO references stay separate.'),...records.map(r=>h('details',{key:r.id},[
+    return h('section',{className:'stock-receipt-history'},[h('h3',null,review?'Stock receipts awaiting approval':'Stock receipts'),null,...records.map(r=>h('details',{key:r.id},[
       h('summary',null,[h('strong',null,r.id),' · '+r.deliveryDate+' · ',badge(r.status)]),
       h('p',null,(r.exceptions||[]).join('; ')||'No exceptions'),
       h('div',{className:'inspection-table-wrap'},table(['Original PO','Product','Type','Delivered','Damaged','Accepted','Outstanding'],(r.summary||[]).map((e,i)=>tr([td(e.poId),td(e.name),td(e.type),td(e.delivered),td(e.damaged),td(e.accepted),td(e.remaining)],i)))),
@@ -1894,11 +1894,11 @@ class Component extends DCLogic {
       const l=this.inspectionLine(e),product=this.inspectionProduct(e),accepted=this.inspectionAccepted(e);if(!l)return null;
       const candidates=(this.state.productsLocal||this.state.data?.PRODUCTS||[]).filter(p=>p.status==='Active'&&!p.archivedAt&&Number(p.id)!==Number(e.productId)&&String(p.stockUnit||p.unit).toLowerCase()===String(l.unit).toLowerCase());
       return h('div',{className:'inspection-entry-details'},[
-        h('p',{className:'inventory-help'},'Outstanding value limit: '+peso(this.inspectionValueLimit(e))+' | Receiving value: '+peso(accepted*Number(e.unitCost))+' | No increase above this limit is allowed.'),
+        h('p',{className:'inventory-help'},'Outstanding value limit: '+peso(this.inspectionValueLimit(e))+' | Receiving value: '+peso(accepted*Number(e.unitCost))),
         Number(e.damaged)>0?h('div',{className:'inspection-damage'},[h('strong',null,'Damaged goods — excluded from saleable stock'),field('Damage reason *',e.damageReason,ev=>this.updateInspection(e.key,{damageReason:ev.target.value}),{maxLength:500}),h('label',null,['Disposition',h('select',{value:e.disposition,onChange:ev=>this.updateInspection(e.key,{disposition:ev.target.value})},[['return','Return to supplier'],['reject','Reject at delivery'],['quarantine','Quarantine (not saleable)']].map(([v,t])=>h('option',{value:v,key:v},t)))]),h('small',null,'Damaged quantities remain outstanding until replaced or resolved through an approved adjustment.')]):null,
-        (e.type!=='current'||Number(l.deliveredQty)>0||Number(l.obligation?.damaged)>0)?h('details',{className:'inspection-options',open:true},[h('summary',null,'Same product or replacement'),h('label',null,['Product received',h('select',{'aria-label':'Replacement product for '+e.poId+' '+e.productId,value:e.substituteProductId||'',onChange:ev=>{const p=candidates.find(p=>String(p.id)===ev.target.value);this.updateInspection(e.key,{substituteProductId:p?Number(p.id):null,unitCost:p?p.unitPrice:l.unitCost});}},[h('option',{value:''},'Original product — '+l.name),...candidates.map(p=>h('option',{key:p.id,value:p.id},p.name+' · '+peso(p.unitPrice)))])]),e.substituteProductId?field('Substitution reason *',e.substitutionReason,ev=>this.updateInspection(e.key,{substitutionReason:ev.target.value}),{maxLength:500}):null,h('small',null,'Choose the same product or a replacement with the same stock unit. Total cost must not exceed the outstanding value; no approval can increase that limit.')]):null,
-        h('details',{className:'inspection-options',open:true},[h('summary',null,'Purchase cost: '+peso(e.unitCost)),field('Actual unit cost',e.unitCost,ev=>this.updateInspection(e.key,{unitCost:ev.target.value}),{type:'number',min:0,step:'0.01'}),h('small',null,'Purchase-cost changes within the fixed balance follow the existing review process. Over-limit receipts are blocked. Update the selling price in Inventory; it applies to all remaining units without changing recorded batch costs.')]),
-        accepted>0?h('details',{className:'inspection-options',open:true},[h('summary',null,'Lot details ('+e.lots.length+') — '+product?.name),h('p',null,'All items in this confirmation share one batch. Complete each lot separately when supplier lots or expiration dates differ.'),...e.lots.map((lot,i)=>h('div',{className:'inspection-lot-grid',key:i},[
+        (e.type!=='current'||Number(l.deliveredQty)>0||Number(l.obligation?.damaged)>0)?h('details',{className:'inspection-options',open:true},[h('summary',null,'Same product or replacement'),h('label',null,['Product received',h('select',{'aria-label':'Replacement product for '+e.poId+' '+e.productId,value:e.substituteProductId||'',onChange:ev=>{const p=candidates.find(p=>String(p.id)===ev.target.value);this.updateInspection(e.key,{substituteProductId:p?Number(p.id):null,unitCost:p?p.unitPrice:l.unitCost});}},[h('option',{value:''},'Original product — '+l.name),...candidates.map(p=>h('option',{key:p.id,value:p.id},p.name+' · '+peso(p.unitPrice)))])]),e.substituteProductId?field('Substitution reason *',e.substitutionReason,ev=>this.updateInspection(e.key,{substitutionReason:ev.target.value}),{maxLength:500}):null,null]):null,
+        h('details',{className:'inspection-options',open:true},[h('summary',null,'Purchase cost: '+peso(e.unitCost)),field('Actual unit cost',e.unitCost,ev=>this.updateInspection(e.key,{unitCost:ev.target.value}),{type:'number',min:0,step:'0.01'}),null]),
+        accepted>0?h('details',{className:'inspection-options',open:true},[h('summary',null,'Lot details ('+e.lots.length+') — '+product?.name),null,...e.lots.map((lot,i)=>h('div',{className:'inspection-lot-grid',key:i},[
           field('Lot quantity',lot.quantity,ev=>this.updateInspectionLot(e,i,{quantity:ev.target.value}),{type:'number',min:1,step:1,'aria-label':'Lot '+(i+1)+' quantity for '+e.poId+' '+e.productId}),
           field('Manufacturer / supplier lot',lot.supplierLot,ev=>this.updateInspectionLot(e,i,{supplierLot:ev.target.value}),{maxLength:40}),
           field('Expiration date',lot.expiryDate,ev=>this.updateInspectionLot(e,i,{expiryDate:ev.target.value}),{type:'date',required:!lot.noExpiry,disabled:!!lot.noExpiry}),
@@ -1913,20 +1913,20 @@ class Component extends DCLogic {
       h('tr',{className:'inspection-detail-row'},[h('td',{colSpan:10},details(e))])
     ]);};
     return h('dialog',{className:'receiving-dialog inspection-dialog','aria-label':'Receive delivery inspection',ref:node=>{if(node&&!node.open)node.showModal();},onCancel:ev=>{ev.preventDefault();close();}},h('div',{className:'inspection-shell'},[
-      h('header',{className:'inspection-header'},[h('div',null,[h('small',null,'STOCK RECEIVING'),h('h2',null,'Receive Delivery'),h('p',null,'Inspect delivered goods, add earlier outstanding items, and review before posting.')]),h('button',{type:'button','aria-label':'Close receiving',disabled:!!this.state.receivingSaving,onClick:close},'×')]),
+      h('header',{className:'inspection-header'},[h('div',null,[h('small',null,'STOCK RECEIVING'),h('h2',null,'Receive Delivery'),null]),h('button',{type:'button','aria-label':'Close receiving',disabled:!!this.state.receivingSaving,onClick:close},'×')]),
       h('div',{className:'inspection-scroll'},h('fieldset',{className:'inspection-body',disabled:!!this.state.receivingSaving},[
         h('div',{className:'inspection-po-details'},[field('Purchase Order No.',order.id,null,{readOnly:true}),field('Supplier',order.supplierName||this.purchaseSupplier(order.supplierId),null,{readOnly:true}),field('PO Date',String(order.created||'').slice(0,10),null,{readOnly:true}),h('div',null,[h('small',null,'PO Status'),badge(order.status)])]),
-        this.state.inspectionReview?h('section',{className:'inspection-review'},[h('h3',null,'Review stock receipt'),h('p',null,'One stock receipt will retain all original PO allocations. Exceptions are saved for approval without adding inventory.'),h('div',{className:'inspection-table-wrap'},table(['PO','Product','Receiving type','Delivered','Damaged','Accepted','Remaining'],d.entries.filter(e=>Number(e.delivered)>0).map(e=>tr([td(e.poId),td(this.inspectionProduct(e)?.name),td(e.type==='current'?'Current PO':e.type==='damaged'?'Damaged replacement':e.type==='missing'?'Previously missing':'Previous outstanding'),td(e.delivered),td(e.damaged||0),td(this.inspectionAccepted(e)),td(Math.max(0,this.carryoverAvailable(this.inspectionLine(e)||{})-this.inspectionAccepted(e)))],e.key)))),...d.entries.filter(e=>Number(e.delivered)>0).map(e=>h('p',{key:e.key},[h('strong',null,(this.inspectionProduct(e)?.name||'')+' — '+e.poId),': '+e.lots.map(l=>l.quantity+' units / lot '+(l.supplierLot||'not supplied')+' / expiry '+(l.expiryDate||'not applicable')).join('; ')]))]):h(React.Fragment,null,[
+        this.state.inspectionReview?h('section',{className:'inspection-review'},[h('h3',null,'Review stock receipt'),null,h('div',{className:'inspection-table-wrap'},table(['PO','Product','Receiving type','Delivered','Damaged','Accepted','Remaining'],d.entries.filter(e=>Number(e.delivered)>0).map(e=>tr([td(e.poId),td(this.inspectionProduct(e)?.name),td(e.type==='current'?'Current PO':e.type==='damaged'?'Damaged replacement':e.type==='missing'?'Previously missing':'Previous outstanding'),td(e.delivered),td(e.damaged||0),td(this.inspectionAccepted(e)),td(Math.max(0,this.carryoverAvailable(this.inspectionLine(e)||{})-this.inspectionAccepted(e)))],e.key)))),...d.entries.filter(e=>Number(e.delivered)>0).map(e=>h('p',{key:e.key},[h('strong',null,(this.inspectionProduct(e)?.name||'')+' — '+e.poId),': '+e.lots.map(l=>l.quantity+' units / lot '+(l.supplierLot||'not supplied')+' / expiry '+(l.expiryDate||'not applicable')).join('; ')]))]):h(React.Fragment,null,[
           h('details',{className:'inspection-delivery-info',open:true},[h('summary',null,'Delivery information · '+d.deliveryDate),h('div',{className:'inspection-delivery-grid'},[field('Delivery date',d.deliveryDate,ev=>this.setState({inspection:{...d,deliveryDate:ev.target.value}}),{type:'date',max:this.state.data?.BUSINESS_DATE}),field('Supplier delivery / invoice reference *',d.supplierReference,ev=>this.setState({inspection:{...d,supplierReference:ev.target.value}}),{maxLength:100}),field('Received by',this.state.authenticatedUser?.name||'',null,{readOnly:true})])]),
-          h('section',null,[h('div',{className:'inspection-section-title'},[h('h3',null,'1. Products for this Purchase Order'),h('span',null,primary.length+' products')]),h('p',{className:'inspection-help'},'Delivered includes damaged units. Accepted = delivered − damaged. Outstanding includes undelivered goods and replacements still due.'),stickyTable(h('div',{className:'inspection-table-wrap'},h('table',null,[h('thead',null,h('tr',null,['Product','SKU / Code','Unit','Ordered','Outstanding','Delivered','Damaged','Accepted','Undelivered','Expiration'].map(t=>h('th',{key:t},t)))),h('tbody',null,primary.map(row))])))]),
-          h('section',{className:'inspection-additional'},[h('div',{className:'inspection-section-title'},[h('div',null,[h('h3',null,'2. Add Outstanding Item (Optional)'),h('p',null,'Receive previous shortages or damaged-item replacements from the same supplier.')]),h('button',{type:'button',className:'inspection-add-button',disabled:!sourceOrders.length,onClick:()=>this.setState({inspection:{...d,entries:[...d.entries,this.newInspectionEntry(null,null,'outstanding')]}})},'+ Add Outstanding Item')]),!sourceOrders.length?h('small',null,'No other eligible previous POs for this supplier.'):null,...extra.map(e=>{
+          h('section',null,[h('div',{className:'inspection-section-title'},[h('h3',null,'1. Products for this Purchase Order'),h('span',null,primary.length+' products')]),null,stickyTable(h('div',{className:'inspection-table-wrap'},h('table',null,[h('thead',null,h('tr',null,['Product','SKU / Code','Unit','Ordered','Outstanding','Delivered','Damaged','Accepted','Undelivered','Expiration'].map(t=>h('th',{key:t},t)))),h('tbody',null,primary.map(row))])))]),
+          h('section',{className:'inspection-additional'},[h('div',{className:'inspection-section-title'},[h('div',null,[h('h3',null,'2. Add Outstanding Item (Optional)'),null]),h('button',{type:'button',className:'inspection-add-button',disabled:!sourceOrders.length,onClick:()=>this.setState({inspection:{...d,entries:[...d.entries,this.newInspectionEntry(null,null,'outstanding')]}})},'+ Add Outstanding Item')]),!sourceOrders.length?h('small',null,'No other eligible previous POs for this supplier.'):null,...extra.map(e=>{
             const source=sourceOrders.find(o=>o.id===e.poId),l=this.inspectionLine(e),b=l?.obligation;
             return h('div',{className:'inspection-previous-card',key:e.key},[h('div',{className:'inspection-section-title'},[h('strong',null,'Previous Purchase Order Item'),h('button',{type:'button',className:'inspection-text-button',onClick:()=>this.setState({inspection:{...d,entries:d.entries.filter(x=>x.key!==e.key)}})},'Remove')]),
               h('div',{className:'inspection-previous-selects'},[
                 h('label',null,['Original Purchase Order No.',h('select',{'aria-label':'Original PO '+e.key,value:e.poId,onChange:ev=>{const o=sourceOrders.find(o=>o.id===ev.target.value);this.updateInspection(e.key,{...this.newInspectionEntry(o,null,'outstanding'),key:e.key});}},[h('option',{value:''},'Select previous PO'),...sourceOrders.map(o=>h('option',{value:o.id,key:o.id},o.id))])]),
                 h('label',null,['Original product',h('select',{'aria-label':'Outstanding product '+e.key,value:e.productId||'',onChange:ev=>{const l=source?.lines.find(l=>Number(l.productId)===Number(ev.target.value));this.updateInspection(e.key,{...this.newInspectionEntry(source,l,(!l?.obligation||l.obligation.unclassified)?'outstanding':l?.obligation?.missing>0?'missing':'damaged'),key:e.key});}},[h('option',{value:''},'Select product'),...(source?.lines||[]).filter(l=>this.carryoverAvailable(l)>0).map(l=>h('option',{value:l.productId,key:l.productId},l.name+' · '+this.carryoverAvailable(l)+' outstanding'))])]),
                 h('label',null,['Receiving type',h('select',{'aria-label':'Receiving type '+e.key,value:e.type,onChange:ev=>this.updateInspection(e.key,{type:ev.target.value,delivered:'',damaged:'',lots:[{quantity:0,supplierLot:'',expiryDate:'',manufacturedDate:''}]})},b?.unclassified||!b||!l?[h('option',{value:'outstanding'},'Previous outstanding item')]:[...(Number(b?.missing??this.carryoverAvailable(l))>0?[h('option',{value:'missing'},'Previously missing item')]:[]),...(Number(b?.damaged)>0?[h('option',{value:'damaged'},'Damaged replacement')]:[])])])
-              ]),b?.unclassified?h('p',{className:'inspection-help'},'Earlier records do not separate the remaining missing and damaged quantities. This entry resolves the recorded outstanding balance without inventing a damage claim.'):null,
+              ]),b?.unclassified?null:null,
               l?stickyTable(h('div',{className:'inspection-table-wrap'},h('table',null,[h('thead',null,h('tr',null,['Product','SKU / Code','Unit','Ordered','Outstanding','Delivered','Damaged','Accepted','Undelivered','Expiration'].map(t=>h('th',{key:t},t)))),h('tbody',null,row(e))]))):null
             ]);
           })]),
@@ -1954,7 +1954,7 @@ class Component extends DCLogic {
     const close=()=>{if(!this.receivingBusy)this.setState({purchaseReceivingId:null});};
     const receiptIds=new Set(receipts.filter(r=>r.date===this.state.data?.BUSINESS_DATE).map(r=>r.deliveryBatch||r.id));
     return h('div',{className:'receiving-workspace'},[
-      sectionTitle('Stock Receiving','Receive approved purchase orders and manage supplier deliveries.'),
+      sectionTitle('Stock Receiving'),
       h('div',{className:'receiving-card-metrics'},[kpi('Purchase Orders Awaiting Receipt',pending.length+' POs'),kpi('Stock Receipts Today',receiptIds.size),kpi('Outstanding Items',pending.reduce((n,o)=>n+o.lines.filter(l=>this.carryoverAvailable(l)>0).length,0)+' lines'),kpi('Fully Received Purchase Orders',orders.filter(o=>o.fulfillmentStatus==='Fully Received'||o.status==='Fully Received').length+' POs')]),
       h('section',{className:'receiving-card-panel'},[
         h('div',{className:'receiving-card-tabs','aria-label':'Receiving views'},[
@@ -1963,7 +1963,7 @@ class Component extends DCLogic {
         ]),
         tab==='history'?h(React.Fragment,null,[this.buildStockReceiptHistory(),this.buildDeliveryHistory(orders),!receipts.length?h('p',{className:'record-empty'},'No stock receipts have been recorded.'):null]):h(React.Fragment,null,[
           h('h3',null,tab==='missing'?'Outstanding Items':'Purchase Orders Awaiting Receipt'),
-          h('p',{className:'receiving-card-help'},tab==='missing'?'Previously received orders with quantities still outstanding.':'Approved purchase orders with quantities remaining to receive.'),
+          null,
           h('input',{className:'receiving-card-search',type:'search','aria-label':'Search purchase orders',placeholder:'Search purchase order, supplier, or product...',value:query,onChange:e=>this.setState({receivingCardSearch:e.target.value})}),
           h('details',{className:'receiving-card-filters'},[h('summary',null,'Filter purchase orders'),this.purchaseFilters(true)]),
           h('div',{className:'receiving-card-list'},selected.length?selected.map(o=>{
@@ -1976,7 +1976,7 @@ class Component extends DCLogic {
             ]);
           }):h('p',{className:'record-empty',role:'status'},'No purchase orders match these filters.'))
         ])
-      ]),this.buildReceivingExample(),order?this.buildInspectionPopup(order,close):null
+      ]),order?this.buildInspectionPopup(order,close):null
     ]);
   }
 
@@ -1988,7 +1988,7 @@ class Component extends DCLogic {
     const isReplacement=r=>(r.lines||[]).some(l=>/replacement|substitut/i.test(l.conditionText||''));
     const filtered=all.filter(({o,r})=>(!type||(type==='replacement'?isReplacement(r):!isReplacement(r)))&&(!from||r.date>=from)&&(!to||r.date<=to)&&searchMatches([r.id,o.id,o.supplierName,r.receivedBy,r.remarks,...(r.lines||[]).map(l=>l.name)].join(' '),query));
     return h('div',{className:'receiving-workspace'},[
-      sectionTitle('Transaction History','Audit trail of posted purchase receipts. Open the Inventory Ledger for other stock movements.'),
+      sectionTitle('Transaction History'),
       h('div',{className:'receiving-card-metrics'},[kpi('Posted PO Receipts',all.length),kpi('Purchase Orders Received',orders.filter(o=>o.receipts?.length).length),kpi('Replacement / Substitution Receipts',all.filter(({r})=>isReplacement(r)).length),kpi('Latest Receipt Date',all[0]?.r.date||'No receipts')]),
       h('section',{className:'receiving-card-panel'},[
         h('div',{className:'receiving-card-row'},[h('h3',null,'Receipt Transactions'),h('button',{type:'button',className:'kita-button',onClick:()=>{this.setState({screen:'mgrInventory'});this.openInventoryView('movements');}},'Inventory Ledger')]),
@@ -2027,10 +2027,10 @@ class Component extends DCLogic {
     const f=this.state.deliveryPlan,requests=this.state.purchaseData.requests||[],posted=this.state.purchaseData.orders;
     const orders=this.filterPurchases([...posted.map(o=>({...o,sourceRequest:requests.find(r=>r.id===o.id||r.poId===o.id),posted:true})),...requests.filter(r=>!posted.some(o=>o.id===(r.poId||r.id))).map(r=>({...r,created:r.dateRequested,sourceRequest:r,posted:false}))]);
     const edit=(key,value)=>this.setState({deliveryPlan:{...f,[key]:value}});
-    return h('div',{className:'inventory-workspace'},[sectionTitle('Purchase Orders','Approval creates the order. Accepted receipts add stock and payable. Later deliveries stay on the same PO.'),
+    return h('div',{className:'inventory-workspace'},[sectionTitle('Purchase Orders'),
       h('div',{className:'inventory-view-tabs'},[btn('Create Purchase Order',this.goScreen('mgrRequest')),btn('Stock Receiving',this.goScreen(this.state.role==='manager'?'mgrPO':'admReceivingApprovals')),btn('Supplier Accounts',this.goScreen('supplierAccounts'))]),this.purchaseFilters(),
       this.recordTable('purchase-order-workspace',['Purchase ID','PO Date','Supplier','Items','Expected Delivery','Status','Actions'],orders.map(o=>tr([td(o.id),td(o.sourceRequest?.dateRequested||o.created),td(o.supplierName||this.purchaseSupplier(o.supplierId??o.lines[0]?.supplierId)),td(o.lines.length),td(o.expectedDeliveryDate||'Not scheduled'),td(badge(o.status)),td([...(o.sourceRequest?this.purchaseRequestActions(o.sourceRequest):[this.purchaseReportLink(o.id)]),...(o.posted?[btn('Delivery Plan',()=>this.setState({deliveryPlan:{...o}})),h('a',{className:'kita-button',href:'/purchase-orders/'+encodeURIComponent(o.id)+'/order',target:'_blank',rel:'noopener'},'Print Supplier PO'),this.state.role==='admin'&&!['Cancelled','Closed'].includes(o.status)&&o.lines.some(l=>this.receivingOutstanding(l)>0)?btn('Cancel Remaining',()=>this.cancelPurchaseRemainder(o.id)):null]:[])])],o.id))),this.purchaseRequestDetails(),this.purchaseReviewDetails(),
-      f?card([h('h3',null,'Delivery plan ? '+f.id),h('p',null,'Print the supplier PO and send it through your chosen channel. Record when and how you sent it below.'),h('div',{className:'purchase-filters'},[
+      f?card([h('h3',null,'Delivery plan ? '+f.id),null,h('div',{className:'purchase-filters'},[
         ...[['expectedDeliveryDate','Expected delivery'],['supplierSentDate','Date sent to supplier']].map(([key,label])=>h('label',{key},[label,h('input',{type:'date',value:f[key]||'',onChange:e=>edit(key,e.target.value)})])),
         h('label',null,['Sent via',h('select',{value:f.supplierSentVia||'',onChange:e=>edit('supplierSentVia',e.target.value)},['','Email','Printed copy','Phone','Online portal','In person'].map(v=>h('option',{value:v},v||'Choose channel')))]),
         h('label',null,['Communication notes',h('textarea',{value:f.supplierSentNote||'',maxLength:2000,onChange:e=>edit('supplierSentNote',e.target.value)})])]),h('button',{className:'kita-button',disabled:!!this.state.deliveryPlanSaving,onClick:this.saveDeliveryPlan},this.state.deliveryPlanSaving?'Saving...':'Save delivery plan'),btn('Cancel',()=>this.setState({deliveryPlan:null}))]):null]);
@@ -2053,11 +2053,11 @@ class Component extends DCLogic {
     const receipts=(d?.receipts||[]).filter(r=>!s.accountSupplier||String(r.supplierId)===s.accountSupplier),ids=new Set(receipts.map(r=>r.id));
     const entries=(d?.settlements||[]).filter(e=>ids.has(e.receiptId));
     const edit=(key,value)=>this.setState({settlementForm:{...f,[key]:value,requestKey:crypto.randomUUID()}});
-    return h('div',{className:'inventory-workspace'},[sectionTitle('Supplier Accounts','Accepted purchase receipts create payable balances. Record completed payments or supplier-issued credit notes; KITA does not transfer money.'),
+    return h('div',{className:'inventory-workspace'},[sectionTitle('Supplier Accounts'),
       h('div',{className:'purchase-filters'},[h('label',null,['Supplier',h('select',{value:s.accountSupplier||'',onChange:e=>this.setState({accountSupplier:e.target.value})},[h('option',{value:''},'All suppliers'),...(s.data?.SUPPLIERS||[]).map(v=>h('option',{value:v.id},v.name))])]),h('button',{className:'kita-button',disabled:s.supplierAccountsLoading,onClick:this.loadSupplierAccounts},s.supplierAccountsLoading?'Refreshing...':'Refresh'),btn('Reports / Export',()=>{this.setState({screen:'admReports',reportFilters:{type:'payables',supplierId:s.accountSupplier||''}});})]),
       s.supplierAccountsError?h('p',{role:'alert'},s.supplierAccountsError):null,
       h('div',{className:'inventory-summary'},[kpi('Accepted Purchases',peso(receipts.reduce((n,r)=>n+Number(r.receivedValue),0))),kpi('Recorded Payments',peso(receipts.reduce((n,r)=>n+Number(r.payments),0))),kpi('Supplier Credits',peso(receipts.reduce((n,r)=>n+Number(r.credits),0))),kpi('Unpaid Balance',peso(receipts.reduce((n,r)=>n+Number(r.balance),0)))]),
-      h('p',{className:'inventory-help'},'Amounts use receipt costs. Missing due dates remain unspecified. Records marked for legacy review are excluded from unpaid totals and need reconciliation before further settlement. Payments and credit notes are recorded by an admin.'),
+      null,
       this.recordTable('supplier-balances',['Supplier','PO Number','Receipt ID','Receipt Date','Due Date','Accepted Value','Payments','Credits','Unpaid Balance','Account Remark','Actions'],receipts.map(r=>tr([td(r.supplierName),td(r.poId),td(r.id),td(r.date),td(r.paymentDueDate||'Not recorded'),td(peso(r.receivedValue)),td(peso(r.payments)),td(peso(r.credits)),td(r.balance==null?'Review required':peso(r.balance)),td(r.accountRemark),td([h('a',{href:'/receipts/'+encodeURIComponent(r.id)+'/report',target:'_blank',rel:'noopener'},'Receipt slip'),admin&&Number(r.balance)>0&&!r.unknownCosts&&Number(r.legacyPaidValue||0)===0?btn('Record Payment / Credit',()=>this.setState({settlementForm:{receiptId:r.id,kind:'Payment',date:s.data?.BUSINESS_DATE||new Date().toISOString().slice(0,10),amount:'',reference:'',notes:'',requestKey:crypto.randomUUID()}})):null])],r.id))),
       f?card([h('h3',null,'Record entry for '+f.receiptId),h('div',{className:'purchase-filters'},[h('label',null,['Entry type',h('select',{value:f.kind,onChange:e=>edit('kind',e.target.value)},['Payment','Credit note'].map(v=>h('option',{value:v},v)))]),...[['date','Date','date'],['amount','Amount (PHP)','number'],['reference','Payment / credit note reference','text'],['notes','Notes','text']].map(([key,label,type])=>h('label',{key},[label,h('input',{type,value:f[key],...(type==='number'?{min:0.01,step:0.01}:{}),onChange:e=>edit(key,e.target.value)})]))]),h('button',{className:'kita-button',disabled:s.settlementSaving,onClick:this.saveSupplierSettlement},s.settlementSaving?'Saving...':'Record entry'),btn('Cancel',()=>this.setState({settlementForm:null}))]):null,
       h('h3',null,'Payment and credit history'),this.recordTable('supplier-settlements',['Date','Receipt ID','Type','Amount','Reference','Recorded By','Remarks','Action'],entries.map(e=>tr([td(e.date),td(e.receiptId),td(e.kind),td(peso(e.amount)),td(e.reference),td(e.actor),td(e.voidedAt?'Voided: '+e.voidReason:e.notes),td(admin&&!e.voidedAt?btn('Void entry',()=>this.voidSupplierSettlement(e.id)):null)],e.id)))]);
@@ -2164,14 +2164,14 @@ class Component extends DCLogic {
       return h('div',null,[...common,h('a',{className:'kita-button',href:'/reports/data?type=expiry&format=print&to='+new Date(new Date(d.today+'T00:00:00Z').getTime()+days*86400000).toISOString().slice(0,10),target:'_blank',rel:'noopener'},'Print Expiration Report'),this.buildExpirySettings(),h('label',null,['Show expiry within days (including expired stock)',h('input',{type:'number',min:0,max:3650,value:days,onChange:e=>this.setState({expiryDays:Math.max(0,Number(e.target.value)||0)})})]),this.recordTable('live-expiry',['Product ID','Product','Category','Manufacturer','Batch','Expiry','Days left','Remaining','Unit','Status','Action'],batches.map(b=>tr([td(b.productId),td(b.name),td(b.category||'Not recorded'),td(b.manufacturer||'Not recorded'),td(b.batchNumber||'No batch label'),td(b.expiryDate),td(Math.ceil((new Date(b.expiryDate)-new Date(d.today))/86400000)),td(b.quantityRemaining),td(b.stockUnit),td(b.expiryDate<=d.today?'Expired - blocked':'Expiring soon'),td(btn('Pull out',()=>this.setState({invTab:'writeoffs',workflowKey:null,workflowForm:{type:'Disposal',batchId:b.id,quantity:b.quantityRemaining,reason:b.expiryDate<=d.today?'Expired stock':'Short shelf life - manual pull-out'}})))],b.id)))]);
     }
     if(tab==='reconciliation'){
-      return h('div',null,[...common,h('p',null,'Count all stock still on hand, including expired units awaiting disposal. Include recalled units in quarantine. Exclude units already disposed or transferred out. Resolve pending payments before counting. Pause movements during counting. If stock moves, cancel and restart the count. Surplus uses estimated cost; shortages use FIFO.'),
+      return h('div',null,[...common,null,
         h('div',{className:'purchase-filters'},[select('mode','Count type',[['Cycle','Cycle'],['Blind','Blind (expected counts hidden)'],['Full','Full inventory']]),select('category','Category (blank = all)',(s.data.CATEGORIES||[]).map(c=>[c.name,c.name])),action('Start count',()=>this.saveInventoryWorkflow('counts',{mode:f.mode||'Cycle',category:f.category||null}))]),
         ...d.counts.map(c=>card([h('h3',null,'Count #'+c.id+' ? '+c.mode+' ? '+c.status),h('p',null,c.created_at+' | '+c.actor),this.recordTable('count-'+c.id,['Product',...(c.mode==='Blind'&&c.status==='Open'?[]:['Expected']),'Physical count',...(c.status==='Completed'?['Variance']:[])],c.lines.map(l=>tr([td(l.name),...(c.mode==='Blind'&&c.status==='Open'?[]:[td(l.expected)]),td(c.status==='Open'?h('input',{'aria-label':'Count '+l.name,type:'number',min:0,step:1,value:s.countValues?.[l.id]??'',onChange:e=>this.setState({countValues:{...this.state.countValues,[l.id]:e.target.value}})}):l.counted??'-'),...(c.status==='Completed'?[td(l.counted-l.expected)]:[])],l.id))),c.status==='Open'?h('div',null,[h('label',null,['Reason / investigation notes',h('textarea',{value:s.countReason||'',onChange:e=>this.setState({countReason:e.target.value})})]),action('Complete and reconcile',()=>{if(c.lines.some(l=>String(s.countValues?.[l.id]??'').trim()==='')){this.setState({workflowError:'Count every item, including zero quantities.'});return;}if(window.confirm('Apply this physical count to inventory?'))this.saveInventoryWorkflow('counts/'+c.id,{action:'Complete',reason:s.countReason||'',lines:c.lines.map(l=>({productId:l.productId,counted:Number(s.countValues[l.id])}))});}),action('Cancel count',()=>this.saveInventoryWorkflow('counts/'+c.id,{action:'Cancel',reason:s.countReason||'Count cancelled'}))]):h('p',null,c.reason)]))]);
     }
     const recall=tab==='recall';
     const groups=this.inventoryBatchGroups(d.batches);
-    return h('div',null,[...common,recall?this.buildRecallTrace():null,h('p',null,recall?'Browse by batch, then select the product entry to recall or release. The action affects the selected stock entry; physical quantities stay unchanged and expiry restrictions still apply.':'Write-offs and disposal remove stock. Transfers record stock leaving this store for the named destination; they do not add stock to another store.'),
-      h('div',{className:'purchase-filters'},[recall?select('recallAction','Action',[['Recall','Recall batch'],['Release recall','Release recall']]):select('type','Action',[['Write-off','Write-off'],['Disposal','Disposal'],['Supplier return','Return to original supplier'],['Transfer','Transfer out']]),h('label',{className:'field-group'},['Batch',h('select',{value:f.batchId||'',onChange:e=>set('batchId',e.target.value)},[h('option',{value:''},'Select a product entry'),...groups.map(({batch,items})=>h('optgroup',{key:batch,label:batch},items.map(b=>h('option',{key:b.id,value:b.id},b.name+' / '+('Entry #'+b.id)+' / on hand '+(b.stockOnHand??b.quantityRemaining)+' / '+(b.eligibility||'Eligible')))))])]),recall?h('p',null,'Entire batch; physical quantities are unchanged.'):field('quantity','Quantity','number'),!recall?field('destination','Destination (required for transfer)'):null,field('reason','Reason'),action(recall?'Save recall status':'Record stock action',()=>{if(!window.confirm(recall?'Change batch recall status? Physical stock is unchanged.':'Record this physical stock removal?'))return;const key=this.state.workflowKey||crypto.randomUUID();this.setState({workflowKey:key});this.saveInventoryWorkflow('events',{requestKey:key,type:recall?(f.recallAction||'Recall'):f.type,batchId:Number(f.batchId),quantity:recall?Number(d.batches.find(b=>String(b.id)===String(f.batchId))?.quantityRemaining||0):Number(f.quantity),reason:f.reason||'',destination:f.destination||null});})]),
+    return h('div',null,[...common,recall?this.buildRecallTrace():null,null,
+      h('div',{className:'purchase-filters'},[recall?select('recallAction','Action',[['Recall','Recall batch'],['Release recall','Release recall']]):select('type','Action',[['Write-off','Write-off'],['Disposal','Disposal'],['Supplier return','Return to original supplier'],['Transfer','Transfer out']]),h('label',{className:'field-group'},['Batch',h('select',{value:f.batchId||'',onChange:e=>set('batchId',e.target.value)},[h('option',{value:''},'Select a product entry'),...groups.map(({batch,items})=>h('optgroup',{key:batch,label:batch},items.map(b=>h('option',{key:b.id,value:b.id},b.name+' / '+('Entry #'+b.id)+' / on hand '+(b.stockOnHand??b.quantityRemaining)+' / '+(b.eligibility||'Eligible')))))])]),recall?null:field('quantity','Quantity','number'),!recall?field('destination','Destination (required for transfer)'):null,field('reason','Reason'),action(recall?'Save recall status':'Record stock action',()=>{if(!window.confirm(recall?'Change batch recall status? Physical stock is unchanged.':'Record this physical stock removal?'))return;const key=this.state.workflowKey||crypto.randomUUID();this.setState({workflowKey:key});this.saveInventoryWorkflow('events',{requestKey:key,type:recall?(f.recallAction||'Recall'):f.type,batchId:Number(f.batchId),quantity:recall?Number(d.batches.find(b=>String(b.id)===String(f.batchId))?.quantityRemaining||0):Number(f.quantity),reason:f.reason||'',destination:f.destination||null});})]),
       recall?this.groupedBatchTables('recall-stock',d.batches,['Product','Supplier reference','On hand','Unit','Expiry','Status','Action'],b=>tr([td(b.name),td(b.lotNumber||'Not recorded'),td(b.stockOnHand??b.quantityRemaining),td(b.stockUnit),td(b.expiryDate||'No expiration'),td(b.recalled?'Recalled':b.eligibility||'Available'),td(btn('Select this lot',()=>this.setState({workflowForm:{...f,batchId:String(b.id)},workflowKey:null})))],b.id)):null,
       this.recordTable('inventory-events-'+tab,['Reference','Date','Product','Batch','Type','Quantity affected','Destination','Reason','Recorded by'],d.events.filter(e=>recall?['Recall','Release recall'].includes(e.type):!['Recall','Release recall'].includes(e.type)).map(e=>tr([td('INV-'+e.id),td(e.created_at),td(e.name),td(e.batchNumber||'Batch #'+e.batchId),td(e.type),td(e.quantity),td(e.destination||'-'),td(e.reason),td(e.actor)],e.id)))]);
   }
@@ -2202,7 +2202,7 @@ class Component extends DCLogic {
         btn('Export / Print',()=>this.openInventoryView('products')),
         selected?btn('Archive selected ('+selected+')',this.moveInvSelectedToArchive,'danger'):null,
       ]),
-      h('p',{className:'inventory-help'},'Qty on Hand is physical stock, including reservations and blocked batches. Available Qty can be sold now. Expired and recalled quantities can overlap; do not add them together. Quantities use each item’s Stock Unit.'),
+      null,
       this.recordTable('inventory-balance',headers,list.map(p=>tr([
         td(h('input',{type:'checkbox','aria-label':'Select '+p.name,checked:!!s.invSelected?.[p.id],onChange:this.toggleInvSelect(p.id)})),td(p.id),td(h('button',{className:'inventory-item-link',onClick:()=>this.openInventoryView('movements',p.id)},this.productLabel(p))),td([p.size,p.sizeUnit].filter(Boolean).join(' ')||'—'),td(p.stockUnit||p.unit||'Not set'),td(p.stockOnHand??p.stock),td(p.reservedStock||0),td(this.sellableStock(p)),td(p.minStock||0),td(badge(this.inventoryCondition(p))),td(peso(p.inventoryValue||0)),td(p.category),td((d.BRANDS||[]).find(b=>String(b.id)===String(p.brandId))?.name||'—'),td(p.barcode||'—'),td(this.purchaseSupplier(p.supplierId)),td(p.expiredStock||0),td(p.recalledStock||0),td(p.unavailableStock||0),td((p.exclusionReasons||[]).join('; ')||'Available for sale'),td(peso(p.unitPrice)),td(peso(p.price)),
         td(h('div',{className:'inventory-row-actions'},[btn('Ledger',()=>this.openInventoryView('movements',p.id)),btn('Batches',()=>this.openInventoryView('batches',p.id)),btn('Edit Item',()=>this.editProductMaster(p)),p.needsReorder?btn('Request Stock',()=>this.draftInventoryRequest(p)):null]))
@@ -2260,7 +2260,7 @@ class Component extends DCLogic {
     return React.createElement("div",null,[
       React.createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:10}},[
         this.state.stockAvailabilityError?React.createElement("p",{role:"alert"},"Live stock update failed: "+this.state.stockAvailabilityError):null,
-        sectionTitle("Inventory","Track current stock, review item transactions, and manage batch quantities. Purchase receipts add accepted units; sales and approved stock issues update balances automatically."),
+        sectionTitle("Inventory"),
         React.createElement("div",{key:"actions",style:{display:"flex",gap:8}},[btn("Inventory Ledger",()=>this.openInventoryView("movements")),btn("Batch Records",()=>this.openInventoryView("batches")),btn("+ Add Item",this.goScreen("mgrRegistration"),"primary"),btn("+ Add Category",this.openCategoryModal),btn("âš  Add Damage",this.openAddDamage,"danger")]),
       ]),
       React.createElement("div",{style:{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap"}},tabs.map(([k,l])=>React.createElement("button",{key:k,onClick:this.setInvTab(k),style:{padding:"8px 14px",borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer",background:invTab===k?COLORS.brand:"#fff",color:invTab===k?"#fff":COLORS.text,border:"1px solid "+(invTab===k?COLORS.brand:COLORS.border)}},l))),
@@ -2338,7 +2338,7 @@ class Component extends DCLogic {
   buildMgrCategories(){
     const categories=(this.state.categoriesLocal||[]).filter(c=>!c.archivedAt);
     return React.createElement("div",null,[
-      sectionTitle("Categories, Subcategories and Brands","Create a category for new products, then register the product before requesting a purchase."),
+      sectionTitle("Categories, Subcategories and Brands"),
       React.createElement("div",{key:"actions",style:{display:"flex",gap:8,flexWrap:"wrap",marginBottom:16}},[
         btn("+ Add Category",this.openCategoryModal,"primary"),
         btn("Register New Product",this.goScreen("mgrRegistration")),
@@ -2389,12 +2389,12 @@ class Component extends DCLogic {
       sectionTitle(kind==='brands'?'Brands':'Subcategories'),btn('Add '+(kind==='brands'?'brand':'subcategory'),()=>this.setState({masterForm:{kind,name:'',category:'',status:'Active'}})),
       kind==='brands'?h('div',{style:{margin:'12px 0'}},[
         btn('Add standard brands',this.populateBrands,'primary'),
-        h('p',null,'Load a broad starter list for groceries, personal care, household supplies, appliances and electronics. Existing brands are preserved. Use Add brand for any others you carry.'),
+        null,
         this.state.brandImportMessage?h('p',{role:'status'},this.state.brandImportMessage):null
       ]):null,
       kind==='subcategories'?h('div',{style:{margin:'12px 0'}},[
         btn('Add standard subcategories',this.populateSubcategories,'primary'),
-        h('p',null,'Add common retail subcategories across the supported categories, including Appliances. Existing entries are preserved. Use Add subcategory for custom categories.'),
+        null,
         this.state.subcategoryImportMessage?h('p',{role:'status'},this.state.subcategoryImportMessage):null
       ]):null,
       this.recordTable(kind,['Name',...(kind==='subcategories'?['Category']:[]),'Status','Actions'],(data[kind.toUpperCase()]||[]).map(r=>tr([td(r.name),...(kind==='subcategories'?[td(r.category)]:[]),td(badge(r.status)),td([btn('Edit',()=>this.setState({masterForm:{...r,kind}})),btn(r.status==='Active'?'Deactivate':'Activate',async()=>{try{await this.authPost('/api/product-master/'+kind+'/'+r.id,{...r,status:r.status==='Active'?'Inactive':'Active'},'PATCH');await this.reloadCatalog();}catch(e){this.toast(e.message,'error');}})])],r.id)))
@@ -2445,15 +2445,15 @@ class Component extends DCLogic {
     const titles={products:'Stock Balance',batches:'Batch Records',movements:'Inventory Ledger'};
     const field=(key,label,options)=>h('label',{key},[label,options?h('select',{value:f[key]||'',onChange:e=>this.setState({inventoryFilters:{...f,[key]:e.target.value,...(key==='category'?{subcategoryId:'',productId:''}:key==='subcategoryId'?{productId:''}:{})}})},[h('option',{value:''},'All'),...options.map(([value,text])=>h('option',{key:value,value},text))]):h('input',{type:'date',value:f[key]||'',onChange:e=>this.setState({inventoryFilters:{...f,[key]:e.target.value}})})]);
     const schema=this.inventorySchema(kind),rows=this.inventoryRows(kind),busy=this.state.inventoryHistoryLoading,blocked=!history||busy||!!this.state.inventoryHistoryError;
-    return h('div',{className:'inventory-workspace'},[sectionTitle(titles[kind],kind==='batches'?'Expand a batch to view all products received together. Each product entry keeps its expiry, cost, and original PO. Times use Asia/Manila.':'Review posted transactions and the stock they affect. Item quantities use the displayed Stock Unit.'),
+    return h('div',{className:'inventory-workspace'},[sectionTitle(titles[kind]),
       h('div',{className:'inventory-view-tabs'},[btn('Back to Inventory',()=>this.setState({inventoryHistoryOpen:false})),...Object.entries(titles).map(([view,label])=>h('button',{type:'button',className:'kita-button','aria-pressed':kind===view,onClick:()=>{const filters={...f};delete filters.from;delete filters.to;delete filters.lowStock;delete filters.movementType;this.setState({inventoryView:view,inventoryFilters:filters,inventoryAppliedFilters:filters});this.loadInventoryHistory(filters);}},label))]),
       h('div',{className:'purchase-filters'},[field('category','Category',d.CATEGORIES.map(c=>[c.name,c.name])),this.buildSubcategorySelect(f.category,f.subcategoryId,e=>this.setState({inventoryFilters:{...f,subcategoryId:e.target.value,productId:''}}),{includeInactive:true}),field('brandId','Brand',(d.BRANDS||[]).map(c=>[c.id,c.name])),field('productId','Item',d.PRODUCTS.filter(p=>(!f.category||p.category===f.category)&&(!f.subcategoryId||String(p.subcategoryId)===String(f.subcategoryId))).map(c=>[c.id,c.name+' #'+c.id])),field('supplierId',kind==='batches'?'Receipt supplier':'Default item supplier',d.SUPPLIERS.map(c=>[c.id,c.name])),...(kind==='products'?[field('lowStock','Stock filter',[['1','Reorder level reached']])]:[field('from',kind==='movements'?'Posted from':'Receipt date from'),field('to',kind==='movements'?'Posted to':'Receipt date to')]),kind==='movements'?field('movementType','Transaction type',Object.entries(history?.movementTypes||{})):null]),
       h('div',{className:'inventory-view-tabs'},[h('button',{className:'kita-button',disabled:busy,onClick:this.applyInventoryFilters},busy?'Refreshing...':'Refresh'),btn('Clear filters',()=>{this.setState({inventoryFilters:{},inventoryAppliedFilters:{}});this.loadInventoryHistory({});}),h('button',{className:'kita-button',disabled:blocked,onClick:this.exportInventoryHistory(kind)},'Export CSV (Excel)'),h('button',{className:'kita-button',disabled:blocked,onClick:this.printInventoryHistory(kind)},'Print / Save PDF')]),
-      h('p',{className:'inventory-help'},kind==='products'?'Current stock only. Available Qty excludes reserved, expired and recalled stock. Inventory value uses recorded batch costs; opening balances can be estimates.':kind==='batches'?'Each receipt keeps its recorded unit cost. Available Qty excludes units held for pending payments, expired stock, and recalled stock. Receipt-date filters select batches, not a past stock balance.':"Quantity increases and decreases reconcile the unreserved book balance, including payment holds and releases. This is not the physical on-hand balance. Batch references identify linked batches, not per-row quantity splits."),
+      null,
       kind==='movements'&&history?h('p',{className:'inventory-help'},'Showing '+history.movements.length+' of '+history.movementCount+' matching entries'+(history.movementCount>history.movementLimit?'. Limited to the latest '+history.movementLimit+'; narrow the date or item filters.':'.')):null,
       this.state.inventoryHistoryError?h('p',{role:'alert'},'Could not refresh inventory: '+this.state.inventoryHistoryError):null,
       history?(kind==='batches'?this.groupedBatchTables('inventory-batches',rows,schema.map(([label])=>label),row=>tr(schema.map(([,key])=>td(['unitCost','inventoryValue'].includes(key)?peso(row[key]):key==='poId'&&row[key]?h('a',{href:'/purchase-orders/'+encodeURIComponent(row[key])+'/report',target:'_blank',rel:'noopener'},row[key]):(['requestedAt','receivedAt'].includes(key)?(row[key]||'Not recorded'):row[key]??'—'))),row.id),{columnPicker:true,defaultHidden:kind==='products'?['Barcode','Category','Brand','Valuation Basis','Unavailable Qty','Availability Remarks']:kind==='batches'?['Manufactured Date','Manufacturer','Recorded By','Source']:['PO Number','Batch References','Remarks']}):this.recordTable('inventory-'+kind,schema.map(([label])=>label),rows.map(row=>tr(schema.map(([,key])=>td(['unitCost','inventoryValue'].includes(key)?peso(row[key]):key==='poId'&&row[key]?h('a',{href:'/purchase-orders/'+encodeURIComponent(row[key])+'/report',target:'_blank',rel:'noopener'},row[key]):(['requestedAt','receivedAt'].includes(key)?(row[key]||'Not recorded'):row[key]??'—'))),row.id)),{columnPicker:true,defaultHidden:kind==='products'?['Barcode','Category','Brand','Valuation Basis','Unavailable Qty','Availability Remarks']:kind==='batches'?['Manufactured Date','Manufacturer','Recorded By','Source']:['PO Number','Batch References','Remarks']})):loadingStatus('Loading inventory records...'),
-      history?h('p',{className:'inventory-help'},'Checked '+new Date(history.checkedAt).toLocaleString()+'. Exports include all loaded rows matching the table search, with all report columns.'):null
+      history?h('p',{className:'inventory-help'},'Checked '+new Date(history.checkedAt).toLocaleString()):null
     ]);
   }
   buildCategoryModal(){
@@ -2479,12 +2479,12 @@ class Component extends DCLogic {
           ]),
           !isSub?h('div',{className:'field-group'},[h('label',{htmlFor:'category-setup-brand'},'Or choose an existing brand'),h('select',{id:'category-setup-brand',value:s.categorySetupBrandId||'',onChange:e=>this.setState({categorySetupBrandId:e.target.value,categorySetupName:'',categoryError:''})},[h('option',{value:''},'Select brand'),...(s.data.BRANDS||[]).filter(b=>b.status==='Active').map(b=>h('option',{key:b.id,value:b.id},b.name))])]):null,
           categoryError?h('div',{role:'alert',className:'alert'},categoryError):null,
-          h('p',{className:'form-section-description'},'Previous lets you revise earlier steps. Cancel closes this setup; completed steps stay saved, and unsaved changes are discarded.'),
+          null,
           h('div',{className:'dialog-actions'},[btn('Cancel',this.closeCategoryModal),btn('Previous',this.previousCategoryStep),btn(isSub?'Next: Brand':'Finish setup',this.saveCategory,'primary')])
         ]);
     }
     return dialog([
-        h("p",{key:"help",className:"form-section-description"},"Group related products and choose how they are classified."),
+        null,
         h("div",{key:"name",className:"field-group"},[
           h("label",{htmlFor:"category-name"},"Category name *"),h("input",{id:"category-name",autoFocus:true,required:true,value:f.name,onChange:this.setCategoryField("name"),maxLength:100,placeholder:"e.g. Household supplies","aria-invalid":!!categoryError,"aria-describedby":categoryError?"category-error":undefined}),
         ]),
@@ -2492,7 +2492,7 @@ class Component extends DCLogic {
           h("label",{htmlFor:"category-classification"},"Classification *"),h("select",{id:"category-classification",required:true,value:f.classification||"",onChange:this.setCategoryField("classification"),"aria-invalid":!!categoryError,"aria-describedby":categoryError?"category-error":undefined},[h("option",{key:"empty",value:""},"Select classification"),...["Perishable","Non-Perishable"].map(value=>h("option",{key:value,value},value))]),
         ]),
         categoryError?h("div",{key:"error",id:"category-error",role:"alert",className:"alert"},categoryError):null,
-        !categoryEditing&&this.state.categorySetupCategory?h('p',{className:'form-section-description'},'Cancel closes this setup. Completed steps stay saved; unsaved changes are discarded.'):null,
+        !categoryEditing&&this.state.categorySetupCategory?null:null,
         h("div",{key:"actions",className:"dialog-actions"},[btn("Cancel",this.closeCategoryModal),btn(categoryEditing?"Save changes":"Next: Subcategory",this.saveCategory,"primary")]),
       ]);
   }
@@ -2531,10 +2531,10 @@ class Component extends DCLogic {
       h("select",{key:"input",id:"registration-"+key,value:s[key],onChange:this.setRegField(key),required,"aria-required":required},[h("option",{key:"empty",value:""},"Select "+label.toLowerCase()),...values.map(value=>h("option",{key:value,value},["regSizeUnit","regStockUnit"].includes(key)?({mL:"mL (Milliliter)",Liter:"L (Liter)",g:"g (Gram)",kg:"kg (Kilogram)",Kg:"kg (Kilogram)",cm:"cm (Centimeter)",m:"m (Meter)"}[value]||value):value))]),
     ]);
     const group=(number,title,description,fields)=>h("fieldset",{className:"form-section",key:title},[
-      h("legend",null,[h("span",{className:"section-number"},number),title]),h("p",{className:"form-section-description"},description),h("div",{className:"form-grid"},fields),
+      h("legend",null,[h("span",{className:"section-number"},number),title]),null,h("div",{className:"form-grid"},fields),
     ]);
     return h("div",{className:"registration-page"},[
-      sectionTitle(s.regEditing?"Edit Product":"Product Registration","Product information is separate from stock. New products start at zero; receiving adds stock."),
+      sectionTitle(s.regEditing?"Edit Product":"Product Registration"),
       h("div",{key:"actions",className:"page-toolbar"},[btn("New Product",()=>this.setState({regEditing:null,regParentId:"",regVariantLabel:"",registrationNotice:null,registrationError:"",regStockId:"",regProductName:"",regManufacturer:"",regScannedBarcode:"",regSaved:false,regBatch:"",regLot:"",regExpiry:"",regUnitPrice:"",regRetailPrice:"",regCategory:"",regSupplier:"",regReorderLevel:0,regPurchaseUnit:"Piece",regStockUnit:"Piece",regConversionFactor:"1",regStatus:"Active",regBrandId:"",regSubcategoryId:"",regSize:"",regSizeUnit:"",regEditReason:""}))]),
       h('div',{id:'registration-feedback',className:'registration-feedback'},[s.registrationNotice?h('p',{role:s.registrationNotice.tone==='error'?'alert':'status',className:'registration-notice registration-notice--'+s.registrationNotice.tone},s.registrationNotice.message):null,
       s.regSaved?h("div",{key:"print",className:"kita-card registration-receipt"},[
@@ -2552,7 +2552,7 @@ class Component extends DCLogic {
         h('div',{className:'registration-category'},[select("regCategory","Category",data.CATEGORIES.filter(c=>c.status==="Active").map(c=>c.name),true),btn('+ Add Category',this.openCategoryModal)]),
         h("label",{className:"field-group"},["Brand *",h("select",{required:true,"aria-required":true,value:s.regBrandId||"",onChange:this.setRegField("regBrandId")},[h("option",{value:""},"Select brand"),...(data.BRANDS||[]).filter(b=>b.status==="Active").map(b=>h("option",{value:b.id,key:b.id},b.name))])]),
         this.buildSubcategorySelect(s.regCategory,s.regSubcategoryId,this.setRegField("regSubcategoryId"),{registration:true}),
-        h('div',{className:'registration-size'},[h('div',{className:'registration-size-fields'},[field("regSize","Size",{type:"number",step:"0.001",placeholder:'e.g. 500'}),measurement]),h('small',null,'Size of one stock unit. Example: 500 mL per Bottle, or 1 kg per Pack. Enter 1 Piece for an item without a weight, volume, or length specification.')]),
+        h('div',{className:'registration-size'},[h('div',{className:'registration-size-fields'},[field("regSize","Size",{type:"number",step:"0.001",placeholder:'e.g. 500'}),measurement]),null]),
         select("regSupplier","Supplier",data.SUPPLIERS.filter(sp=>sp.status==="Active").map(sp=>sp.name)),
         select("regStatus","Status",["Active","Inactive"]),
       ]),
@@ -2684,7 +2684,7 @@ class Component extends DCLogic {
     const list=suppliersLocal.filter(sp=>sp.status==="Active"&&searchMatches(sp.name,q));
     const selCount=Object.values(supMgrSelected).filter(Boolean).length;
     return React.createElement("div",null,[
-      React.createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}},[sectionTitle("Supplier","Manager-facing supplier directory used when building requests"),btn("+ Add Supplier",this.openSupMgrModal(null),"primary")]),
+      React.createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}},[sectionTitle("Supplier"),btn("+ Add Supplier",this.openSupMgrModal(null),"primary")]),
       React.createElement("div",{style:{display:"flex",gap:10,alignItems:"center",marginBottom:12}},[
         React.createElement("input",{value:supMgrSearch,onChange:this.setSupMgrSearch,placeholder:"Search suppliersâ€¦",style:{padding:8,border:"1px solid "+COLORS.border,borderRadius:7,width:260}}),
         selCount>0?btn(`Move to Archive (${selCount})`,this.moveSupMgrSelectedToArchive,"danger"):null,
@@ -2845,7 +2845,7 @@ class Component extends DCLogic {
     else { const list=suppliersLocal.filter(s=>s.status==="Inactive"); headers=["","Supplier","Category","Archived On","Archived By"]; keyOf=s=>String(s.id);
       rows=list.map(s=>tr([td(React.createElement("input",{type:"checkbox",checked:!!archiveChecked[keyOf(s)],onChange:this.toggleArchiveCheck(keyOf(s))})),td(s.name),td(s.category),td(s.archivedAt||"â€”"),td(s.archivedBy||"â€”")],s.id)); }
     return React.createElement("div",null,[
-      sectionTitle("Archive","Soft-deleted / Inactive Items, Categories, and Suppliers â€” recoverable via Restore"),
+      sectionTitle("Archive"),
       React.createElement("div",{style:{display:"flex",gap:6,marginBottom:14}},tabs.map(([k,l])=>React.createElement("button",{key:k,onClick:this.setArchiveTab(k),style:{padding:"8px 14px",borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer",background:archiveTab===k?COLORS.brand:"#fff",color:archiveTab===k?"#fff":COLORS.text,border:"1px solid "+(archiveTab===k?COLORS.brand:COLORS.border)}},l))),
       checkedCount?React.createElement("div",{style:{display:"flex",gap:8,alignItems:"center",marginBottom:10}},[React.createElement("span",{style:{fontSize:12,fontWeight:700,color:COLORS.textSoft}},checkedCount+" selected"),btn("Restore",this.restoreArchived,"green"),btn("Delete Permanently",this.openArchiveConfirm,"danger")]):null,
       rows.length===0?card(React.createElement("div",{style:{padding:20,textAlign:"center",color:COLORS.textMuted,fontSize:13}},"Nothing archived in this category.")):this.recordTable("archive-"+archiveTab,headers,rows),
@@ -2859,7 +2859,7 @@ class Component extends DCLogic {
   }
   buildAdmReceivingApprovals(){ return this.buildPurchaseHistory(); }
   buildAdmInventoryApprovals(){ const {adjustmentsLocal,data}=this.state; if(!adjustmentsLocal) return null;
-    return React.createElement("div",null,[sectionTitle("Inventory Adjustment Approvals","Evidence shown inline"),
+    return React.createElement("div",null,[sectionTitle("Inventory Adjustment Approvals"),
       ...adjustmentsLocal.map(a=>{ const p=data.PRODUCTS.find(pp=>pp.id===a.productId); return card([
         React.createElement("div",{key:"h",style:{display:"flex",justifyContent:"space-between"}},[React.createElement("div",null,[React.createElement("div",{style:{fontWeight:700}},a.id+" Â· "+(p?p.name:"â€”")),React.createElement("div",{style:{fontSize:12,color:COLORS.textSoft}},a.reason+" Â· Î”"+a.qtyChange+" Â· "+a.remarks)]),badge(a.status)]),
         a.photo?this.evidenceLink(a.id):null,
@@ -2881,7 +2881,7 @@ class Component extends DCLogic {
         card([React.createElement("div",{key:"t",style:{fontWeight:800,marginBottom:8}},"Supplier Callback Log")].concat(callbackRows)),
       ]);
     }
-    return React.createElement("div",null,[sectionTitle("Supplier Records","Contact info, address, category, status (Active/Inactive only)"),
+    return React.createElement("div",null,[sectionTitle("Supplier Records"),
       this.recordTable("supplier-records",["Supplier","Category","Status","Details"],data.SUPPLIERS.map(s=>tr([td(s.name,{fontWeight:600}),td(s.category),td(badge(s.status)),td(React.createElement("button",{onClick:this.openSupplierDetail(s.id),style:{color:COLORS.brand,background:"none",border:"none",fontWeight:700,cursor:"pointer"}},"View â†’"))],s.id)))]);
   }
   setReportFilter=(key,value)=>this.setState(s=>({reportFilters:{...(s.reportFilters||{type:'sales'}),[key]:value,...(key==='category'?{subcategoryId:'',productId:''}:['brandId','subcategoryId','supplierId','type'].includes(key)?{productId:''}:{}),...(key==='type'?{status:'',audit:'',expiryStatus:'',lowStock:'',manager:'',category:'',brandId:'',subcategoryId:'',...(value==='inventory'?{from:'',to:''}:{})}:{})},reportFilterOpen:['from','to'].includes(key)?s.reportFilterOpen:null}));
@@ -2924,7 +2924,7 @@ class Component extends DCLogic {
     return h('div',{className:'report-chart-grid'},[
       h('section',{className:'kita-card report-peak-panel','aria-label':'Peak sales hours'},[
         h('div',{className:'report-peak-heading'},[
-          h('div',null,[h('h3',{className:'panel-title'},'Peak Sales Hours & Shift Load'),h('p',{className:'report-filter-hint'},'Hourly order volume distribution ('+hourLabel(first)+' - '+(last===23?'12:00 AM (next day)':hourLabel(last+1))+') Philippine time for cashier shift optimization.')]),
+          h('div',null,[h('h3',{className:'panel-title'},'Peak Sales Hours & Shift Load'),null]),
           h('span',{className:'report-peak-badge',title:'Two busiest recorded hours; ties use the earlier hour.'},peakLabel),
         ]),
         h('div',{className:'report-peak-scroll'},h('svg',{viewBox:'0 0 1080 340',className:'report-peak-svg',role:'img','aria-label':'Hourly transaction volume. '+peakLabel},[
@@ -2938,9 +2938,9 @@ class Component extends DCLogic {
             h('text',{x:x+width/2,y:baseline+20,textAnchor:'middle',fontSize:11,fill:'#667c9c'},hourLabel(hour)),
           ]);}),
         ])),
-        h('p',{className:'report-chart-note'},peak?'Counts include all listed transaction statuses. Hover over a bar for its count.':'No recorded transaction times for this selection.'),
+        !peak?h('p',{className:'record-empty'},'No recorded transaction times for this selection.'):null,
       ]),
-      card([h('h3',{className:'panel-title'},'Top Product Performance'),h('p',{className:'report-filter-hint'},'Recorded sales by product (PHP), before refunds.'),
+      card([h('h3',{className:'panel-title'},'Top Product Performance'),null,
         ranked.length?h('svg',{viewBox:'0 0 480 270',className:'report-product-svg',role:'img','aria-label':'Product sales comparison in pesos'},[
           ...Array.from({length:5},(_,i)=>h('g',{key:'axis'+i},[
             h('line',{x1:125+i*82,x2:125+i*82,y1:12,y2:242,stroke:'#edf1f8',strokeDasharray:'3 4'}),
@@ -2985,11 +2985,11 @@ class Component extends DCLogic {
     const labelFor=(options,value)=>options.find(([id])=>String(id)===String(value))?.[1]||value;
     const url=format=>'/reports/data?'+new URLSearchParams({...Object.fromEntries(Object.entries(s.reportAppliedFilters||{}).filter(([,v])=>v)),format});
     const filterButton=(key,label,active,disabled=false)=>h('button',{key,type:'button',className:'report-filter-button'+(active?' is-selected':''),'aria-expanded':open===key,'aria-controls':'report-filter-options',disabled,onClick:()=>this.setState({reportFilterOpen:open===key?null:key}),title:disabled?'Choose a category first':undefined},[label,h('span',{'aria-hidden':true},open===key?'\u25b4':'\u25be')]);
-    return h('div',{className:'reports-page'},[sectionTitle('Reports','Choose a report and filters, then click Refresh to load the results.'),
+    return h('div',{className:'reports-page'},[sectionTitle('Reports'),
       ['purchase_orders','outstanding_orders','purchases','supplier_book','payables'].includes(f.type)?h('label',{className:'purchase-notes'},['Requested / Recorded by (exact name)',h('input',{value:f.manager||'',onChange:e=>this.setReportFilter('manager',e.target.value)})]):null,
       f.type==='expiry'?h('div',{className:'expiry-quick-filters',role:'group','aria-label':'Expiration status filters'},[
         ...[['','All'],['Nearly expired','Nearly expired'],['Expired','Expired']].map(([value,label])=>h('button',{key:label,type:'button',className:'report-type-button'+((f.expiryStatus||'')===value?' is-selected':''),'aria-pressed':(f.expiryStatus||'')===value,onClick:()=>this.setReportFilter('expiryStatus',value)},label)),
-        h('span',{className:'report-filter-hint'},'Nearly expired: expires within 30 days. Nearly expired batches appear first.'),
+        null,
       ]):null,
       h('section',{className:'report-filter-bar','aria-label':'Report filters'},[
         h('div',{className:'report-filter-actions'},[h('strong',null,'Filters'+(activeCount?' ('+activeCount+')':'')),
@@ -3015,13 +3015,13 @@ class Component extends DCLogic {
           f.from||f.to?h('button',{type:'button',className:'report-filter-chip',onClick:()=>this.setState({reportFilters:{...f,from:'',to:''}})},'Dates: '+(f.from||'Any')+' to '+(f.to||'Any')+' \u00d7'):null,
           f.lowStock?h('button',{type:'button',className:'report-filter-chip',onClick:()=>this.setReportFilter('lowStock','')},'Low stock only \u00d7'):null
         ]):null,
-        f.type==='inventory'?h('p',{className:'report-filter-hint'},'Current stock snapshot. Use Stock movements to filter by date.'):null
+        f.type==='inventory'?null:null
       ]),
       h('p',{role:'status','aria-live':'polite',className:'report-filter-hint'},s.reportLoading?'Updating results below...':s.reportError?'Results could not be updated.':pendingFilters?'Filters changed. Click Refresh to update the results.':loaded?r.rows.length+(resultType==='expiry'?' tracked batch items':' matching records'):'Click Refresh to load your report.'),
       s.reportError?h('div',{role:'alert'},[s.reportError,btn('Retry',this.generateReport)]):null,
       h('section',{key:'report-results',className:'report-results','aria-label':'Report results','aria-busy':!!s.reportLoading},[
         h('div',{className:'report-results-header'},[h('h2',null,r.title),loaded?h('div',{className:'action-group'},[h('a',{className:'kita-button',href:url('pdf'),download:true},'Download PDF Summary'),h('a',{className:'kita-button',href:url('csv'),download:true},'Export CSV'),h('a',{className:'kita-button',href:url('print'),target:'_blank',rel:'noopener'},resultType==='expiry'?'Print Expiration Report':'Print report')]):null]),
-        loaded?h('p',{className:'report-filter-hint'},(s.reportLoading||s.reportError||pendingFilters?'Showing the last successfully loaded results. ':'')+'Exports include all filtered records, before table search or pagination. Generated: '+r.generated):null,
+        loaded?h('p',{className:'report-filter-hint'},(s.reportLoading||s.reportError||pendingFilters?'Showing the last successfully loaded results. ':'')+'Generated: '+r.generated):null,
         h('p',{className:'report-filter-hint'},Object.entries(r.labels||{}).map(([key,value])=>key+': '+value).join(' | ')),
         h('div',{className:'report-summary'},Object.entries(r.summary||{}).map(([label,value])=>h('div',{key:label,className:'report-metric'},[h('span',null,label),h('strong',null,value)]))),
         loaded&&(s.reportAppliedFilters?.type||f.type)==='sales'?this.buildReportCharts(r.rows):null,
@@ -3037,7 +3037,7 @@ class Component extends DCLogic {
     const roles=this.state.role==="manager"?["cashier"]:this.state.role==="superadmin"?["admin","manager","cashier","superadmin"]:["cashier","manager"];
     const title=this.state.role==="superadmin"?"User Management":this.state.role==="manager"?"Cashier Accounts":"Manage Accounts";
     const input=(key,label,type="text")=>h("label",{key,style:{display:"block",fontSize:12,fontWeight:700,marginBottom:10}},[label,h("input",{type,value:f[key]||"",onChange:this.setAcctField(key),autoComplete:type==="password"?"new-password":"off",style:{width:"100%",boxSizing:"border-box",padding:10,marginTop:4,border:"1px solid "+COLORS.border,borderRadius:8}})]);
-    return h("div",null,[sectionTitle(title,"Accounts are retained for audit history. Inactive accounts cannot sign in. Last OTP login reflects retained verification records; password-only cashier logins are not recorded."),btn("Create Account",this.openAcctModal("create"),"primary"),
+    return h("div",null,[sectionTitle(title),btn("Create Account",this.openAcctModal("create"),"primary"),
       h("div",{className:"sa-filters"},[
         h("label",null,["Role ",h("select",{value:this.state.acctRoleFilter,onChange:e=>{this.setState({acctRoleFilter:e.target.value});this.setTableView("accounts",{page:1});}},[h("option",{value:""},"All roles"),...roles.map(r=>h("option",{value:r,key:r},r))])]),
         h("label",null,["Status ",h("select",{value:this.state.acctStatusFilter,onChange:e=>{this.setState({acctStatusFilter:e.target.value});this.setTableView("accounts",{page:1});}},[h("option",{value:""},"All statuses"),...['Active','Inactive'].map(v=>h("option",{value:v,key:v},v))])])
@@ -3097,7 +3097,7 @@ class Component extends DCLogic {
     const metrics=[["Total Users",d.total_users],["Active Users",d.active_users],["Inactive Users",d.inactive_users],["Average audit events / day",d.average_daily_events]];
     const max=Math.max(1,...d.activity_days.map(day=>day.events));
     return h("div",{className:"sa-dashboard"},[
-      sectionTitle("System Overview","Manage accounts and review measured system activity."),
+      sectionTitle("System Overview"),
       h("div",{className:"sa-kpis"},metrics.map(([label,value])=>h("article",{className:"sa-kpi",key:label},[h("div",null,label),h("strong",null,value)]))),
       h("div",{className:"sa-panels"},[
         h("section",{className:"sa-panel"},[h("h2",null,"System Performance"),...[["Application",d.application_status],["Database",d.database_status],["Database query",ms(d.database_response_ms)],["Dashboard calculation",ms(d.generation_ms)]].map(([label,value],i)=>h("div",{className:"sa-performance-row",key:label},[h("span",null,label),h("strong",{className:i<2?"sa-status sa-status--healthy":""},value)])),h("p",{className:"sa-note"},"Measured for this request: SELECT 1 database round trip and dashboard calculation time. These do not measure browser latency or server uptime."),btn("Refresh measurements",this.reloadSaDashboard)]),
@@ -3110,7 +3110,7 @@ class Component extends DCLogic {
   }
   buildSaAdmins(){ return this.buildAdmManagers(); }
   buildSaRoles(){ const {rolesMatrix}=this.state; if(!rolesMatrix) return null;
-    return React.createElement("div",null,[sectionTitle("Roles & Permissions","Toggle access per module"),
+    return React.createElement("div",null,[sectionTitle("Roles & Permissions"),
       stickyTable(React.createElement("div",{className:"table-scroll",tabIndex:0,role:"region","aria-label":"Role permissions",style:{overflowX:"auto",border:"1px solid "+COLORS.border,borderRadius:10}},React.createElement("table",{style:{width:"100%",borderCollapse:"collapse",fontSize:13}},[
         React.createElement("thead",{key:"h"},React.createElement("tr",null,[React.createElement("th",{key:"m",style:{textAlign:"left",padding:"10px 14px",background:"#f8faff",fontSize:11,color:COLORS.textMuted}},"Module"),...rolesMatrix.roles.map(r=>React.createElement("th",{key:r,style:{padding:"10px 14px",background:"#f8faff",fontSize:11,color:COLORS.textMuted}},r))])),
         React.createElement("tbody",{key:"b"},rolesMatrix.grid.map((row,mi)=>tr([td(row.module,{fontWeight:600}),...row.cells.map((c,ri)=>td(React.createElement("div",{onClick:this.toggleRolePerm(mi,ri),style:{width:36,height:20,borderRadius:10,background:c?COLORS.green:"#e3e6ec",position:"relative",cursor:"pointer",margin:"0 auto"}},React.createElement("div",{style:{width:16,height:16,borderRadius:"50%",background:"#fff",position:"absolute",top:2,left:c?18:2}})),{textAlign:"center"}))],mi)))
@@ -3118,7 +3118,7 @@ class Component extends DCLogic {
   }
   buildSaBackup(){
     const h=React.createElement,d=this.state.backupData,items=d?.backups||[],id=this.state.backupRestoreId;
-    return h("div",null,[sectionTitle("Backup Configuration","Encrypted database snapshots"),
+    return h("div",null,[sectionTitle("Backup Configuration"),
       this.state.backupError&&h("p",{role:"alert",style:{color:COLORS.red}},this.state.backupError),
       card([
         h("p",null,d?`Daily schedule: ${d.schedule} (${d.timezone}). Retention: ${d.retention_days} days.`:"Loading backup configuration..."),
@@ -3140,7 +3140,7 @@ class Component extends DCLogic {
     ]);
   }
   buildSaAudit(){ const {data}=this.state; if(!data) return null;
-    return React.createElement("div",null,[sectionTitle("Audit Logs & Activity","Append-only â€” export or flag for review, no edit/delete"),
+    return React.createElement("div",null,[sectionTitle("Audit Logs & Activity"),
       this.recordTable("audit",["Timestamp","User","Action","Record","Changes"],data.AUDIT_LOGS.map((a,i)=>tr([td(a.ts,{fontFamily:"'JetBrains Mono',monospace",fontSize:12}),td(a.user),td(badge(a.action)),td(a.record),td(auditChanges(a.before,a.after,data.PRODUCTS))],i))),
       React.createElement("div",{style:{height:14}}),
       card([React.createElement("div",{key:"t",style:{fontWeight:800,marginBottom:10}},"Field Version History"),

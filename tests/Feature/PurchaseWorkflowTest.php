@@ -583,7 +583,7 @@ class PurchaseWorkflowTest extends TestCase
         $body['version']=1;
         $this->postJson('/api/purchase-orders/'.$id.'/receive', $body)->assertCreated()->assertJsonPath('status', 'Fully Received');
         $this->assertDatabaseHas('products', ['id' => $this->product, 'stock' => 3]);
-        $this->get('/purchase-orders/'.$id.'/report')->assertOk()->assertSee('Quantity discrepancies are recorded as remarks.');
+        $this->get('/purchase-orders/'.$id.'/report')->assertOk()->assertSee('Purchase items')->assertDontSee('Quantity discrepancies are recorded as remarks.');
     }
 
     public function test_invalid_delivery_rolls_back_stock_and_receipt_and_rejects_invalid_quantities(): void

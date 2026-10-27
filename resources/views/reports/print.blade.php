@@ -11,7 +11,7 @@
     </style>
 </head>
 <body>
-    <div class="actions"><button onclick="window.print()">Print / Save PDF</button><p>Choose “Save as PDF” in the print destination to download a PDF.</p></div>
+    <div class="actions"><button onclick="window.print()">Print / Save PDF</button></div>
     <main class="sheet">
     <header class="heading"><div><div class="wordmark">KITA</div><div class="eyebrow">Retail Management · Management Reports</div><h1>{{ $title }}</h1></div><div class="metadata"><strong>GENERATED</strong><br>{{ $generated }}<br><strong>PREPARED BY</strong><br>{{ $preparedBy }}<br>{{ count($rows) }} records</div></header>
     <div class="filters">@foreach($labels as $label => $value)<strong>{{ $label }}:</strong> {{ $value }} &nbsp; @endforeach</div>
