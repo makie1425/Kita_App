@@ -1889,3 +1889,11 @@ body:has(.loading-overlay) button[aria-busy="true"]::before { display: none; }
 .reports-page .record-list th{vertical-align:middle;background:#f3f6ff}
 .reports-page .record-list td{vertical-align:middle}
 @media(max-width:480px){.reports-page .report-filter-actions,.reports-page .report-date-options{grid-template-columns:minmax(0,1fr)}}
+
+/* Batch history remains within the Stock Receiving workspace. */
+.receiving-card-panel .inventory-batch-group{border-radius:18px;padding:18px 20px}
+.receiving-card-panel .inventory-batch-info{display:grid;gap:6px}
+.inventory-batch-dialog-header{background:#214ff2;color:#fff}
+.inventory-batch-dialog-header p{color:#e5edff}
+.inventory-batch-dialog-footer{display:flex;justify-content:flex-end;padding:16px 20px;border-top:1px solid #dce6f7;background:#fff;flex-shrink:0}
+body:has(.inventory-batch-dialog[open]){overflow:hidden}

@@ -1977,9 +1977,9 @@ class Component extends DCLogic {
       h('section',{className:'receiving-card-panel'},[
         h('div',{className:'receiving-card-tabs','aria-label':'Receiving views'},[
           ...[['active','To Receive'],['history','Stock Receipt History'],['missing','Outstanding Items']].map(([value,label])=>h('button',{type:'button',key:value,'aria-pressed':tab===value,onClick:()=>this.setState({receivingTab:value})},label)),
-          h('button',{type:'button',onClick:()=>{this.setState({screen:'mgrPO'});this.openInventoryView('batches');}},'Batch Records')
+          h('button',{type:'button','aria-pressed':tab==='batches',onClick:()=>this.openInventoryView('batches')},'Batch Records')
         ]),
-        tab==='history'?h(React.Fragment,null,[this.buildStockReceiptHistory(),this.buildDeliveryHistory(orders),!receipts.length?h('p',{className:'record-empty'},'No stock receipts have been recorded.'):null]):h(React.Fragment,null,[
+        tab==='batches'?this.buildInventoryHistory(true):tab==='history'?h(React.Fragment,null,[this.buildStockReceiptHistory(),this.buildDeliveryHistory(orders),!receipts.length?h('p',{className:'record-empty'},'No stock receipts have been recorded.'):null]):h(React.Fragment,null,[
           h('h3',null,tab==='missing'?'Outstanding Items':'Purchase Orders Awaiting Receipt'),
           null,
           h('input',{className:'receiving-card-search',type:'search','aria-label':'Search purchase orders',placeholder:'Search purchase order, supplier, or product...',value:query,onChange:e=>this.setState({receivingCardSearch:e.target.value})}),
@@ -2145,7 +2145,7 @@ class Component extends DCLogic {
         ]),
       ]));
   }
-  buildMgrPO(){ return this.state.inventoryHistoryOpen&&this.state.inventoryView==='batches'?this.buildInventoryHistory():this.buildPurchaseReceiving(); }
+  buildMgrPO(){ return this.buildPurchaseReceiving(); }
   loadInventoryWorkflows=async()=>{
     this.setState({workflowLoading:true,workflowError:''});
     try{const r=await fetch('/api/inventory/workflows',{headers:{Accept:'application/json'}});const body=await r.json();if(!r.ok)throw new Error(body.message||'Could not load inventory workflows');this.setState({inventoryWorkflows:body});}
@@ -2171,11 +2171,12 @@ class Component extends DCLogic {
       return h('div',{key:batch,className:'inventory-batch-group'},[
         h('div',{className:'inventory-batch-summary'},[
           h('div',{className:'inventory-batch-info'},[h('strong',null,batch),h('span',null,summary),h('small',null,items[0].receivedAt||items[0].receivedDate||'')]),
-          h('div',{className:'inventory-batch-actions'},[h('button',{type:'button',className:'kita-button batch-view-button','aria-haspopup':'dialog','aria-label':'View '+batch,onClick:()=>this.setState({viewingBatch:id})},'View'),print()]),
+          h('div',{className:'inventory-batch-actions'},[h('button',{type:'button',className:'kita-button batch-view-button','aria-haspopup':'dialog','aria-label':'View '+batch,onClick:()=>this.setState({viewingBatch:id})},'View Details')]),
         ]),
         this.state.viewingBatch===id?h('dialog',{className:'inventory-batch-dialog','aria-label':'Batch '+batch,ref:node=>{if(node&&!node.open)node.showModal();},onCancel:e=>{e.preventDefault();close();}},[
-          h('div',{className:'inventory-batch-dialog-header'},[h('div',null,[h('h2',null,batch),h('p',null,summary)]),h('div',{className:'inventory-batch-actions'},[print(),h('button',{type:'button',className:'kita-button',autoFocus:true,onClick:close},'Close')])]),
+          h('div',{className:'inventory-batch-dialog-header'},[h('div',null,[h('h2',null,batch),h('p',null,summary)]),h('div',{className:'inventory-batch-actions'},[h('button',{type:'button',className:'kita-button',autoFocus:true,onClick:close},'Close')])]),
           h('div',{className:'inventory-batch-dialog-body',tabIndex:0,'aria-label':'Batch items, scroll for more'},this.recordTable(id,headers,items.map(renderRow),options)),
+          h('footer',{className:'inventory-batch-dialog-footer'},[print()]),
         ]):null,
       ]);
     })):h('p',{className:'record-empty'},'No batches match these filters.');
@@ -2208,7 +2209,7 @@ class Component extends DCLogic {
   inventoryCondition=p=>p.stockCondition||(p.status!=='Active'?'Inactive':Number(p.stockOnHand??p.stock)===0?'Out of stock':this.sellableStock(p)===0?'Unavailable':this.sellableStock(p)<=Number(p.minStock||0)?'Reorder level reached':'In stock');
   openInventoryView=(view='products',productId)=>{
     const filters=productId?{productId:String(productId)}:{};
-    this.setState({...(view==='batches'?{screen:'mgrPO'}:{}),inventoryHistoryOpen:true,inventoryView:view,inventoryFilters:filters,inventoryAppliedFilters:filters,inventoryHistory:null});
+    this.setState({...(view==='batches'?{receivingTab:'batches',viewingBatch:null}:{}),inventoryHistoryOpen:true,inventoryView:view,inventoryFilters:filters,inventoryAppliedFilters:filters,inventoryHistory:null});
     this.loadInventoryHistory(filters);
   };
   draftInventoryRequest=p=>{
@@ -2475,13 +2476,13 @@ class Component extends DCLogic {
     const note=kind==='movements'?'Balances are unreserved book quantities. Payment reservations and releases change this balance without a physical receipt or issue.':'Current quantities and values reflect the latest loaded balances. Receipt-date filters do not reconstruct historical stock.';
     report.document.write('<!doctype html><html><head><title>KITA '+esc(title)+'</title><style>@page{size:landscape;margin:10mm}body{font:11px Arial;color:#172033}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccd4df;padding:5px;text-align:left;overflow-wrap:anywhere}thead{display:table-header-group}th{background:#eef3fa}h1{font-size:20px}@media print{button{display:none}}</style></head><body><button onclick="window.print()">Print / Save PDF</button><h1>KITA — '+esc(title)+'</h1><p>Checked '+esc(this.state.inventoryHistory.checkedAt)+' · '+rows.length+' records</p><p>'+esc(note)+'</p><p>Applied filters: '+esc(Object.entries(this.state.inventoryLoadedFilters||{}).filter(([,v])=>v).map(([key,value])=>(({from:'From',to:'To',productId:'Item Code',supplierId:'Supplier ID',brandId:'Brand ID',category:'Category',subcategoryId:'Item Group ID',lowStock:'Reorder items',movementType:'Transaction Type'})[key]||key)+': '+value).join('; ')||'All records')+'</p><table><thead><tr>'+schema.map(([label])=>'<th>'+esc(label)+'</th>').join('')+'</tr></thead><tbody>'+rows.map(row=>'<tr>'+schema.map(([,key])=>'<td>'+esc(row[key])+'</td>').join('')+'</tr>').join('')+'</tbody></table></body></html>');report.document.close();report.opener=null;
   };
-  buildInventoryHistory(){
+  buildInventoryHistory(embedded=false){
     const h=React.createElement,d=this.state.data,f=this.state.inventoryFilters||{},history=this.state.inventoryHistory,kind=this.state.inventoryView||'products';
     const titles={products:'Stock Balance',batches:'Batch Records',movements:'Inventory Ledger'};
     const field=(key,label,options)=>h('label',{key},[label,options?h('select',{value:f[key]||'',onChange:e=>this.setInventoryHistoryFilter(key,e.target.value)},[h('option',{value:''},'All'),...options.map(([value,text])=>h('option',{key:value,value},text))]):h('input',{type:'date',value:f[key]||'',onChange:e=>this.setInventoryHistoryFilter(key,e.target.value)})]);
     const schema=this.inventorySchema(kind),rows=this.inventoryRows(kind),busy=this.state.inventoryHistoryLoading,blocked=!history||busy||!!this.state.inventoryHistoryError;
     return h('div',{className:'inventory-workspace'},[sectionTitle(titles[kind]),
-      h('div',{className:'inventory-view-tabs'},[btn(kind==='batches'?'Back to Stock Receiving':'Back to Inventory',()=>this.setState({inventoryHistoryOpen:false})),...Object.entries(titles).filter(([view])=>view===kind).map(([view,label])=>h('button',{type:'button',className:'kita-button','aria-pressed':kind===view,onClick:()=>{const filters={...f};delete filters.from;delete filters.to;delete filters.lowStock;delete filters.movementType;this.setState({inventoryView:view,inventoryFilters:filters,inventoryAppliedFilters:filters});this.loadInventoryHistory(filters);}},label))]),
+      !embedded?h('div',{className:'inventory-view-tabs'},[btn(kind==='batches'?'Back to Stock Receiving':'Back to Inventory',()=>this.setState({inventoryHistoryOpen:false})),...Object.entries(titles).filter(([view])=>view===kind).map(([view,label])=>h('button',{type:'button',className:'kita-button','aria-pressed':kind===view,onClick:()=>{const filters={...f};delete filters.from;delete filters.to;delete filters.lowStock;delete filters.movementType;this.setState({inventoryView:view,inventoryFilters:filters,inventoryAppliedFilters:filters});this.loadInventoryHistory(filters);}},label))]):null,
       h('div',{className:'purchase-filters'},[field('category','Category',d.CATEGORIES.map(c=>[c.name,c.name])),this.buildSubcategorySelect(f.category,f.subcategoryId,e=>this.setInventoryHistoryFilter('subcategoryId',e.target.value),{includeInactive:true}),field('brandId','Brand',(d.BRANDS||[]).map(c=>[c.id,c.name])),field('productId','Item',d.PRODUCTS.filter(p=>(!f.category||p.category===f.category)&&(!f.subcategoryId||String(p.subcategoryId)===String(f.subcategoryId))&&(!f.brandId||String(p.brandId)===String(f.brandId))&&(kind==='batches'||!f.supplierId||String(p.supplierId)===String(f.supplierId))).map(c=>[c.id,c.name+' #'+c.id])),field('supplierId',kind==='batches'?'Receipt supplier':'Default item supplier',d.SUPPLIERS.map(c=>[c.id,c.name])),...(kind==='products'?[field('lowStock','Stock filter',[['1','Reorder level reached']])]:[field('from',kind==='movements'?'Posted from':'Receipt date from'),field('to',kind==='movements'?'Posted to':'Receipt date to')]),kind==='movements'?field('movementType','Transaction type',Object.entries(history?.movementTypes||{})):null]),
       h('div',{className:'inventory-view-tabs'},[h('button',{className:'kita-button',disabled:busy,onClick:this.applyInventoryFilters},busy?'Refreshing...':'Refresh'),btn('Clear filters',()=>{this.setState({inventoryFilters:{},inventoryAppliedFilters:{}});this.loadInventoryHistory({});}),h('button',{className:'kita-button',disabled:blocked,onClick:this.exportInventoryHistory(kind)},'Export CSV (Excel)'),h('button',{className:'kita-button',disabled:blocked,onClick:this.printInventoryHistory(kind)},'Print / Save PDF')]),
       null,

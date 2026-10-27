@@ -17,4 +17,17 @@ assert.equal(app.inventoryBatchGroups(rows).length,2);assert.equal(app.inventory
 const tree=app.groupedBatchTables('test',rows,['Product'],r=>({type:'tr',children:[r.name]}));const nodes=n=>!n||typeof n!=='object'?[]:Array.isArray(n)?n.flatMap(nodes):[n,...nodes(n.children||n.props?.children)];assert.equal(nodes(tree).filter(n=>n.type==='div'&&n.props?.className==='inventory-batch-group').length,2);
 console.log('Required receiving fields, explicit zero items, and batch grouping passed.');
 
-const printLinks=nodes(tree).filter(n=>n.type==='a'&&n.props?.className==='kita-button batch-print-button');assert.equal(printLinks.length,2);assert.equal(printLinks[0].props.href,'/inventory/batches/1/print');
+assert.equal(nodes(tree).filter(n=>n.type==='a'&&n.props?.className==='kita-button batch-print-button').length,0);
+nodes(tree).find(n=>n.props?.['aria-label']==='View B1').props.onClick();
+const popup=app.groupedBatchTables('test',rows,['Product'],r=>({type:'tr',children:[r.name]}));
+assert.equal(nodes(popup).filter(n=>n.type==='dialog').length,1);
+assert.equal(nodes(popup).find(n=>n.props?.className==='kita-button batch-print-button').props.href,'/inventory/batches/1/print');
+const dialog=nodes(popup).find(n=>n.type==='dialog');dialog.props.onCancel({preventDefault(){}});assert.equal(app.state.viewingBatch,null);
+app.state.screen='mgrPO';app.state.purchaseData={orders:[],requests:[]};app.purchasingState=()=>null;app.loadInventoryHistory=()=>{};
+app.buildInventoryHistory=embedded=>({type:'section',props:{embedded},children:['batch history']});
+let receiving=app.buildMgrPO();
+nodes(receiving).find(n=>n.type==='button'&&n.children.flat(Infinity).includes('Batch Records')).props.onClick();
+receiving=app.buildMgrPO();assert.equal(app.state.screen,'mgrPO');assert(nodes(receiving).some(n=>n.props?.embedded===true));
+assert(nodes(receiving).some(n=>n.props?.['aria-label']==='Receiving views'));
+nodes(receiving).find(n=>n.type==='button'&&n.children.flat(Infinity).includes('To Receive')).props.onClick();assert.equal(app.state.receivingTab,'active');
+console.log('Batch cards, popup print/close, and embedded receiving tab navigation passed.');

@@ -5,5 +5,5 @@ const app=ctx.app;let loads=0;app.generateReport=()=>loads++;app.state.screen='a
 app.setReportFilter('category','Drinks');assert.equal(app.state.reportFilters.productId,'');assert.equal(app.state.reportFilters.subcategoryId,'');assert.equal(loads,0);pending();assert.equal(loads,1);
 app.resetReportFilters();pending();assert.equal(loads,2);app.clearReportDates();pending();assert.equal(loads,3);
 let filters;app.loadInventoryHistory=f=>{filters=f};app.state.inventoryFilters={productId:'1'};app.setInventoryHistoryFilter('brandId','3');assert.equal(filters.brandId,'3');assert.equal(filters.productId,'');
-app.openInventoryView('batches');assert.equal(app.state.screen,'mgrPO');assert.equal(app.state.inventoryView,'batches');app.buildInventoryHistory=()=> 'batch-view';assert.equal(app.buildMgrPO(),'batch-view');
+app.state.screen='mgrPO';app.openInventoryView('batches');assert.equal(app.state.screen,'mgrPO');assert.equal(app.state.receivingTab,'batches');assert.equal(app.state.inventoryView,'batches');app.buildPurchaseReceiving=()=> 'receiving-workspace';assert.equal(app.buildMgrPO(),'receiving-workspace');
 console.log('PASS: filters automatically reload, dependent selections reset, and batch records open under Stock Receiving.');
