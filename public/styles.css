@@ -1848,3 +1848,25 @@ body:has(.loading-overlay) button[aria-busy="true"]::before { display: none; }
 .registration-size-fields :is(input,select) { width:100%; min-width:0; }
 .registration-page .form-grid > .field-group { min-width:0; }
 @media(max-width:420px){.registration-size-fields{grid-template-columns:1fr;}}
+
+/* Purchase order table and shared supplier order popup. */
+.po-filter-panel{background:#fff;border:1px solid #dce6f7;border-radius:20px;padding:20px;margin:20px 0}
+.po-filter-fields{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px}
+.po-filter-fields label{display:flex;flex-direction:column;gap:8px;color:#60799d;font-size:13px;text-transform:uppercase}
+.po-filter-panel input,.po-filter-panel select{width:100%;min-height:44px;border:1px solid #dce6f7;border-radius:10px;padding:10px 14px;background:#fff;color:#123365;font:inherit;box-sizing:border-box}
+.po-filter-bottom{display:flex;gap:16px;justify-content:space-between;border-top:1px solid #edf2fa;margin-top:16px;padding-top:12px;align-items:center}
+.po-filter-bottom>input{max-width:560px;background:#f7f9fc}
+.po-filter-actions,.po-row-actions{display:flex;flex-wrap:nowrap;gap:8px;align-items:center;white-space:nowrap}
+.po-filter-actions .kita-button:first-child{background:#f1f5fa;color:#163763}
+.purchase-order-workspace .table-scroll{border-radius:20px;border:1px solid #dce6f7;background:white}
+.purchase-order-workspace th{background:#f7f9fc;color:#60799d}
+.purchase-order-workspace td{padding-top:18px;padding-bottom:18px}
+.purchase-order-workspace td:first-child{font-family:monospace;font-weight:700;white-space:nowrap}
+.po-order-dialog{padding:0;width:min(1100px,94vw);overflow:hidden}
+.po-order-dialog[open]{display:flex;flex-direction:column}
+.po-dialog-header{display:flex;align-items:center;gap:14px;background:#214ff2;color:#fff;padding:22px}
+.po-dialog-header h2{margin:0;flex:1;font-size:20px}
+.po-dialog-body{padding:22px;overflow:auto;min-height:0}
+.po-order-dialog>footer{padding:18px 22px;border-top:1px solid #dce6f7;flex-wrap:wrap;margin:0}
+@media(max-width:760px){.po-filter-fields{grid-template-columns:repeat(2,minmax(0,1fr))}.po-filter-bottom{flex-wrap:wrap}.po-dialog-header{flex-wrap:wrap}}
+@media(max-width:440px){.po-filter-fields{grid-template-columns:minmax(0,1fr)}}
