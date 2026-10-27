@@ -932,21 +932,18 @@ class Component extends DCLogic {
   };
   setArchiveTab=tab=>()=>this.setState({archiveTab:tab,archiveChecked:{}});
   toggleArchiveCheck=key=>()=>this.setState(s=>({archiveChecked:{...s.archiveChecked,[key]:!s.archiveChecked[key]}}));
-  restoreArchived=()=>{ const {archiveTab,archiveChecked}=this.state; const ids=Object.keys(archiveChecked).filter(k=>archiveChecked[k]);
-    if(ids.length===0){ this.toast("Select at least one row.","error"); return; }
-    if(archiveTab==="items") this.setState(s=>({productsLocal:s.productsLocal.map(p=>ids.includes(String(p.id))?{...p,status:"Active",archivedAt:null,archivedBy:null}:p)}));
-    if(archiveTab==="categories") this.setState(s=>({categoriesLocal:s.categoriesLocal.map(c=>ids.includes(c.name)?{...c,status:"Active",archivedAt:null,archivedBy:null}:c)}));
-    if(archiveTab==="suppliers") this.setState(s=>({suppliersLocal:s.suppliersLocal.map(sp=>ids.includes(String(sp.id))?{...sp,status:"Active",archivedAt:null,archivedBy:null}:sp)}));
-    this.setState({archiveChecked:{}}); this.toast(`${ids.length} restored to Active.`);
+  archiveAction=async(action,kind,ids)=>{
+    if(this.archiveBusy)return;
+    if(!ids.length){this.toast('Select at least one row.','error');return;}
+    this.archiveBusy=true;this.setState({archiveSaving:true});
+    try{const result=await this.authPost('/api/inventory/workflows/archive',{action,kind,ids});
+      await this.reloadCatalog();this.setState({archiveChecked:{},archiveConfirmOpen:false,supMgrSelected:{}});this.toast(result.message);
+    }catch(error){this.toast(error.message,'error');}finally{this.archiveBusy=false;this.setState({archiveSaving:false});}
   };
+  restoreArchived=()=>this.archiveAction('restore',this.state.archiveTab==='items'?'products':this.state.archiveTab,Object.keys(this.state.archiveChecked).filter(k=>this.state.archiveChecked[k]));
   openArchiveConfirm=()=>{ const count=Object.values(this.state.archiveChecked).filter(Boolean).length; if(count===0){ this.toast("Select at least one row.","error"); return; } this.setState({archiveConfirmOpen:true}); };
   closeArchiveConfirm=()=>this.setState({archiveConfirmOpen:false});
-  deletePermanently=()=>{ const {archiveTab,archiveChecked}=this.state; const ids=Object.keys(archiveChecked).filter(k=>archiveChecked[k]);
-    if(archiveTab==="items") this.setState(s=>({productsLocal:s.productsLocal.filter(p=>!ids.includes(String(p.id)))}));
-    if(archiveTab==="categories") this.setState(s=>({categoriesLocal:s.categoriesLocal.filter(c=>!ids.includes(c.name))}));
-    if(archiveTab==="suppliers") this.setState(s=>({suppliersLocal:s.suppliersLocal.filter(sp=>!ids.includes(String(sp.id)))}));
-    this.setState({archiveChecked:{},archiveConfirmOpen:false}); this.toast(`${ids.length} permanently deleted.`,"warn");
-  };
+  deletePermanently=()=>this.archiveAction('delete',this.state.archiveTab==='items'?'products':this.state.archiveTab,Object.keys(this.state.archiveChecked).filter(k=>this.state.archiveChecked[k]));
   toggleInvSelect=id=>()=>this.setState(s=>({invSelected:{...s.invSelected,[id]:!s.invSelected[id]}}));
   moveInvSelectedToArchive=()=>{ const ids=Object.keys(this.state.invSelected).filter(k=>this.state.invSelected[k]);
     if(!ids.length){ this.toast("Select at least one item.","error"); return; }
@@ -963,8 +960,7 @@ class Component extends DCLogic {
   toggleSupMgrSelect=id=>()=>this.setState(s=>({supMgrSelected:{...s.supMgrSelected,[id]:!s.supMgrSelected[id]}}));
   moveSupMgrSelectedToArchive=()=>{ const ids=Object.keys(this.state.supMgrSelected).filter(k=>this.state.supMgrSelected[k]);
     if(!ids.length){ this.toast("Select at least one supplier.","error"); return; }
-    this.setState(s=>({suppliersLocal:s.suppliersLocal.map(sp=>ids.includes(String(sp.id))?{...sp,status:"Inactive",archivedAt:"2026-07-29",archivedBy:this.currentUser().name}:sp),supMgrSelected:{}}));
-    this.toast(`${ids.length} supplier(s) moved to Archive.`);
+    return this.archiveAction('archive','suppliers',ids);
   };
   openSupMgrModal=(sup)=>()=>this.setState({supMgrModalOpen:true,supMgrForm:sup?{...sup}:{id:null,name:"",address:"",contact:"",phone:"",email:"",category:"",status:"Active",paymentTerms:"Cash on Delivery",notes:""}});
   closeSupMgrModal=()=>this.setState({supMgrModalOpen:false});
@@ -2834,7 +2830,7 @@ class Component extends DCLogic {
   buildAdmForwarded(){ return this.buildPurchaseStatusList(); }
   buildAdmDisapproved(){ return this.buildPurchaseStatusList(true); }
   buildArchive(){
-    const {archiveTab,archiveChecked,productsLocal,categoriesLocal,suppliersLocal,archiveConfirmOpen}=this.state;
+    const {archiveTab,archiveChecked,productsLocal=[],categoriesLocal=[],suppliersLocal=[],archiveConfirmOpen}=this.state;
     const tabs=[["items","Items"],["categories","Categories"],["suppliers","Suppliers"]];
     const checkedCount=Object.values(archiveChecked).filter(Boolean).length;
     let rows, headers, keyOf;
@@ -2845,7 +2841,7 @@ class Component extends DCLogic {
     else { const list=suppliersLocal.filter(s=>s.status==="Inactive"); headers=["","Supplier","Category","Archived On","Archived By"]; keyOf=s=>String(s.id);
       rows=list.map(s=>tr([td(React.createElement("input",{type:"checkbox",checked:!!archiveChecked[keyOf(s)],onChange:this.toggleArchiveCheck(keyOf(s))})),td(s.name),td(s.category),td(s.archivedAt||"â€”"),td(s.archivedBy||"â€”")],s.id)); }
     return React.createElement("div",null,[
-      sectionTitle("Archive"),
+      sectionTitle("Archive"),btn("Refresh",()=>this.reloadCatalog().catch(e=>this.toast(e.message,"error"))),
       React.createElement("div",{style:{display:"flex",gap:6,marginBottom:14}},tabs.map(([k,l])=>React.createElement("button",{key:k,onClick:this.setArchiveTab(k),style:{padding:"8px 14px",borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer",background:archiveTab===k?COLORS.brand:"#fff",color:archiveTab===k?"#fff":COLORS.text,border:"1px solid "+(archiveTab===k?COLORS.brand:COLORS.border)}},l))),
       checkedCount?React.createElement("div",{style:{display:"flex",gap:8,alignItems:"center",marginBottom:10}},[React.createElement("span",{style:{fontSize:12,fontWeight:700,color:COLORS.textSoft}},checkedCount+" selected"),btn("Restore",this.restoreArchived,"green"),btn("Delete Permanently",this.openArchiveConfirm,"danger")]):null,
       rows.length===0?card(React.createElement("div",{style:{padding:20,textAlign:"center",color:COLORS.textMuted,fontSize:13}},"Nothing archived in this category.")):this.recordTable("archive-"+archiveTab,headers,rows),
@@ -2884,7 +2880,7 @@ class Component extends DCLogic {
     return React.createElement("div",null,[sectionTitle("Supplier Records"),
       this.recordTable("supplier-records",["Supplier","Category","Status","Details"],data.SUPPLIERS.map(s=>tr([td(s.name,{fontWeight:600}),td(s.category),td(badge(s.status)),td(React.createElement("button",{onClick:this.openSupplierDetail(s.id),style:{color:COLORS.brand,background:"none",border:"none",fontWeight:700,cursor:"pointer"}},"View â†’"))],s.id)))]);
   }
-  setReportFilter=(key,value)=>this.setState(s=>({reportFilters:{...(s.reportFilters||{type:'sales'}),[key]:value,...(key==='category'?{subcategoryId:'',productId:''}:['brandId','subcategoryId','supplierId','type'].includes(key)?{productId:''}:{}),...(key==='type'?{status:'',audit:'',expiryStatus:'',lowStock:'',manager:'',category:'',brandId:'',subcategoryId:'',...(value==='inventory'?{from:'',to:''}:{})}:{})},reportFilterOpen:['from','to'].includes(key)?s.reportFilterOpen:null}));
+  setReportFilter=(key,value)=>{if(key==='type'){this.reportRequestId=(this.reportRequestId||0)+1;this.reportController?.abort();}return this.setState(s=>({reportFilters:{...(s.reportFilters||{type:'sales'}),[key]:value,...(key==='category'?{subcategoryId:'',productId:''}:['brandId','subcategoryId','supplierId','type'].includes(key)?{productId:''}:{}),...(key==='type'?{batch:'',supplierId:'',status:'',audit:'',expiryStatus:'',lowStock:'',manager:'',category:'',brandId:'',subcategoryId:'',...(value==='inventory'?{from:'',to:''}:{})}:{})},reportFilterOpen:['from','to'].includes(key)?s.reportFilterOpen:null,...(key==='type'?{reportResult:null,reportAppliedFilters:null,reportError:'',reportLoading:false}:{})}));};
   resetReportFilters=()=>this.setState({reportFilters:{type:this.state.reportFilters?.type||'sales'},reportFilterOpen:null});
   generateReport=async()=>{
     const filters={...(this.state.reportFilters||{type:'sales'})};
@@ -2892,7 +2888,7 @@ class Component extends DCLogic {
     this.reportController?.abort();
     if(filters.from&&filters.to&&filters.from>filters.to){this.setState({reportLoading:false,reportError:'Choose an end date on or after the start date.'});return;}
     const controller=new AbortController();this.reportController=controller;
-    const timeout=setTimeout(()=>controller.abort(),30000);
+    const timeout=setTimeout(()=>controller.abort(),90000);
     this.setState({reportLoading:true,reportError:''});
     try{
       const response=await fetch('/reports/data?'+new URLSearchParams(Object.entries(filters).filter(([,v])=>v)),{headers:{Accept:'application/json'},signal:controller.signal,cache:'no-store'});
@@ -2968,19 +2964,25 @@ class Component extends DCLogic {
       receipts:{...common,'Product ID':'productId','Manufacturer':'manufacturer','PO Number':'poId','Received date':'date','Receipt':'reference','Supplier':'supplier','Quantity received':'quantity','Remaining now':'remaining','Unit cost (PHP)':'cost','Batch':'batch','Manufactured':'manufacturedDate','Expiry':'expiryDate'},
       movements:{...common,'Recorded at':'date','Type':'movement','Reference':'reference','Change':'change','Before':'before','After':'after'}
     };
-    const r=loaded||{title:'Report results',columns:schemas[f.type]||schemas.sales,rows:[],labels:{},summary:{}};
+    schemas.batches=schemas.receipts;
+    schemas.purchase_orders={'PO Number':'reportPo','Order Date':'date','Supplier':'supplier','Requested By':'manager','Item':'name','Ordered Qty':'orderedQty','Accepted Here':'deliveredQty','Outstanding Qty':'outstandingQty'};
+    schemas.outstanding_orders=schemas.purchase_orders;
+    schemas.purchases={'Receipt Date':'date','PO Number':'reportPo','Receipt ID':'receivingId','Supplier':'supplier','Item':'name','Accepted Qty':'deliveredQty','Batch':'batchNumber'};
+    schemas.supplier_book={'Entry Date':'date','Supplier':'supplier','Type':'kind','PO Number':'reportPo','Document / Reference':'reference','Purchase Debit (PHP)':'debit','Payment / Credit (PHP)':'credit'};
+    schemas.payables={'Receipt Date':'date','PO Number':'reportPo','Receipt ID':'id','Supplier':'supplier','Unpaid Balance (PHP)':'balance'};
+    const r=loaded||{title:'Report results',columns:schemas[f.type]||{'PO Number':'reportPo','Supplier':'supplier','Item':'name','Ordered Qty':'orderedQty','Outstanding Qty':'outstandingQty'},rows:[],labels:{},summary:{}};
     const appliedLabels=Object.entries(r?.labels||{}).filter(([key])=>key!=='Type').map(([key,value])=>key+': '+value).join(', ');
     const emptyMessage=h('div',{className:'report-table-message',role:s.reportError?'alert':'status','aria-live':'polite'},s.reportLoading?'Loading report records. Please wait...':s.reportError?'Unable to update the report. '+s.reportError:!loaded?'Choose your filters, then click Refresh to load the report.':'No results found'+(appliedLabels?' for '+appliedLabels:'')+'. Change or clear the filters and try again.');
     const reportGroups=[
       ['Sales',[['sales','Sales details','View sold items, sales amounts, and transaction status.']]],
-      ['Inventory',[['inventory','Stock on hand','Check current quantities and stock availability.'],['receipts','Stock received','See products received, with supplier and batch details.'],['movements','Stock changes','Track stock added, removed, or adjusted.'],['expiry','Expiring products','Check expiration dates and print a monitoring report.']]],
+      ['Inventory',[['batches','Batches',''],['inventory','Stock on hand','Check current quantities and stock availability.'],['receipts','Stock received','See products received, with supplier and batch details.'],['movements','Stock changes','Track stock added, removed, or adjusted.'],['expiry','Expiring products','Check expiration dates and print a monitoring report.']]],
       ['Purchasing',[['purchase_orders','Purchase orders','Review orders placed with suppliers and their status.'],['outstanding_orders','Pending deliveries','Find ordered items that still need to be received.'],['receiving','Delivery discrepancies','Review missing, damaged, and other flagged deliveries.'],['purchases','Purchase history','Review recorded purchases and their costs.']]],
       ['Suppliers & payments',[['supplier_book','Supplier records','Review purchasing records by supplier.'],['payables','Supplier balances','Check amounts owed to suppliers.']]],
     ];
-    const products=d.PRODUCTS.filter(p=>(!f.category||p.category===f.category)&&(!f.subcategoryId||String(p.subcategoryId)===String(f.subcategoryId))&&(!f.brandId||String(p.brandId)===String(f.brandId))&&(f.type==='receipts'||!f.supplierId||String(p.supplierId)===String(f.supplierId)));
+    const products=d.PRODUCTS.filter(p=>(!f.category||p.category===f.category)&&(!f.subcategoryId||String(p.subcategoryId)===String(f.subcategoryId))&&(!f.brandId||String(p.brandId)===String(f.brandId))&&(['receipts','batches','purchases','receiving','expiry'].includes(f.type)||!f.supplierId||String(p.supplierId)===String(f.supplierId)));
     const facets=[['category','Category',d.CATEGORIES.map(c=>[c.name,c.name])],['subcategoryId','Subcategory',this.subcategoriesFor(f.category,true).map(c=>[c.id,c.name])],['brandId','Brand',(d.BRANDS||[]).map(b=>[b.id,b.name])],['supplierId','Supplier',d.SUPPLIERS.map(p=>[p.id,p.name])],['productId','Product',products.map(p=>[p.id,this.productLabel(p)+' #'+p.id])]].filter(([key])=>!['supplier_book','payables'].includes(f.type)||key==='supplierId');
     const selected=facets.filter(([key])=>f[key]);
-    const activeCount=selected.length+(f.status?1:0)+(f.audit?1:0)+(f.expiryStatus?1:0)+(f.lowStock?1:0)+(f.from||f.to?1:0);
+    const activeCount=selected.length+(f.status?1:0)+(f.audit?1:0)+(f.expiryStatus?1:0)+(f.lowStock?1:0)+(f.from||f.to?1:0)+(f.batch?1:0)+(f.manager?1:0);
     const open=s.reportFilterOpen,facet=facets.find(([key])=>key===open);
     const labelFor=(options,value)=>options.find(([id])=>String(id)===String(value))?.[1]||value;
     const url=format=>'/reports/data?'+new URLSearchParams({...Object.fromEntries(Object.entries(s.reportAppliedFilters||{}).filter(([,v])=>v)),format});
@@ -3004,7 +3006,7 @@ class Component extends DCLogic {
           h('label',{className:'report-search'},[h('span',{className:'sr-only'},'Search report records'),h('input',{type:'search',placeholder:'Search transaction, product, category...',value:s.tableViews['generated-report']?.query||'',onChange:e=>this.setTableView('generated-report',{query:e.target.value,page:1})})])
         ]),
         open?h('div',{id:'report-filter-options',className:'report-filter-options',onKeyDown:e=>{if(e.key==='Escape'){this.setState({reportFilterOpen:null});e.currentTarget.parentElement.querySelector('[aria-expanded="true"]')?.focus();}}},[
-          open==='more'?h('div',{className:'report-date-options'},[f.type==='expiry'?h('label',null,['Expiration status',h('select',{'aria-label':'Expiration status',value:f.expiryStatus||'',onChange:e=>this.setReportFilter('expiryStatus',e.target.value)},['','Nearly expired','Expired','Critical','Warning','Good','Unknown'].map(value=>h('option',{key:value,value},value||'All statuses')))]):null,...facets.filter(([key])=>!['category','subcategoryId'].includes(key)).map(([key,label,options])=>h('label',{key},[label,h('select',{value:f[key]||'',onChange:e=>this.setReportFilter(key,e.target.value)},[['','All '+label.toLowerCase()+' options'],...options].map(([value,name])=>h('option',{key:value,value},name)))])),f.type==='inventory'?h('label',null,[h('input',{type:'checkbox',checked:!!f.lowStock,onChange:e=>this.setReportFilter('lowStock',e.target.checked?'1':'')}),'Low stock only']):null]):open==='date'?h('div',{className:'report-date-options'},[
+          open==='more'?h('div',{className:'report-date-options'},[['receipts','batches'].includes(f.type)?h('label',null,['Batch number',h('input',{'aria-label':'Batch number',value:f.batch||'',onChange:e=>this.setReportFilter('batch',e.target.value)})]):null,f.type==='expiry'?h('label',null,['Expiration status',h('select',{'aria-label':'Expiration status',value:f.expiryStatus||'',onChange:e=>this.setReportFilter('expiryStatus',e.target.value)},['','Nearly expired','Expired','Critical','Warning','Good','Unknown'].map(value=>h('option',{key:value,value},value||'All statuses')))]):null,...facets.filter(([key])=>!['category','subcategoryId'].includes(key)).map(([key,label,options])=>h('label',{key},[label,h('select',{value:f[key]||'',onChange:e=>this.setReportFilter(key,e.target.value)},[['','All '+label.toLowerCase()+' options'],...options].map(([value,name])=>h('option',{key:value,value},name)))])),f.type==='inventory'?h('label',null,[h('input',{type:'checkbox',checked:!!f.lowStock,onChange:e=>this.setReportFilter('lowStock',e.target.checked?'1':'')}),'Low stock only']):null]):open==='date'?h('div',{className:'report-date-options'},[
             h('label',null,['From',h('input',{type:'date',value:f.from||'',max:f.to||undefined,onChange:e=>this.setReportFilter('from',e.target.value)})]),
             h('label',null,['To',h('input',{type:'date',value:f.to||'',min:f.from||undefined,onChange:e=>this.setReportFilter('to',e.target.value)})]),
             h('button',{type:'button',className:'report-clear',onClick:()=>this.setState({reportFilters:{...f,from:'',to:''},reportFilterOpen:null})},'All dates')
@@ -3013,6 +3015,8 @@ class Component extends DCLogic {
         activeCount?h('div',{className:'report-active-actions','aria-label':'Selected filters'},[
           ...selected.map(([key,label,options])=>h('button',{key,type:'button',className:'report-filter-chip','aria-label':'Remove '+label+' filter',onClick:()=>this.setReportFilter(key,'')},label+': '+labelFor(options,f[key])+' \u00d7')),
           f.from||f.to?h('button',{type:'button',className:'report-filter-chip',onClick:()=>this.setState({reportFilters:{...f,from:'',to:''}})},'Dates: '+(f.from||'Any')+' to '+(f.to||'Any')+' \u00d7'):null,
+          f.batch?h('button',{type:'button',className:'report-filter-chip',onClick:()=>this.setReportFilter('batch','')},'Batch: '+f.batch+' ×'):null,
+          f.manager?h('button',{type:'button',className:'report-filter-chip',onClick:()=>this.setReportFilter('manager','')},'Recorded by: '+f.manager+' ×'):null,
           f.lowStock?h('button',{type:'button',className:'report-filter-chip',onClick:()=>this.setReportFilter('lowStock','')},'Low stock only \u00d7'):null
         ]):null,
         f.type==='inventory'?null:null
@@ -3025,7 +3029,7 @@ class Component extends DCLogic {
         h('p',{className:'report-filter-hint'},Object.entries(r.labels||{}).map(([key,value])=>key+': '+value).join(' | ')),
         h('div',{className:'report-summary'},Object.entries(r.summary||{}).map(([label,value])=>h('div',{key:label,className:'report-metric'},[h('span',null,label),h('strong',null,value)]))),
         loaded&&(s.reportAppliedFilters?.type||f.type)==='sales'?this.buildReportCharts(r.rows):null,
-        this.recordTable('generated-report',Object.keys(r.columns),r.rows.map((row,i)=>tr(Object.values(r.columns).map(key=>td(row[key]==null?'-':key==='reportPo'?this.purchaseReportLink(row[key]):key==='status'?((s.reportAppliedFilters?.type||f.type)==='expiry'?h('span',{className:'expiry-status expiry-status--'+String(row[key]).toLowerCase()},row[key]):badge(row[key])):(r.moneyKeys||[]).includes(key)?Number(row[key]).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}):row[key],(r.numericKeys||[]).includes(key)?{textAlign:'right',fontVariantNumeric:'tabular-nums'}:key==='reference'?{fontFamily:'monospace'}:{})),i)),{emptyMessage,externalSearch:true}),
+        this.recordTable('generated-report',Object.keys(r.columns),r.rows.map((row,i)=>tr(Object.values(r.columns).map(key=>td(row[key]==null?'-':['reportPo','poId'].includes(key)?this.purchaseReportLink(row[key]):key==='status'?((s.reportAppliedFilters?.type||f.type)==='expiry'?h('span',{className:'expiry-status expiry-status--'+String(row[key]).toLowerCase()},row[key]):badge(row[key])):(r.moneyKeys||[]).includes(key)?Number(row[key]).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}):row[key],(r.numericKeys||[]).includes(key)?{textAlign:'right',fontVariantNumeric:'tabular-nums'}:key==='reference'?{fontFamily:'monospace'}:{})),i)),{emptyMessage,externalSearch:true}),
         !r.rows.length&&activeCount?h('div',{className:'action-group'},[h('span',null,'Try removing a filter to see more records.'),btn('Clear all filters',this.resetReportFilters)]):null,
 
         h('p',{className:'report-filter-hint'},r.note)

@@ -1,0 +1,19 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert/strict');
+const ctx=vm.createContext({React:{createElement:(type,props,...children)=>({type,props,children})},DCLogic:class{setState(p){Object.assign(this.state,typeof p==='function'?p(this.state):p)}},window:{},AbortController,setTimeout,clearTimeout,URLSearchParams});
+vm.runInContext(fs.readFileSync('public/app.js','utf8')+';globalThis.app=new Component();',ctx);
+const app=ctx.app;
+(async()=>{
+ let calls=[],refreshes=0;app.toast=()=>{};app.reloadCatalog=async()=>{refreshes++;};app.authPost=async(url,body)=>{calls.push({url,body});return {message:'Saved'};};
+ Object.assign(app.state,{archiveTab:'items',archiveChecked:{1:true},archiveConfirmOpen:true});
+ await app.restoreArchived();assert.equal(calls[0].body.action,'restore');assert.equal(calls[0].body.kind,'products');assert.equal(refreshes,1);assert.equal(app.state.archiveConfirmOpen,false);
+ app.state.archiveTab='suppliers';app.state.archiveChecked={2:true};await app.deletePermanently();assert.equal(calls[1].body.action,'delete');assert.equal(calls[1].body.kind,'suppliers');
+ app.state.supMgrSelected={3:true};await app.moveSupMgrSelectedToArchive();assert.equal(calls[2].body.action,'archive');assert.equal(refreshes,3);
+ app.state.archiveChecked={1:true};app.authPost=async()=>{throw Error('Linked history');};await app.restoreArchived();assert.equal(app.state.archiveChecked[1],true);assert.equal(refreshes,3);assert.equal(app.archiveBusy,false);
+ app.state.reportResult={columns:{Sale:'sale'},rows:[]};app.state.reportAppliedFilters={type:'sales'};app.state.reportFilters={type:'sales',supplierId:'9'};
+ let aborted=false;app.reportController={abort(){aborted=true;}};app.setReportFilter('type','batches');assert.ok(aborted);assert.equal(app.state.reportResult,null);assert.equal(app.state.reportFilters.supplierId,'');
+ app.state.data={PRODUCTS:[],CATEGORIES:[],SUPPLIERS:[],BRANDS:[],SUBCATEGORIES:[]};app.state.tableViews={};app.subcategoriesFor=()=>[];app.recordTable=(_key,headers)=>({type:'table',children:headers});
+ const nodes=n=>!n||typeof n!=='object'?[]:Array.isArray(n)?n.flatMap(nodes):[n,...nodes(n.children)];
+ let tree=app.buildAdmReports();assert.ok(nodes(tree).some(n=>n.type==='option'&&n.props.value==='batches'));app.state.reportFilterOpen='more';tree=app.buildAdmReports();assert.ok(nodes(tree).some(n=>n.props?.['aria-label']==='Batch number'));
+ app.setReportFilter('type','purchase_orders');tree=app.buildAdmReports();const table=nodes(tree).find(n=>n.type==='table');assert.ok(table.children.includes('PO Number'));assert.ok(!table.children.includes('Sale date'));
+ console.log('PASS: archive actions persist via API, retain selections on errors, refresh saved data; report changes cancel stale requests and show matching columns and batch filters.');
+})().catch(e=>{console.error(e);process.exitCode=1;});

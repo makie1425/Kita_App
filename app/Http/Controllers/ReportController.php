@@ -17,7 +17,7 @@ class ReportController extends Controller
     {
         InventoryRules::authorize($request, ['manager', 'admin']);
         $filters = $request->validate([
-            'type' => ['required', Rule::in(['inventory', 'sales', 'receipts', 'movements', 'expiry', 'receiving', ...\App\Services\PurchasingReports::TYPES])],
+            'type' => ['required', Rule::in(['inventory', 'sales', 'receipts', 'batches', 'movements', 'expiry', 'receiving', ...\App\Services\PurchasingReports::TYPES])],
             'format' => ['nullable', Rule::in(['json', 'print', 'csv', 'pdf'])],
             'from' => ['nullable', 'date_format:Y-m-d'],
             'to' => ['nullable', 'date_format:Y-m-d', ...($request->filled('from') ? ['after_or_equal:from'] : [])],
@@ -27,6 +27,7 @@ class ReportController extends Controller
             'productId' => ['nullable', 'integer', 'exists:products,id'],
             'supplierId' => ['nullable', 'integer', 'exists:suppliers,id'],
             'lowStock' => ['nullable', 'boolean'],
+            'batch' => ['nullable', 'string', 'max:100'],
             'manager' => ['nullable', 'string', 'max:120'],
             'status' => ['nullable', 'string', 'max:60'],
             'audit' => ['nullable', Rule::in(['missing', 'damaged', 'flagged', 'none'])],
@@ -77,11 +78,13 @@ class ReportController extends Controller
             $columns = ['Product ID' => 'code', 'Batch' => 'batch', 'Product name' => 'product', 'Category' => 'category', 'Manufacturer'=>'manufacturer', 'Expiration date' => 'expiryDate', 'Stock remaining' => 'remaining', 'Unit' => 'unit', 'Expiration status' => 'status'];
             $select = array_merge($select, ['p.id as code', 'b.id', 'b.manufacturer', 'b.batchNumber as batch', 'b.lotNumber as lot', 'b.expiryDate', 'b.quantityRemaining as remaining', 'p.stockUnit as unit']);
             $note = 'Current remaining batches, including recalled stock. Dates filter expiration dates. Expired: today or earlier; critical: within 7 days; warning: within 30 days. Shelf locations are not recorded in this system.';
-        } elseif ($type === 'receipts') {
-            $title = 'Received Stock';
-            $query->join('inventory_batches as b', 'b.productId', '=', 'p.id')->where('b.source', '<>', 'legacy_opening');
+        } elseif (in_array($type, ['receipts', 'batches'])) {
+            $title = $type === 'batches' ? 'Inventory Batches' : 'Received Stock';
+            $query->join('inventory_batches as b', 'b.productId', '=', 'p.id');
+            if ($type === 'receipts') $query->where('b.source', '<>', 'legacy_opening');
+            if ($request->filled('batch')) $query->where('b.batchNumber', $filters['batch']);
             $dateColumn = 'b.receivedDate';
-            $note = 'Actual stock batches received; legacy opening balances are excluded. Supplier filter uses the receipt supplier.';
+            $note = $type === 'batches' ? 'Recorded inventory batches, including opening balances.' : 'Actual stock batches received; legacy opening balances are excluded.';
             $columns += ['Product ID'=>'productId','Manufacturer'=>'manufacturer','PO Number'=>'poId','Received date' => 'date', 'Receipt' => 'reference', 'Supplier' => 'supplier', 'Quantity received' => 'quantity', 'Remaining now' => 'remaining', 'Unit cost (PHP)' => 'cost', 'Batch' => 'batch'];
             $query->leftJoin('suppliers as s', 's.id', '=', 'b.supplierId')->leftJoin('receiving_records as receipt','receipt.id','=','b.receiptId');
             $select = array_merge($select, ['p.id as productId','b.manufacturer','receipt.poId','b.receivedDate as date', 'b.receiptId as reference', 's.name as supplier', 'b.quantityReceived as quantity', 'b.quantityRemaining as remaining', 'b.unitCost as cost', 'b.batchNumber as batch']);
@@ -98,7 +101,7 @@ class ReportController extends Controller
             $columns += ['Product ID'=>'productId','Batch references'=>'batchNumbers','Recorded at' => 'date', 'Type' => 'movement', 'Reference' => 'reference', 'Change' => 'change', 'Before' => 'before', 'After' => 'after'];
             $select = array_merge($select, ['m.productId','m.referenceType','m.referenceId','m.created_at as date', 'm.referenceType as movement', 'm.referenceId as reference', 'tn.id as numberId', 'tn.issued_date as numberDate', 'm.quantityChange as change', 'm.quantityBefore as before', 'm.quantityAfter as after']);
         }
-        foreach (['category' => 'p.category', 'brandId' => 'p.brandId', 'subcategoryId' => 'p.subcategoryId', 'productId' => 'p.id', 'supplierId' => in_array($type, ['receipts', 'expiry']) ? 'b.supplierId' : 'p.supplierId'] as $key => $column) {
+        foreach (['category' => 'p.category', 'brandId' => 'p.brandId', 'subcategoryId' => 'p.subcategoryId', 'productId' => 'p.id', 'supplierId' => in_array($type, ['receipts', 'batches', 'expiry']) ? 'b.supplierId' : 'p.supplierId'] as $key => $column) {
             if ($request->filled($key) && !($type === 'receiving' && $key === 'supplierId')) {
                 $query->where($column, $filters[$key]);
             }
@@ -110,14 +113,14 @@ class ReportController extends Controller
         }
         if ($dateColumn) {
             if ($request->filled('from')) {
-                $query->whereDate($dateColumn, '>=', $filters['from']);
+                $query->where($dateColumn, '>=', $filters['from']);
             }
             if ($request->filled('to')) {
-                $query->whereDate($dateColumn, '<=', $filters['to']);
+                $query->where($dateColumn, '<', \Carbon\CarbonImmutable::parse($filters['to'])->addDay()->toDateString());
             }
             if ($type === 'expiry') { $query->orderBy($dateColumn); } else { $query->orderByDesc($dateColumn); }
             $query->orderByDesc(match ($type) {
-                'sales' => 'line.id', 'receiving' => 'rl.id', 'receipts', 'expiry' => 'b.id', default => 'm.id',
+                'sales' => 'line.id', 'receiving' => 'rl.id', 'receipts', 'batches', 'expiry' => 'b.id', default => 'm.id',
             });
         }
         if ($request->boolean('lowStock') && $type !== 'inventory') {
@@ -161,7 +164,7 @@ class ReportController extends Controller
             foreach ($rows as $row) $row->exclusionReason = implode('; ', $row->exclusionReasons) ?: 'Eligible';
         }
         foreach ($rows as $row) {
-            if (in_array($type,['expiry','receipts']) && !filled($row->manufacturer ?? null)) $row->manufacturer='Not recorded';
+            if (in_array($type,['expiry','receipts','batches']) && !filled($row->manufacturer ?? null)) $row->manufacturer='Not recorded';
             if (in_array($type, ['sales', 'movements'])) {
                 $row->transactionId = $row->reference;
                 if ($type === 'sales') {
@@ -185,7 +188,7 @@ class ReportController extends Controller
             $summary['Recorded less refunds (PHP)'] = number_format($rows->sum('amount') - $rows->sum('refunded'), 2);
         } elseif ($type === 'inventory') {
             $summary += ['Items at reorder level' => number_format($rows->where('needsReorder', true)->count()), 'Inventory value (PHP)'=>number_format($rows->sum('inventoryValue'), 2)];
-        } elseif ($type === 'receipts') {
+        } elseif (in_array($type, ['receipts', 'batches'])) {
             $summary += ['Received value (PHP)' => number_format($rows->sum(fn ($row) => round($row->quantity * $row->cost, 2)), 2)];
         }
         $preparedBy = $request->user()->name;
@@ -193,7 +196,7 @@ class ReportController extends Controller
         $labels = ['Type' => $title];
         foreach (['status' => 'Status', 'audit' => 'Discrepancy audit'] as $key => $label) if ($request->filled($key) && !($type === 'receiving' && $key === 'status')) $labels[$label] = $filters[$key];
         if ($type === 'expiry' && $request->filled('expiryStatus')) $labels['Expiration status'] = $filters['expiryStatus'];
-        foreach (['from' => 'From', 'to' => 'To', 'category' => 'Category'] as $key => $label) {
+        foreach (['from' => 'From', 'to' => 'To', 'category' => 'Category', 'batch'=>'Batch'] as $key => $label) {
             if ($request->filled($key) && ! ($type === 'inventory' && in_array($key, ['from', 'to']))) {
                 $labels[$label] = $filters[$key];
             }

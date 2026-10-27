@@ -11,7 +11,6 @@ class PurchasingReports
 
     public static function data(Request $request): array
     {
-        SupplierAccounts::requireReady();
         $type = $request->input('type');
         $titles = ['purchase_orders'=>'Purchase Order Progress', 'outstanding_orders'=>'Outstanding Deliveries', 'purchases'=>'Purchase Receipt Detail', 'supplier_book'=>'Supplier Book', 'payables'=>'Accounts Payable'];
         $title = $titles[$type];
@@ -21,20 +20,26 @@ class PurchasingReports
         $labels = ['Type'=>$title];
         $dateColumn = 'date';
         if (in_array($type, ['purchase_orders', 'outstanding_orders'])) {
-            $rows = DB::table('purchase_order_lines as l')->join('purchase_orders as po','po.id','=','l.poId')
+            $incoming = DB::table('receiving_carryovers')->select('targetLine')->selectRaw('SUM(quantity-receivedQty-releasedQty) as incomingQty')->groupBy('targetLine');
+            $query = DB::table('purchase_order_lines as l')->join('purchase_orders as po','po.id','=','l.poId')
                 ->leftJoin('item_requests as req','req.id','=','po.itemRequestId')->leftJoin('products as p','p.id','=','l.productId')
-                ->select('l.*','po.created as date','po.supplierId','po.supplierName as supplier','po.status','po.expectedDeliveryDate','po.supplierSentDate','po.supplierSentVia','req.requestedBy as manager','p.brandId','p.subcategoryId')->get();
+                ->leftJoinSub($incoming, 'carry', 'carry.targetLine', '=', 'l.id')
+                ->selectRaw('COALESCE(carry.incomingQty, 0) as incomingQty')->addSelect('l.*','po.created as date','po.supplierId','po.supplierName as supplier','po.status','po.expectedDeliveryDate','po.supplierSentDate','po.supplierSentVia','req.requestedBy as manager','p.brandId','p.subcategoryId');
+            self::filterLines($query, $request, 'po.created', 'req.requestedBy');
+            $rows = $query->get();
             foreach ($rows as $row) {
                 $row->reportPo = $row->poId;
-                $row->outstandingQty = ReceivingCarryover::originalRemaining($row);
+                $row->outstandingQty = max(0, ReceivingCarryover::remaining($row) - (int) $row->incomingQty);
                 $row->remarks = $row->status === 'Cancelled' ? 'Outstanding quantities cancelled' : ($row->outstandingQty > 0 ? ($row->expectedDeliveryDate && $row->expectedDeliveryDate < now()->toDateString() ? 'Delivery overdue' : 'Awaiting remaining goods') : 'No outstanding quantity');
             }
             if ($type === 'outstanding_orders') $rows = $rows->filter(fn ($r) => $r->outstandingQty > 0 && !in_array($r->status, ['Cancelled','Closed']));
             $columns = ['PO Number'=>'reportPo','Order Date'=>'date','Supplier'=>'supplier','Requested By'=>'manager','Expected Delivery'=>'expectedDeliveryDate','Sent Date'=>'supplierSentDate','Sent Via'=>'supplierSentVia','Item Code'=>'productId','Item'=>'name','Stock Unit'=>'unit','Ordered Qty'=>'orderedQty','Accepted Here'=>'deliveredQty','Resolved on Linked PO'=>'resolvedQty','Outstanding Qty'=>'outstandingQty','Unit Cost (PHP)'=>'unitCost','Delivery Remarks'=>'remarks'];
             $note .= ' Date filters use order date. Outstanding quantities exclude incoming legacy carryover copies to avoid counting the same obligation twice.';
         } elseif ($type === 'purchases') {
-            $rows = DB::table('receiving_record_lines as l')->join('receiving_records as r','r.id','=','l.receivingId')->join('purchase_orders as po','po.id','=','r.poId')
-                ->leftJoin('products as p','p.id','=','l.productId')->get(['l.*','r.date','r.poId as reportPo','r.supplierName as supplier','po.supplierId','r.receivedBy as manager','r.supplierDocument','r.inspection','r.outcome','p.brandId','p.subcategoryId']);
+            $query = DB::table('receiving_record_lines as l')->join('receiving_records as r','r.id','=','l.receivingId')->join('purchase_orders as po','po.id','=','r.poId')
+                ->leftJoin('products as p','p.id','=','l.productId')->select(['l.*','r.date','r.poId as reportPo','r.supplierName as supplier','po.supplierId','r.receivedBy as manager','r.supplierDocument','r.inspection','r.outcome','p.brandId','p.subcategoryId']);
+            self::filterLines($query, $request, 'r.date', 'r.receivedBy');
+            $rows = $query->get();
             foreach ($rows as $row) { $row->amount = round($row->deliveredQty * ($row->unitCost ?? 0), 2); $row->remarks = ReceivingRemarks::forReceipt($row); }
             $columns = ['Receipt Date'=>'date','PO Number'=>'reportPo','Receipt ID'=>'receivingId','Supplier Document'=>'supplierDocument','Supplier'=>'supplier','Received By'=>'manager','Item Code'=>'productId','Item'=>'name','Stock Unit'=>'unit','Accepted Qty'=>'deliveredQty','Unit Cost (PHP)'=>'unitCost','Received Value (PHP)'=>'amount','Batch'=>'batchNumber','Inspection Remarks'=>'remarks'];
             $note .= ' Date filters use receipt date. Each delivery is listed separately, including later receipts on the same PO.';
@@ -76,4 +81,13 @@ class PurchasingReports
         $generated=now()->timezone('Asia/Manila')->format('Y-m-d H:i:s').' Asia/Manila';
         return compact('title','columns','rows','note','labels','summary','moneyKeys','numericKeys','preparedBy','generated');
     }
+    private static function filterLines($query, Request $request, string $date, string $manager): void
+    {
+        foreach (['supplierId'=>'po.supplierId','productId'=>'l.productId','category'=>'l.category','brandId'=>'p.brandId','subcategoryId'=>'p.subcategoryId','manager'=>$manager] as $key=>$column) {
+            if ($request->filled($key)) $query->where($column, $request->input($key));
+        }
+        if ($request->filled('from')) $query->where($date, '>=', $request->input('from'));
+        if ($request->filled('to')) $query->where($date, '<', \Carbon\CarbonImmutable::parse($request->input('to'))->addDay()->toDateString());
+    }
+
 }
