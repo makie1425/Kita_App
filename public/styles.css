@@ -1461,6 +1461,19 @@ body:has(.purchase-details-dialog[open]) { overflow: hidden; }
 .receiving-top-filters .purchase-filters { flex:1; margin:0; padding:0; border:0; }
 .receiving-audit-filter,.report-status-filter { display:flex; flex-direction:column; gap:5px; font-size:11px; color:#526579; }
 .receiving-audit-filter select,.report-status-filter select { padding:9px 12px; background:white; color:#172033; border:1px solid #dce6f7; border-radius:7px; }
+.reports-page .report-filter-actions { align-items:flex-end; }
+.reports-page .report-filter-actions > strong { display:flex; align-items:center; min-height:42px; }
+.reports-page .report-filter-actions > label { margin:0; min-width:0; max-width:100%; }
+.reports-page .report-filter-actions > button,
+.reports-page .report-filter-actions select,
+.reports-page .report-search input { box-sizing:border-box; height:42px; min-height:42px; margin:0; }
+.reports-page .report-filter-actions select { width:100%; }
+@media(max-width:600px) {
+  .reports-page .report-filter-actions > strong { min-height:0; }
+  .reports-page .report-filter-actions > button,
+  .reports-page .report-filter-actions select,
+  .reports-page .report-search input { height:44px; min-height:44px; }
+}
 
 /* Receiving stays above the queue; native dialog provides focus trapping. */
 .receiving-dialog { width:min(1200px,94vw); max-height:90dvh; padding:0; border:1px solid #dce6f7; border-radius:18px; color:#162b51; background:white; overflow:auto; }
