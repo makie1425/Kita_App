@@ -86,17 +86,26 @@ class InventoryWorkflowController extends Controller
     public function archive(Request $r)
     {
         InventoryRules::authorize($r);
-        $d = $r->validate(['kind' => ['required', Rule::in(['products', 'categories'])], 'ids' => ['required', 'array', 'min:1', 'max:500'], 'ids.*' => ['required', 'string', 'max:100']]);
+        $d = $r->validate(['kind' => ['required', Rule::in(['products', 'categories', 'suppliers'])], 'action'=>['sometimes', Rule::in(['archive','restore','delete'])], 'ids' => ['required', 'array', 'min:1', 'max:500'], 'ids.*' => ['required', 'string', 'max:100']]);
 
         return DB::transaction(function () use ($r, $d) {
             InventoryRules::lockActor($r);
-            $key = $d['kind'] === 'products' ? 'id' : 'name';
+            $key = $d['kind'] === 'categories' ? 'name' : 'id';
             $records = DB::table($d['kind'])->whereIn($key, $d['ids'])->orderBy($key)->lockForUpdate()->get();
             abort_unless($records->count() === count(array_unique($d['ids'])), 422, 'Some selected records no longer exist.');
-            DB::table($d['kind'])->whereIn($key, $d['ids'])->update(['status' => 'Inactive', 'archivedAt' => now()->toDateString(), 'archivedBy' => $r->user()->name]);
-            InventoryRules::audit($r->user()->name, 'Archived inventory records', $d['kind'], null, json_encode($d['ids']));
+            $action = $d['action'] ?? 'archive';
+            if ($action !== 'archive') abort_if($records->contains(fn ($record) => $record->status !== 'Inactive'), 422, 'Only inactive records can be restored or deleted.');
+            if ($action === 'delete') {
+                \App\Services\ArchiveReferences::ensureUnused($d['kind'], $records);
+                DB::table($d['kind'])->whereIn($key, $d['ids'])->delete();
+            } else {
+                DB::table($d['kind'])->whereIn($key, $d['ids'])->update($action === 'restore'
+                    ? ['status'=>'Active','archivedAt'=>null,'archivedBy'=>null]
+                    : ['status'=>'Inactive','archivedAt'=>now()->toDateString(),'archivedBy'=>$r->user()->name]);
+            }
+            InventoryRules::audit($r->user()->name, ucfirst($action).' inventory records', $d['kind'], null, json_encode($d['ids']));
 
-            return response()->json(['message' => 'Selected records archived.']);
+            return response()->json(['message' => 'Selected records '.match ($action) {'restore'=>'restored', 'delete'=>'deleted', default=>'archived'}.'.']);
         });
     }
 

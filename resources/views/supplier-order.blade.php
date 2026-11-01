@@ -3,9 +3,8 @@
 <button onclick="window.print()">Print / Save PDF</button><h1>KITA ? Purchase Order</h1><h2>{{ $order->id }}</h2>
 <p>Order date: {{ $order->created }}<br>Expected delivery: {{ ($order->expectedDeliveryDate ?? null) ?: 'To be agreed' }}</p>
 <p><strong>Supplier:</strong> {{ $order->supplierName ?? $supplier?->name }}<br>{{ $supplier?->address }}<br>{{ $supplier?->contact }} {{ $supplier?->phone }}</p>
-<p>Please supply the following quantities in the stock units shown. This purchase order does not confirm receipt or payment.</p>
+
 <div class="scroll"><table><thead><tr><th>Item Code</th><th>Item</th><th>Stock Unit</th><th>Ordered Qty</th><th>Unit Cost (PHP)</th><th>Order Amount (PHP)</th></tr></thead><tbody>
 @foreach($lines as $line)<tr><td>{{ $line->productId }}</td><td>{{ $line->name }}</td><td>{{ $line->unit }}</td><td>{{ $line->orderedQty }}</td><td>{{ number_format($line->unitCost,2) }}</td><td>{{ number_format($line->lineTotal,2) }}</td></tr>@endforeach
 </tbody></table></div><p><strong>Total order amount: PHP {{ number_format($order->orderedValue,2) }}</strong></p>
-@if($lines->contains(fn ($l)=>$l->carryoverQty > 0))<p>Includes previously approved outstanding quantities carried from legacy orders. These carryover quantities do not add a new order charge.</p>@endif
 <p>Authorized signature: __________________________</p><p>Generated {{ now()->format('Y-m-d H:i:s T') }}</p></body></html>

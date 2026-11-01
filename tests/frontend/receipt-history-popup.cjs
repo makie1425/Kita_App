@@ -1,0 +1,14 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert/strict');
+const ctx=vm.createContext({React:{createElement:(type,props,...children)=>({type,props,children})},DCLogic:class{setState(p){Object.assign(this.state,typeof p==='function'?p(this.state):p)}},window:{}});
+vm.runInContext(fs.readFileSync(process.env.KITA_TEST_APP||'public/app.js','utf8')+';globalThis.app=new Component();',ctx);
+const app=ctx.app,nodes=n=>!n||typeof n!=='object'?[]:Array.isArray(n)?n.flatMap(nodes):[n,...nodes(n.children)];
+const receipt={id:'SR1',deliveryDate:'2026-10-27',status:'Posted',exceptions:[],summary:[{poId:'PO1',name:'Coke',type:'current',delivered:10,damaged:2,accepted:8,remaining:2}]};
+app.state.purchaseData={stockReceipts:[receipt,{...receipt,id:'SR2',status:'Pending Approval'},{...receipt,id:'SR3',status:'Approved'}]};
+let tree=app.buildStockReceiptHistory();assert.equal(nodes(tree).filter(n=>n.type==='article').length,3);assert.equal(nodes(tree).filter(n=>n.type==='details'||n.type==='dialog').length,0);
+nodes(tree).find(n=>n.props?.['aria-label']==='View details for SR1').props.onClick();tree=app.buildStockReceiptHistory();let dialog=nodes(tree).find(n=>n.type==='dialog');assert.ok(dialog);
+let opened=false;dialog.props.ref({open:false,showModal(){opened=true;}});assert.ok(opened);assert.ok(nodes(dialog).some(n=>n.type==='a'&&n.props.href==='/stock-receipts/SR1/report'));
+assert.ok(nodes(dialog).some(n=>n.props?.className==='receipt-history-dialog-body'));
+dialog.props.onCancel({preventDefault(){}});assert.equal(app.state.receiptHistoryId,null);
+let called;app.stockReceiptAction=(r,action)=>called=[r.id,action];tree=app.buildStockReceiptHistory(true);assert.equal(nodes(tree).filter(n=>n.type==='article').length,1);nodes(tree).find(n=>n.type==='button').props.onClick();tree=app.buildStockReceiptHistory(true);nodes(tree).find(n=>n.type==='button'&&n.children.includes('Approve receipt')).props.onClick();assert.deepEqual(called,['SR2','Approved']);
+app.setState({receiptHistoryId:'SR3',receiptHistoryReview:false});tree=app.buildStockReceiptHistory();nodes(tree).find(n=>n.type==='button'&&n.children.includes('Post approved receipt')).props.onClick();assert.deepEqual(called,['SR3','post']);nodes(tree).find(n=>n.type==='button'&&n.children.includes('Close')).props.onClick();assert.equal(app.state.receiptHistoryId,null);
+console.log('PASS: receipt cards, modal open/close, print URL, review filtering, approval and posting actions.');

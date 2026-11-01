@@ -701,6 +701,13 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .section-heading { margin-bottom: 24px !important; }
 .section-heading h1 { color: var(--navy); line-height: 1.3; }
 .section-heading > div { margin-top: 6px !important; line-height: 1.7; }
+.topbar-title { margin:0; }
+.module-page-heading { display:none; }
+.module-page-heading.has-subtitle { display:block; margin-bottom:16px; }
+.module-page-heading > h1 { display:none; }
+@media print {
+  .module-page-heading,.module-page-heading > h1 { display:block; }
+}
 .kita-card { box-shadow: var(--shadow); border-radius: 14px !important; padding: 22px !important; min-width: 0; }
 .kita-button { min-height: 38px; line-height: 1.4; display: inline-flex; align-items: center; justify-content: center; gap: 7px; }
 .kita-button--primary { box-shadow: 0 3px 8px rgba(23,71,232,.12); }
@@ -1456,10 +1463,24 @@ body:has(.purchase-details-dialog[open]) { overflow: hidden; }
 .receiving-dashboard .receiving-tabs button[aria-pressed=true] { background:#fff !important; color:#1747e8 !important; border-bottom:2px solid #1747e8 !important; }
 .receiving-dashboard td details summary { cursor:pointer; color:#1747e8; font-weight:600; }
 .receiving-dashboard .receiving-tabs button:hover,.receiving-dashboard .receiving-tabs button:focus-visible,.reports-page .report-type-button:hover,.reports-page .report-filter-button:hover { background:#1747e8 !important; color:#fff !important; }
+
 .receiving-top-filters { display:flex; flex-wrap:wrap; align-items:end; gap:12px; margin-bottom:18px; padding:14px; background:white; border:1px solid #dce6f7; border-radius:12px; }
 .receiving-top-filters .purchase-filters { flex:1; margin:0; padding:0; border:0; }
 .receiving-audit-filter,.report-status-filter { display:flex; flex-direction:column; gap:5px; font-size:11px; color:#526579; }
 .receiving-audit-filter select,.report-status-filter select { padding:9px 12px; background:white; color:#172033; border:1px solid #dce6f7; border-radius:7px; }
+.reports-page .report-filter-actions { align-items:flex-end; }
+.reports-page .report-filter-actions > strong { display:flex; align-items:center; min-height:42px; }
+.reports-page .report-filter-actions > label { margin:0; min-width:0; max-width:100%; }
+.reports-page .report-filter-actions > button,
+.reports-page .report-filter-actions select,
+.reports-page .report-search input { box-sizing:border-box; height:42px; min-height:42px; margin:0; }
+.reports-page .report-filter-actions select { width:100%; }
+@media(max-width:600px) {
+  .reports-page .report-filter-actions > strong { min-height:0; }
+  .reports-page .report-filter-actions > button,
+  .reports-page .report-filter-actions select,
+  .reports-page .report-search input { height:44px; min-height:44px; }
+}
 
 /* Receiving stays above the queue; native dialog provides focus trapping. */
 .receiving-dialog { width:min(1200px,94vw); max-height:90dvh; padding:0; border:1px solid #dce6f7; border-radius:18px; color:#162b51; background:white; overflow:auto; }
@@ -1564,7 +1585,11 @@ body:has(.receiving-dialog[open]) { overflow:hidden; }
 .inventory-columns>div { display:flex; flex-wrap:wrap; gap:12px 20px; padding:12px 0; }
 .inventory-columns label { display:flex; align-items:center; gap:7px; font-size:12px; }
 .inventory-item-link { border:0; background:transparent; color:#1747e8; cursor:pointer; font:inherit; font-weight:600; text-align:left; padding:0; text-decoration:underline; text-underline-offset:3px; }
-.inventory-row-actions { display:flex; flex-wrap:wrap; gap:5px; min-width:150px; }
+.inventory-row-actions { display:flex; flex-wrap:nowrap; align-items:center; gap:8px; width:max-content; min-width:150px; }
+.table-scroll td .action-group { flex-wrap:nowrap; width:max-content; }
+.table-scroll td :is(.inventory-row-actions,.action-group) > :is(button,a) { flex:0 0 auto; margin:0; white-space:nowrap; }
+.table-scroll td:has(> .inventory-row-actions),
+.table-scroll td:has(> .action-group) { max-width:none; white-space:nowrap; }
 .inventory-workspace .table-scroll { max-width:100%; }
 @media(max-width:1050px) { .inventory-summary { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 @media(max-width:600px) { .inventory-summary { grid-template-columns:1fr; } .inventory-view-tabs>.kita-button { flex:1 1 auto; } .inventory-columns>div { flex-direction:column; } }
@@ -1720,9 +1745,41 @@ body:has(.receiving-dialog[open]) { overflow:hidden; }
 .inspection-footer-actions { display:flex; gap:8px; }
 .inspection-footer button { font-size:12px; min-height:36px; padding:8px 13px; border-radius:7px; }
 .inspection-error { color:#aa1833!important; background:#fff1f3; padding:10px; border-radius:6px; }
-.stock-receipt-history { margin:18px 0; background:#fff; padding:16px; border:1px solid #dce6f7; border-radius:10px; }
-.stock-receipt-history>details { border-top:1px solid #e8eef9; padding:12px 0; }
-.stock-receipt-history summary { cursor:pointer; overflow-wrap:anywhere; }
+.stock-receipt-history { margin:24px 0; }
+.receipt-history-heading { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:16px; }
+.receipt-history-heading h3 { margin:0; color:#12356b; font-size:20px; }
+.receipt-history-heading > span { color:#60799d; font-size:12px; }
+.receipt-history-list { display:grid; gap:14px; }
+.receipt-history-card { display:flex; align-items:center; justify-content:space-between; gap:24px; padding:22px 24px; background:#fff; border:1px solid #dce6f7; border-radius:16px; }
+.receipt-history-info { min-width:0; }
+.receipt-history-title { display:flex; align-items:center; flex-wrap:wrap; gap:12px; }
+.receipt-history-title strong { color:#12356b; overflow-wrap:anywhere; }
+.receipt-history-status { display:inline-flex; border:1px solid #d8e5ff; border-radius:20px; padding:5px 12px; background:#edf3ff; color:#1747e8; font-size:12px; font-weight:700; white-space:nowrap; }
+.receipt-history-card p { margin:8px 0 0; color:#627ca0; font-size:13px; overflow-wrap:anywhere; }
+.receipt-history-card .receipt-history-products { color:#234875; }
+.receipt-history-card > button { flex-shrink:0; white-space:nowrap; }
+.receipt-history-dialog { padding:0; width:min(1100px,calc(100vw - 32px)); max-width:calc(100vw - 32px); max-height:calc(100dvh - 32px); border:1px solid #dce6f7; border-radius:20px; background:#fff; color:#12356b; overflow:hidden; box-shadow:0 30px 90px #12356b40; }
+.receipt-history-dialog[open] { display:flex; flex-direction:column; }
+.receipt-history-dialog::backdrop { background:#10264d80; }
+.receipt-history-dialog-header { display:flex; justify-content:space-between; align-items:flex-start; gap:20px; padding:24px 28px; background:#1747e8; color:#fff; flex-shrink:0; }
+.receipt-history-eyebrow { font-size:10px; letter-spacing:1.4px; font-weight:700; }
+.receipt-history-dialog-header h2 { margin:8px 0; font-size:19px; color:#fff; overflow-wrap:anywhere; }
+.receipt-history-dialog-header p { margin:0; color:#e2ebff; font-size:13px; }
+.receipt-history-close { width:36px; height:36px; flex-shrink:0; background:transparent; border:1px solid #ffffff66; border-radius:9px; color:#fff; font-size:24px; cursor:pointer; }
+.receipt-history-dialog-body { padding:24px 28px; min-height:0; overflow:auto; overscroll-behavior:contain; }
+.receipt-history-audit { display:flex; align-items:center; gap:14px; padding:14px 16px; background:#f4f7ff; border:1px solid #e0e9fa; border-radius:12px; margin-bottom:20px; font-size:13px; overflow-wrap:anywhere; }
+.receipt-history-dialog .inspection-table-wrap { border-radius:12px; border:1px solid #dce6f7; overflow:auto; }
+.receipt-history-dialog .inspection-table-wrap table { min-width:760px; width:100%; }
+.receipt-history-dialog .inspection-table-wrap th { background:#f3f7ff; color:#52719b; }
+.receipt-history-dialog .inspection-table-wrap :is(th,td) { padding:14px 16px!important; }
+.receipt-history-dialog-footer { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:18px 28px; border-top:1px solid #e4ecfa; flex-shrink:0; background:#fff; }
+.receipt-history-footer-actions { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+@media(max-width:600px) {
+  .receipt-history-card { align-items:flex-start; flex-direction:column; gap:16px; padding:18px; }
+  .receipt-history-dialog-header,.receipt-history-dialog-body { padding:18px; }
+  .receipt-history-dialog-footer { padding:14px 18px; flex-wrap:wrap; }
+  .receipt-history-audit { flex-wrap:wrap; }
+}
 .inspection-approval { display:flex; flex-wrap:wrap; gap:10px; padding-top:10px; }
 .inspection-approval label { flex-basis:100%; }
 @media(max-width:700px) {
@@ -1753,3 +1810,90 @@ body:has(.loading-overlay) .loading-status { visibility: hidden; }
 @media print { .loading-overlay { display: none !important; } }
 
 body:has(.loading-overlay) button[aria-busy="true"]::before { display: none; }
+
+.report-type-filter { max-width:100%; }
+.report-type-filter select { min-height:44px; width:220px; max-width:100%; font:inherit; font-size:13px; }
+
+/* Shared viewing-table scrollbar; layout changes never fetch or reload data. */
+.sticky-table-frame { min-width:0; max-width:100%; position:relative; }
+.sticky-table-scrollbar { position:sticky; bottom:0; z-index:15; height:20px; overflow-x:scroll; overflow-y:hidden; background:#f5f8fc; border:1px solid #dce6f7; border-radius:6px; box-shadow:0 -2px 8px #152c4a12; scrollbar-color:#7b8ca5 #e8edf4; scrollbar-width:auto; }
+.sticky-table-scrollbar[hidden] { display:none; }
+.sticky-table-scrollbar-width { height:1px; pointer-events:none; }
+.sticky-table-scrollbar::-webkit-scrollbar { height:16px; }
+.sticky-table-scrollbar::-webkit-scrollbar-track { background:#e8edf4; border-radius:6px; }
+.sticky-table-scrollbar::-webkit-scrollbar-thumb { background:#7b8ca5; border:3px solid #e8edf4; border-radius:8px; }
+.sticky-table-scrollbar:focus-visible { outline:3px solid #1747e8; outline-offset:2px; }
+.reports-page .record-list,.receiving-dashboard .record-list { overflow:clip; }
+@media print { .sticky-table-scrollbar { display:none !important; } .sticky-table-frame { position:static; } }
+
+.inventory-batch-groups { display:grid; gap:12px; }
+.inventory-batch-group { min-width:0; border:1px solid #dce6f7; border-radius:10px; background:#fff; padding:12px; }
+.inventory-batch-summary { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:8px; color:#173b78; overflow-wrap:anywhere; }
+.inventory-batch-info { display:flex; align-items:center; flex-wrap:wrap; gap:8px 14px; min-width:0; }
+.inventory-batch-info span,.inventory-batch-info small { color:#526579; }
+.inventory-batch-actions { display:flex; gap:8px; flex-shrink:0; flex-wrap:wrap; }
+.inventory-batch-dialog { width: min(1500px,calc(100vw - 32px)); max-width:calc(100vw - 32px); max-height:calc(100dvh - 32px); padding:0; border:1px solid #dce6f7; border-radius:14px; background:#fff; color:#173b78; box-shadow:0 24px 80px #0f1f4a33; overflow:hidden; }
+.inventory-batch-dialog[open] { display:flex; flex-direction:column; }
+.inventory-batch-dialog::backdrop { background:#0f1f4a66; }
+.inventory-batch-dialog-header { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:18px 20px; border-bottom:1px solid #dce6f7; flex-shrink:0; }
+.inventory-batch-dialog-header h2 { margin:0; font-size:18px; overflow-wrap:anywhere; }
+.inventory-batch-dialog-header p { margin:6px 0 0; color:#526579; }
+.inventory-batch-dialog-body { min-height:0; overflow:auto; overscroll-behavior:contain; padding:16px 20px; }
+.inspection-lot-grid input[type=checkbox] { width:auto; min-width:0; }
+
+@media(max-width:600px){.inventory-batch-summary,.inventory-batch-dialog-header{align-items:flex-start;flex-direction:column}.inventory-batch-dialog-body{padding:12px}.inventory-batch-dialog-header{padding:14px}}
+
+.registration-size { max-width:420px; min-width:0; }
+.registration-size-fields { grid-template-columns:minmax(80px,0.65fr) minmax(0,1.65fr); }
+.registration-size-fields :is(input,select) { width:100%; min-width:0; }
+.registration-page .form-grid > .field-group { min-width:0; }
+@media(max-width:420px){.registration-size-fields{grid-template-columns:1fr;}}
+
+/* Purchase order table and shared supplier order popup. */
+.po-filter-panel{background:#fff;border:1px solid #dce6f7;border-radius:20px;padding:20px;margin:20px 0}
+.po-filter-fields{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px}
+.po-filter-fields label{display:flex;flex-direction:column;gap:8px;color:#60799d;font-size:13px;text-transform:uppercase}
+.po-filter-panel input,.po-filter-panel select{width:100%;min-height:44px;border:1px solid #dce6f7;border-radius:10px;padding:10px 14px;background:#fff;color:#123365;font:inherit;box-sizing:border-box}
+.po-filter-bottom{display:flex;gap:16px;justify-content:space-between;border-top:1px solid #edf2fa;margin-top:16px;padding-top:12px;align-items:center}
+.po-filter-bottom>input{max-width:560px;background:#f7f9fc}
+.po-filter-actions,.po-row-actions{display:flex;flex-wrap:nowrap;gap:8px;align-items:center;white-space:nowrap}
+.po-filter-actions .kita-button:first-child{background:#f1f5fa;color:#163763}
+.purchase-order-workspace .table-scroll{border-radius:20px;border:1px solid #dce6f7;background:white}
+.purchase-order-workspace th{background:#f7f9fc;color:#60799d}
+.purchase-order-workspace td{padding-top:18px;padding-bottom:18px}
+.purchase-order-workspace td:first-child{font-family:monospace;font-weight:700;white-space:nowrap}
+.po-order-dialog{padding:0;width:min(1100px,94vw);overflow:hidden}
+.po-order-dialog[open]{display:flex;flex-direction:column}
+.po-dialog-header{display:flex;align-items:center;gap:14px;background:#214ff2;color:#fff;padding:22px}
+.po-dialog-header h2{margin:0;flex:1;font-size:20px}
+.po-dialog-body{padding:22px;overflow:auto;min-height:0}
+.po-order-dialog>footer{padding:18px 22px;border-top:1px solid #dce6f7;flex-wrap:wrap;margin:0}
+@media(max-width:760px){.po-filter-fields{grid-template-columns:repeat(2,minmax(0,1fr))}.po-filter-bottom{flex-wrap:wrap}.po-dialog-header{flex-wrap:wrap}}
+@media(max-width:440px){.po-filter-fields{grid-template-columns:minmax(0,1fr)}}
+
+/* Consistent filter sizing and alignment across modules. */
+.purchase-filters{align-items:flex-end;gap:12px}
+.purchase-filters>label{flex:1 1 200px;min-width:0;margin:0}
+.purchase-filters>button,.purchase-filters> .action-group{flex:0 0 auto}
+.purchase-filters input,.purchase-filters select,.purchase-filters>button{min-height:44px;box-sizing:border-box}
+.reports-page .report-filter-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));align-items:end;gap:12px}
+.reports-page .report-filter-actions>strong{grid-column:1/-1;min-height:0;margin:0}
+.reports-page .report-filter-actions>label{width:100%;margin:0;display:flex;flex-direction:column;gap:6px}
+.reports-page .report-filter-actions>button,.reports-page .report-filter-actions select,.reports-page .report-filter-actions input{width:100%;height:44px;min-height:44px;box-sizing:border-box;margin:0}
+.reports-page .report-filter-actions>.report-search{grid-column:1/-1;max-width:none;min-width:0}
+.reports-page .report-date-options{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;align-items:end}
+.reports-page .report-date-options label{display:flex;flex-direction:column;gap:6px;margin:0;min-width:0}
+.reports-page .report-date-options input:not([type=checkbox]),.reports-page .report-date-options select{width:100%;min-height:44px;box-sizing:border-box}
+.reports-page>.purchase-notes{max-width:360px;margin-bottom:16px}
+.reports-page>.purchase-notes input{min-height:44px;border:1px solid #dce6f7;border-radius:8px;padding:10px 12px;box-sizing:border-box}
+.reports-page .record-list th{vertical-align:middle;background:#f3f6ff}
+.reports-page .record-list td{vertical-align:middle}
+@media(max-width:480px){.reports-page .report-filter-actions,.reports-page .report-date-options{grid-template-columns:minmax(0,1fr)}}
+
+/* Batch history remains within the Stock Receiving workspace. */
+.receiving-card-panel .inventory-batch-group{border-radius:18px;padding:18px 20px}
+.receiving-card-panel .inventory-batch-info{display:grid;gap:6px}
+.inventory-batch-dialog-header{background:#214ff2;color:#fff}
+.inventory-batch-dialog-header p{color:#e5edff}
+.inventory-batch-dialog-footer{display:flex;justify-content:flex-end;padding:16px 20px;border-top:1px solid #dce6f7;background:#fff;flex-shrink:0}
+body:has(.inventory-batch-dialog[open]){overflow:hidden}
