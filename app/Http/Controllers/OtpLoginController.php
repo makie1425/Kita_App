@@ -35,6 +35,7 @@ class OtpLoginController extends Controller
     {
         return [
             'message' => 'Signed in successfully.',
+            'password_setup_required' => (bool)$user->must_change_password,
             'role' => $user->normalizedRole() === 'super_admin' ? 'superadmin' : $user->normalizedRole(),
             'dashboard' => $this->dashboardFor($user),
             'id' => $user->id,
@@ -120,6 +121,8 @@ class OtpLoginController extends Controller
             $user->forceFill(['password' => Hash::make($validated['password'])])->save();
         }
 
+        if ($user->must_change_password && (!$user->temporary_password_expires_at || now()->gte($user->temporary_password_expires_at))) throw ValidationException::withMessages(['password'=>'Temporary password expired. Use Resend Setup Credentials.']);
+
         if ($this->requiresOtp($user)) {
             $otp = $this->issueOtpForUser($user);
 
@@ -138,6 +141,7 @@ class OtpLoginController extends Controller
 
         RateLimiter::clear($key);
         Auth::login($user);
+        session(['credential_version'=>(int)$user->credential_version]);
         $request->session()->regenerate();
 
         return response()->json($this->loginResponse($user));
@@ -193,9 +197,11 @@ class OtpLoginController extends Controller
             throw ValidationException::withMessages(['email' => User::DEACTIVATED_MESSAGE]);
         }
 
+        if ($user->must_change_password && (!$user->temporary_password_expires_at || now()->gte($user->temporary_password_expires_at))) throw ValidationException::withMessages(['password'=>'Temporary password expired. Request new setup credentials.']);
         $otpRecord->forceFill(['used_at' => now()])->save();
 
         Auth::login($user);
+        session(['credential_version'=>(int)$user->credential_version]);
         $request->session()->regenerate();
         session()->forget(['pending_login_user_id', 'pending_login_email']);
 

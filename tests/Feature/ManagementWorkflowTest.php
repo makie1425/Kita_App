@@ -158,10 +158,11 @@ class ManagementWorkflowTest extends TestCase
 
     public function test_account_creation_uniqueness_permissions_and_no_delete(): void
     {
-        $body = ['name' => 'New cashier', 'email' => 'NEW@EXAMPLE.COM', 'role' => 'cashier', 'password' => 'secret123'];
+        $body = ['first_name' => 'New', 'last_name' => 'cashier', 'email' => 'NEW@EXAMPLE.COM', 'role' => 'cashier'];
         $account = $this->postJson('/api/accounts', $body)->assertCreated()->json('account');
         $this->assertSame('new@example.com', $account['email']);
-        $this->assertTrue(Hash::check('secret123', User::where('email', $account['email'])->first()->password));
+        $this->assertTrue((bool) $account['must_change_password']);
+        $this->assertNotNull(User::where('email', $account['email'])->first()->temporary_password_expires_at);
         $this->postJson('/api/accounts', $body)->assertUnprocessable();
         $this->postJson('/api/accounts', array_replace($body, ['email' => 'admin@example.com', 'role' => 'admin']))->assertForbidden();
         $this->deleteJson('/api/accounts/cashier/'.$account['id'])->assertStatus(405);
@@ -197,7 +198,7 @@ class ManagementWorkflowTest extends TestCase
     public function test_super_admin_can_create_admins_but_admin_cannot_escalate(): void
     {
         $super = User::factory()->create(['role' => 'superadmin']);
-        $body = ['name' => 'New admin', 'email' => 'newadmin@example.com', 'role' => 'admin', 'password' => 'secret123'];
+        $body = ['first_name' => 'New', 'last_name' => 'admin', 'email' => 'newadmin@example.com', 'role' => 'admin'];
         $this->actingAs($super)->postJson('/api/accounts', $body)->assertCreated();
         $this->actingAs($this->admin)->patchJson('/api/accounts/superadmin/'.$super->id, ['status' => 'Inactive'])->assertForbidden();
         $this->actingAs($super)->patchJson('/api/accounts/superadmin/'.$super->id, ['status' => 'Inactive'])->assertUnprocessable();

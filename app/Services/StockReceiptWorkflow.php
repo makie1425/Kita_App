@@ -18,7 +18,7 @@ class StockReceiptWorkflow
 
     public static function listing()
     {
-        return DB::table('stock_receipts')->orderByDesc('created_at')->limit(200)->get()->map(function ($r) {
+        return WorkspaceRead::table('stock_receipts')->orderByDesc('created_at')->limit(200)->get()->map(function ($r) {
             foreach (['payload','summary','exceptions','receipts'] as $field) $r->$field=json_decode($r->$field ?? 'null',true);
             unset($r->payloadHash,$r->requestKey);
             return $r;

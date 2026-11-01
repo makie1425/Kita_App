@@ -69,7 +69,7 @@ class InventoryRules
 
     public static function audit(string $user, string $action, string $record, ?string $before, string $after): void
     {
-        DB::table('audit_logs')->insert(['ts' => now(), 'user' => $user, 'action' => $action, 'record' => $record, 'beforeValue' => $before, 'afterValue' => $after]);
+        DB::table('audit_logs')->insert(WorkspaceWrite::owned(['ts' => now(), 'user' => $user, 'action' => $action, 'record' => $record, 'beforeValue' => $before, 'afterValue' => $after]));
         // Workflow decisions send their own recipient-specific notifications.
         if (in_array($action, ['Created supplier', 'Created category', 'Updated category', 'Registered item', 'Updated item', 'Added PO items'], true)
             && ($actor = auth()->user())) {

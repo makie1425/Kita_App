@@ -38,6 +38,7 @@
         <sc-if value="{{ dataError }}"><div class="alert">Database error: {{ dataError }}</div></sc-if>
         <sc-if value="{{ loginLocked }}"><div class="alert">Account locked after repeated failed attempts. Try again in 30s.</div></sc-if>
         <button type="submit" class="primary-button" disabled="{{ loginPending }}" aria-busy="{{ loginPending }}" onClick="{{ doLogin }}">{{ loginButtonLabel }}</button>
+        <a href="/password/recovery">Forgot Password / Resend Setup Credentials</a>
       </form>
     </div>
   </div>

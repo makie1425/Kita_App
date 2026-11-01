@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Services\InventoryRules;
+use App\Services\WorkspaceRead;
+use App\Services\WorkspaceWrite;
 use Database\Seeders\RetailBrandSeeder;
 use Database\Seeders\RetailSubcategorySeeder;
 use Illuminate\Http\Request;
@@ -14,13 +16,14 @@ class ProductMasterController extends Controller
     public function populateBrands(Request $request)
     {
         InventoryRules::authorize($request);
+        WorkspaceWrite::requireId();
 
         return DB::transaction(function () use ($request) {
             InventoryRules::lockActor($request);
-            DB::table('categories')->orderBy('name')->lockForUpdate()->get();
-            $before = DB::table('brands')->count();
+            WorkspaceRead::table('categories')->orderBy('name')->lockForUpdate()->get();
+            $before = WorkspaceRead::table('brands')->count();
             (new RetailBrandSeeder)->run();
-            $added = DB::table('brands')->count() - $before;
+            $added = WorkspaceRead::table('brands')->count() - $before;
             InventoryRules::audit($request->user()->name, 'Added standard brands', 'Catalog', null, (string) $added);
 
             return response()->json(['added' => $added, 'message' => $added.' standard brands added.']);
@@ -30,14 +33,15 @@ class ProductMasterController extends Controller
     public function populateSubcategories(Request $request)
     {
         InventoryRules::authorize($request);
+        WorkspaceWrite::requireId();
 
         return DB::transaction(function () use ($request) {
             InventoryRules::lockActor($request);
             // Serialize catalog imports, including requests from different managers.
-            DB::table('categories')->orderBy('name')->lockForUpdate()->get();
-            $before = DB::table('subcategories')->count();
+            WorkspaceRead::table('categories')->orderBy('name')->lockForUpdate()->get();
+            $before = WorkspaceRead::table('subcategories')->count();
             (new RetailSubcategorySeeder)->run();
-            $added = DB::table('subcategories')->count() - $before;
+            $added = WorkspaceRead::table('subcategories')->count() - $before;
             InventoryRules::audit($request->user()->name, 'Added standard subcategories', 'Catalog', null, (string) $added);
 
             return response()->json(['added' => $added, 'message' => $added.' standard subcategories added.']);
@@ -47,14 +51,16 @@ class ProductMasterController extends Controller
     public function save(Request $request, string $kind, ?int $id = null)
     {
         InventoryRules::authorize($request);
+        WorkspaceWrite::requireId();
         abort_unless(in_array($kind, ['brands', 'subcategories']), 404);
+        if ($id) abort_unless(WorkspaceRead::table($kind)->where('id', $id)->exists(), 404);
         $rules = ['name' => ['required', 'string', 'max:100'], 'status' => ['required', Rule::in(['Active', 'Inactive'])]];
         if ($kind === 'subcategories') {
-            $rules['category'] = ['required', Rule::exists('categories', 'name')->where('status', 'Active')];
+            $rules['category'] = ['required', Rule::exists('categories', 'name')->where('status', 'Active')->where(fn ($q) => WorkspaceWrite::scopeValidation($q))];
         }
         $request->merge(['name' => trim((string) $request->input('name'))]);
         $data = $request->validate($rules);
-        $unique = Rule::unique($kind, 'name')->ignore($id);
+        $unique = Rule::unique($kind, 'name')->ignore($id)->where(fn ($q) => WorkspaceWrite::scopeValidation($q));
         if ($kind === 'subcategories') {
             $unique->where('category', $data['category']);
         }
@@ -63,18 +69,18 @@ class ProductMasterController extends Controller
         return DB::transaction(function () use ($request, $kind, $id, $data) {
             InventoryRules::lockActor($request);
             if ($id) {
-                $existing = DB::table($kind)->where('id', $id)->lockForUpdate()->first();
+                $existing = WorkspaceRead::table($kind)->where('id', $id)->lockForUpdate()->first();
                 abort_unless($existing, 404);
                 if ($kind === 'subcategories' && $data['category'] !== $existing->category) {
-                    abort_if(DB::table('products')->where('subcategoryId', $id)->exists(), 422, 'A used subcategory cannot move to another category.');
+                    abort_if(WorkspaceRead::table('products')->where('subcategoryId', $id)->exists(), 422, 'A used subcategory cannot move to another category.');
                 }
-                DB::table($kind)->where('id', $id)->update($data);
+                WorkspaceRead::table($kind)->where('id', $id)->update($data);
             } else {
-                $id = DB::table($kind)->insertGetId($data);
+                $id = WorkspaceRead::table($kind)->insertGetId(WorkspaceWrite::owned($data));
             }
             InventoryRules::audit($request->user()->name, 'Saved '.$kind, (string) $id, null, json_encode($data));
 
-            return response()->json(['record' => DB::table($kind)->where('id', $id)->first()]);
+            return response()->json(['record' => WorkspaceRead::table($kind)->where('id', $id)->first()]);
         });
     }
 
@@ -82,8 +88,8 @@ class ProductMasterController extends Controller
     {
         InventoryRules::authorize($request);
         $request->validate(['from' => ['nullable', 'date_format:Y-m-d'], 'to' => ['nullable', 'date_format:Y-m-d', ...($request->filled('from') ? ['after_or_equal:from'] : [])], 'movementType'=>['nullable', Rule::in(array_keys(\App\Services\InventoryLedger::TYPES))]]);
-        $products = DB::table('products as p');
-        $movements = DB::table('stock_movements as m')->join('products as p', 'p.id', '=', 'm.productId');
+        $products = \App\Services\WorkspaceRead::table('products as p');
+        $movements = \App\Services\WorkspaceRead::table('stock_movements as m')->joinSub(\App\Services\WorkspaceRead::table('products'), 'p', 'p.id', '=', 'm.productId');
         foreach (['category' => 'p.category', 'brandId' => 'p.brandId', 'subcategoryId' => 'p.subcategoryId', 'productId' => 'p.id'] as $key => $column) {
             if ($request->filled($key)) {
                 $products->where($column, $request->input($key));
@@ -101,12 +107,12 @@ class ProductMasterController extends Controller
             $movements->whereDate('m.created_at', '<=', $request->input('to'));
         }
         if ($request->filled('movementType')) $movements->where('m.referenceType', $request->input('movementType'));
-        $query = DB::table('inventory_batches as b')->join('products as p', 'p.id', '=', 'b.productId')
-            ->leftJoin('brands as brand', 'brand.id', '=', 'p.brandId')->leftJoin('subcategories as sub', 'sub.id', '=', 'p.subcategoryId')
-            ->leftJoin('suppliers as supplier', 'supplier.id', '=', 'b.supplierId')
-            ->leftJoin('receiving_records as receipt', 'receipt.id', '=', 'b.receiptId')
-            ->leftJoin('purchase_orders as batch_po', 'batch_po.id', '=', 'receipt.poId')
-            ->leftJoin('item_requests as batch_request', 'batch_request.id', '=', 'batch_po.itemRequestId');
+        $query = \App\Services\WorkspaceRead::table('inventory_batches as b')->joinSub(\App\Services\WorkspaceRead::table('products'), 'p', 'p.id', '=', 'b.productId')
+            ->leftJoinSub(\App\Services\WorkspaceRead::table('brands'), 'brand', 'brand.id', '=', 'p.brandId')->leftJoinSub(\App\Services\WorkspaceRead::table('subcategories'), 'sub', 'sub.id', '=', 'p.subcategoryId')
+            ->leftJoinSub(\App\Services\WorkspaceRead::table('suppliers'), 'supplier', 'supplier.id', '=', 'b.supplierId')
+            ->leftJoinSub(\App\Services\WorkspaceRead::table('receiving_records'), 'receipt', 'receipt.id', '=', 'b.receiptId')
+            ->leftJoinSub(\App\Services\WorkspaceRead::table('purchase_orders'), 'batch_po', 'batch_po.id', '=', 'receipt.poId')
+            ->leftJoinSub(\App\Services\WorkspaceRead::table('item_requests'), 'batch_request', 'batch_request.id', '=', 'batch_po.itemRequestId');
         foreach (['category' => 'p.category', 'brandId' => 'p.brandId', 'subcategoryId' => 'p.subcategoryId', 'productId' => 'p.id', 'supplierId' => 'b.supplierId'] as $key => $column) {
             if ($request->filled($key)) {
                 $query->where($column, $request->input($key));
@@ -122,8 +128,8 @@ class ProductMasterController extends Controller
         $current = collect(\App\Services\InventoryAvailability::products($products->orderByDesc('p.created_at')->orderByDesc('p.id')->get(['p.*'])->map(fn ($p) => (array) $p)->all()));
         if ($request->boolean('lowStock')) $current = $current->where('needsReorder', true)->values();
         $movementCount = (clone $movements)->count();
-        $movements->leftJoin('users as actor', fn ($join) => $join->on('actor.id', '=', 'm.userId')->on('actor.role', '=', 'm.userRole'))
-            ->leftJoin('receiving_records as receipt', fn ($join) => $join->on('receipt.id', '=', 'm.referenceId')->where('m.referenceType', 'purchase_receiving'));
+        $movements->leftJoinSub(\App\Services\WorkspaceRead::table('users'), 'actor', fn ($join) => $join->on('actor.id', '=', 'm.userId')->on('actor.role', '=', 'm.userRole'))
+            ->leftJoinSub(\App\Services\WorkspaceRead::table('receiving_records'), 'receipt', fn ($join) => $join->on('receipt.id', '=', 'm.referenceId')->where('m.referenceType', 'purchase_receiving'));
         return response()->json([
             'batches' => \App\Services\InventoryAvailability::batches($query->orderByDesc('b.receivedDate')->orderByDesc('b.id')->get(['b.*', 'p.name', 'p.category', 'p.size', 'p.sizeUnit', 'p.stockUnit', 'p.status as productStatus', 'p.archivedAt as productArchivedAt', 'brand.name as brand', 'sub.name as subcategory', 'supplier.name as supplier', 'receipt.poId', 'receipt.deliveryReference', 'receipt.receivedBy', 'batch_request.requested_at as requestedAt', 'receipt.received_at as receivedAt'])),
             'products' => $current,

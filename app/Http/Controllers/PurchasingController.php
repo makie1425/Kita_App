@@ -20,26 +20,26 @@ class PurchasingController extends Controller
     public function index(Request $request)
     {
         InventoryRules::authorize($request);
-        $requestLines = DB::table('item_request_lines')->orderBy('id')->get()->groupBy('requestId');
-        $requests = DB::table('item_requests')->orderByDesc('dateRequested')->orderByDesc('id')->get()->map(function ($record) use ($requestLines) {
+        $requestLines = \App\Services\WorkspaceRead::table('item_request_lines')->orderBy('id')->get()->groupBy('requestId');
+        $requests = \App\Services\WorkspaceRead::table('item_requests')->orderByDesc('dateRequested')->orderByDesc('id')->get()->map(function ($record) use ($requestLines) {
             $record->lines = $requestLines->get($record->id, collect());
             unset($record->submissionKey, $record->submissionHash);
 
             return $record;
         });
-        $orders = DB::table('purchase_orders')->orderByDesc('created')->orderByDesc('id')->get();
-        $lines = DB::table('purchase_order_lines')->orderBy('id')->get()->groupBy('poId');
-        $receipts = DB::table('receiving_records')->orderByDesc('received_at')->orderByDesc('id')->get();
-        $receiptLines = DB::table('receiving_record_lines')->orderBy('id')->get()->groupBy('receivingId');
-        $contacts = DB::table('supplier_contacts')->orderByDesc('id')->get()->groupBy('receiptId');
+        $orders = \App\Services\WorkspaceRead::table('purchase_orders')->orderByDesc('created')->orderByDesc('id')->get();
+        $lines = \App\Services\WorkspaceRead::table('purchase_order_lines')->orderBy('id')->get()->groupBy('poId');
+        $receipts = \App\Services\WorkspaceRead::table('receiving_records')->orderByDesc('received_at')->orderByDesc('id')->get();
+        $receiptLines = \App\Services\WorkspaceRead::table('receiving_record_lines')->orderBy('id')->get()->groupBy('receivingId');
+        $contacts = \App\Services\WorkspaceRead::table('supplier_contacts')->orderByDesc('id')->get()->groupBy('receiptId');
         foreach ($receipts as $receipt) {
             $receipt->remarks = ReceivingRemarks::forReceipt($receipt);
             $receipt->contacts = $contacts->get($receipt->id, collect());
             $receipt->lines = $receiptLines->get($receipt->id, collect());
             unset($receipt->payloadHash, $receipt->idempotencyKey);
         }
-        $budgetRequests = DB::table('purchase_budget_requests')->orderByDesc('id')->get()->groupBy('poId');
-        $carryovers = DB::table('receiving_carryovers')->get();
+        $budgetRequests = \App\Services\WorkspaceRead::table('purchase_budget_requests')->orderByDesc('id')->get()->groupBy('poId');
+        $carryovers = \App\Services\WorkspaceRead::table('receiving_carryovers')->get();
         $incoming = $carryovers->groupBy('targetLine')->map(fn ($rows) => (int) $rows->sum(fn ($row) => $row->quantity - $row->receivedQty - $row->releasedQty));
         foreach ($orders as $order) {
             $order->budgetRequests = $budgetRequests->get($order->id, collect());
@@ -57,7 +57,7 @@ class PurchasingController extends Controller
             $order->remarks = $order->receipts->isEmpty() ? 'Awaiting delivery' : $order->receipts->pluck('remarks')->implode(' | ');
         }
 
-        return response()->json(['stockReceipts'=>\App\Services\StockReceiptWorkflow::listing(), 'requests' => $requests, 'orders' => $orders, 'carryovers'=>$carryovers, 'resolutions'=>DB::table('receiving_carryover_resolutions')->get(), 'inspections'=>DB::table('receiving_inspections')->orderBy('id')->get()])->header('Cache-Control', 'no-store');
+        return response()->json(['stockReceipts'=>\App\Services\StockReceiptWorkflow::listing(), 'requests' => $requests, 'orders' => $orders, 'carryovers'=>$carryovers, 'resolutions'=>\App\Services\WorkspaceRead::table('receiving_carryover_resolutions')->get(), 'inspections'=>\App\Services\WorkspaceRead::table('receiving_inspections')->orderBy('id')->get()])->header('Cache-Control', 'no-store');
     }
 
     public function carryover(Request $request, string $id) { return ReceivingCarryover::allocate($request, $id); }
@@ -282,7 +282,7 @@ class PurchasingController extends Controller
 
     public function receiptReport(Request $request, string $id)
     {
-        $receipt = DB::table('receiving_records')->where('id', $id)->first();
+        $receipt = \App\Services\WorkspaceRead::table('receiving_records')->where('id', $id)->first();
         abort_unless($receipt, 404);
         $request->query->set('receipt', $id);
         return $this->report($request, $receipt->poId);
@@ -290,34 +290,34 @@ class PurchasingController extends Controller
 
     public function supplierOrder(Request $request, string $id)
     {
-        $order = DB::table('purchase_orders')->where('id', $id)->first();
+        $order = \App\Services\WorkspaceRead::table('purchase_orders')->where('id', $id)->first();
         abort_unless($order, 404);
-        $supplier = DB::table('suppliers')->where('id', $order->supplierId)->first();
-        $lines = DB::table('purchase_order_lines')->where('poId', $id)->get();
+        $supplier = \App\Services\WorkspaceRead::table('suppliers')->where('id', $order->supplierId)->first();
+        $lines = \App\Services\WorkspaceRead::table('purchase_order_lines')->where('poId', $id)->get();
         return response()->view('supplier-order', compact('order', 'supplier', 'lines'))->header('Cache-Control', 'private, no-store');
     }
 
     public function report(Request $request, string $id)
     {
         InventoryRules::authorize($request);
-        $order = DB::table('purchase_orders')->where('id', $id)->first();
+        $order = \App\Services\WorkspaceRead::table('purchase_orders')->where('id', $id)->first();
         abort_unless($order, 404);
-        $purchase = DB::table('item_requests')->where('id', $order->itemRequestId)->first();
-        $supplier = DB::table('suppliers')->where('id', $order->supplierId)->first();
-        $lines = DB::table('purchase_order_lines')->where('poId', $id)->orderBy('id')->get();
-        $receipts = DB::table('receiving_records')->where('poId', $id)->when($request->filled('receipt'), fn ($q) => $q->where('id', $request->input('receipt')))->orderBy('received_at')->orderBy('id')->get();
-        $receiptLines = DB::table('receiving_record_lines')->whereIn('receivingId', $receipts->pluck('id'))->get()->groupBy('receivingId');
-        $batchDetails=DB::table('inventory_batches')->whereIn('receiptId',$receipts->pluck('id'))->get()->keyBy(fn($b)=>$b->receiptId.'|'.$b->productId.'|'.$b->batchNumber);
+        $purchase = \App\Services\WorkspaceRead::table('item_requests')->where('id', $order->itemRequestId)->first();
+        $supplier = \App\Services\WorkspaceRead::table('suppliers')->where('id', $order->supplierId)->first();
+        $lines = \App\Services\WorkspaceRead::table('purchase_order_lines')->where('poId', $id)->orderBy('id')->get();
+        $receipts = \App\Services\WorkspaceRead::table('receiving_records')->where('poId', $id)->when($request->filled('receipt'), fn ($q) => $q->where('id', $request->input('receipt')))->orderBy('received_at')->orderBy('id')->get();
+        $receiptLines = \App\Services\WorkspaceRead::table('receiving_record_lines')->whereIn('receivingId', $receipts->pluck('id'))->get()->groupBy('receivingId');
+        $batchDetails=\App\Services\WorkspaceRead::table('inventory_batches')->whereIn('receiptId',$receipts->pluck('id'))->get()->keyBy(fn($b)=>$b->receiptId.'|'.$b->productId.'|'.$b->batchNumber);
         foreach($receiptLines as $group) foreach($group as $line) {
             $line->manufacturer=$batchDetails->get($line->receivingId.'|'.$line->productId.'|'.$line->batchNumber)?->manufacturer;
         }
-        $supplierContacts = DB::table('supplier_contacts')->whereIn('receiptId', $receipts->pluck('id'))->orderBy('id')->get()->groupBy('receiptId');
+        $supplierContacts = \App\Services\WorkspaceRead::table('supplier_contacts')->whereIn('receiptId', $receipts->pluck('id'))->orderBy('id')->get()->groupBy('receiptId');
 
-        $sharedReceipts=DB::table('receiving_records')->whereIn('deliveryBatch',$receipts->pluck('deliveryBatch')->filter())->get()->groupBy('deliveryBatch');
-        $budgetRequests=DB::table('purchase_budget_requests')->where('poId',$id)->orderBy('id')->get();
+        $sharedReceipts=\App\Services\WorkspaceRead::table('receiving_records')->whereIn('deliveryBatch',$receipts->pluck('deliveryBatch')->filter())->get()->groupBy('deliveryBatch');
+        $budgetRequests=\App\Services\WorkspaceRead::table('purchase_budget_requests')->where('poId',$id)->orderBy('id')->get();
         $receivingLimit=PurchaseBudget::limit($order);
-        $carryovers=DB::table('receiving_carryovers')->where('sourcePo',$id)->orWhere('targetPo',$id)->get();
-        $resolutions=DB::table('receiving_carryover_resolutions')->whereIn('carryoverId',$carryovers->pluck('id'))->get();
+        $carryovers=\App\Services\WorkspaceRead::table('receiving_carryovers')->where(fn ($q) => $q->where('sourcePo',$id)->orWhere('targetPo',$id))->get();
+        $resolutions=\App\Services\WorkspaceRead::table('receiving_carryover_resolutions')->whereIn('carryoverId',$carryovers->pluck('id'))->get();
         return response()->view('purchase-report', compact('sharedReceipts','budgetRequests','receivingLimit','carryovers','resolutions','order', 'purchase', 'supplier', 'lines', 'receipts', 'receiptLines', 'supplierContacts'))->header('Cache-Control', 'private, no-store');
     }
 }

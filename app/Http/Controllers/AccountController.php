@@ -22,7 +22,7 @@ class AccountController extends Controller
         $lastOtpLogins = DB::table('login_otps')->whereNotNull('used_at')
             ->selectRaw('LOWER(email) as address, MAX(used_at) as last_login')
             ->groupByRaw('LOWER(email)')->pluck('last_login', 'address');
-        $accounts = User::query()->orderByDesc('created_at')->orderByDesc('id')->get()
+        $accounts = (config('workspaces.enabled') ? \App\Services\WorkspaceAccess::accounts($request->user()) : User::query())->orderByDesc('created_at')->orderByDesc('id')->get()
             ->filter(fn (User $user) => in_array($user->normalizedRole(), $roles, true))
             ->map(fn (User $user) => $this->account($user) + ['lastOtpLogin' => $lastOtpLogins[Str::lower((string) $user->email)] ?? null])->values();
 
@@ -32,25 +32,31 @@ class AccountController extends Controller
     public function store(Request $request): JsonResponse
     {
         $roles = $this->manageableRoles($request);
+        $workspaceId = config('workspaces.enabled') ? \App\Services\WorkspaceAccess::requireAccountWorkspace($request->user()) : null;
         $this->normalizeInput($request);
         $data = $request->validate($this->rules(true));
+        $data['name'] = $data['first_name'].' '.$data['last_name'];
         abort_unless(in_array($data['role'], $roles, true), 403, 'You cannot create an account with this role.');
         $this->validateEmail($data['email']);
 
         try {
-            $account = DB::transaction(function () use ($data, $request): User {
+            $account = DB::transaction(function () use ($data, $request, $workspaceId): User {
                 $counter = DB::table('account_sequences')->where('name', 'users')->lockForUpdate()->first();
                 $id = max((int) $counter->next_id, ((int) DB::table('users')->max('id')) + 1);
                 DB::table('account_sequences')->where('name', 'users')->update(['next_id' => $id + 1]);
                 $role = $data['role'] === 'super_admin' ? 'superadmin' : $data['role'];
                 DB::table('users')->insert([
                     'id' => $id, 'role' => $role, 'name' => $data['name'],
-                    'email' => $data['email'], 'password' => Hash::make($data['password']),
+                    'email' => $data['email'], 'password' => Hash::make(Str::random(32)),
+                    'first_name'=>$data['first_name'], 'last_name'=>$data['last_name'], 'must_change_password'=>true,
                     'username' => $data['username'] ?? null, 'status' => 'Active',
                     'refundLimit' => $data['refundLimit'] ?? 300, 'schedule' => $data['schedule'] ?? null,
+                    'workspace_id'=>$workspaceId, 'created_by_user_id'=>$request->user()->id, 'created_by_user_role'=>$request->user()->normalizedRole(),
                     'createdBy' => $request->user()->name, 'created_at' => now(), 'updated_at' => now(),
                 ]);
                 $user = User::where('role', $role)->where('id', $id)->firstOrFail();
+                \App\Services\WorkspaceProvisioning::createdAccount($request->user(), $user);
+                \App\Services\AccountCredentials::issue($user);
                 $this->audit($request, $user, 'Created account', null, $this->account($user));
 
                 return $user;
@@ -59,7 +65,7 @@ class AccountController extends Controller
             throw ValidationException::withMessages(['email' => 'An account with this email already exists.']);
         }
 
-        return response()->json(['message' => 'Account created.', 'account' => $this->account($account)], 201);
+        return response()->json(['message' => 'Account created. Setup credentials were emailed to the registered address.', 'account' => $this->account($account)], 201);
     }
 
     public function update(Request $request, string $role, string $id): JsonResponse
@@ -70,6 +76,8 @@ class AccountController extends Controller
         abort_unless(in_array($role, $roles, true), 403, 'You cannot manage this account.');
         $this->normalizeInput($request);
         $data = $request->validate($this->rules(false));
+        if (isset($data['first_name'], $data['last_name'])) $data['name']=$data['first_name'].' '.$data['last_name'];
+        elseif (isset($data['first_name']) || isset($data['last_name'])) throw ValidationException::withMessages(['first_name'=>'Provide both first and last name.']);
         if (isset($data['role']) && $data['role'] !== $role) {
             throw ValidationException::withMessages(['role' => 'The role of an existing account cannot be changed. Create a separate account for the new role.']);
         }
@@ -82,7 +90,7 @@ class AccountController extends Controller
                     User::query()->whereIn('role', ['superadmin', 'super_admin', 'Super Admin', 'super-admin'])->orderBy('id')->lockForUpdate()->get();
                 }
                 $aliases = $role === 'super_admin' ? ['superadmin', 'super_admin', 'Super Admin', 'super-admin'] : [$role, ucfirst($role)];
-                $user = User::query()->where('id', $id)->whereIn('role', $aliases)->lockForUpdate()->firstOrFail();
+                $user = (config('workspaces.enabled') ? \App\Services\WorkspaceAccess::accounts($request->user()) : User::query())->where('id', $id)->whereIn('role', $aliases)->lockForUpdate()->firstOrFail();
                 if (isset($data['email'])) {
                     $this->validateEmail($data['email'], $user);
                 }
@@ -120,6 +128,33 @@ class AccountController extends Controller
         return response()->json(['message' => 'Account updated.', 'account' => $this->account($account)]);
     }
 
+    public function resendSetup(Request $request, string $role, string $id): JsonResponse
+    {
+        $roles=$this->manageableRoles($request);
+        $query = config('workspaces.enabled')
+            ? \App\Services\WorkspaceAccess::accounts($request->user())
+            : User::query();
+        $user=$query->where('id',$id)->get()->first(fn($u)=>$u->normalizedRole()===$this->normalizedRole($role));
+        abort_unless($user && in_array($user->normalizedRole(),$roles,true),404);
+        \App\Services\AccountCredentials::issue($user);
+        $this->audit($request,$user,'Reissued setup credentials',null,$this->account($user));
+        return response()->json(['message'=>'Setup credentials sent to the registered email.']);
+    }
+
+    public function sendReset(Request $request, string $role, string $id): JsonResponse
+    {
+        $roles=$this->manageableRoles($request);
+        $query = config('workspaces.enabled')
+            ? \App\Services\WorkspaceAccess::accounts($request->user())
+            : User::query();
+        $user=$query->where('id',$id)->get()->first(fn($u)=>$u->normalizedRole()===$this->normalizedRole($role));
+        abort_unless($user && in_array($user->normalizedRole(),$roles,true),404);
+        $request->merge(['email'=>$user->email]);
+        $response=app(PasswordSetupController::class)->requestCode($request);
+        $this->audit($request,$user,'Requested password reset',null,$this->account($user));
+        return $response;
+    }
+
     private function manageableRoles(Request $request): array
     {
         abort_unless($request->user() && $request->user()->isActive(), 401);
@@ -137,10 +172,11 @@ class AccountController extends Controller
         $required = $creating ? 'required' : 'sometimes';
 
         return [
-            'name' => [$required, 'required', 'string', 'max:120'],
+            'first_name' => [$required, 'required', 'string', 'max:60'],
+            'last_name' => [$required, 'required', 'string', 'max:60'],
             'email' => [$required, 'required', 'email', 'max:255'],
             'role' => [$required, Rule::in(['cashier', 'manager', 'admin', 'super_admin'])],
-            'password' => [$creating ? 'required' : 'nullable', 'string', 'min:8', 'max:255'],
+            'password' => ['prohibited'],
             'username' => ['sometimes', 'nullable', 'string', 'max:80', 'regex:/^[A-Za-z0-9._-]+$/'],
             'status' => ['sometimes', Rule::in($creating ? ['Active'] : ['Active', 'Inactive'])],
             'refundLimit' => ['sometimes', 'nullable', 'numeric', 'decimal:0,2', 'min:0', 'max:99999999.99'],
@@ -150,7 +186,7 @@ class AccountController extends Controller
 
     private function normalizeInput(Request $request): void
     {
-        foreach (['name', 'email', 'username', 'schedule'] as $field) {
+        foreach (['first_name', 'last_name', 'name', 'email', 'username', 'schedule'] as $field) {
             if ($request->has($field) && is_string($request->input($field))) {
                 $request->merge([$field => trim($request->input($field))]);
             }
@@ -248,6 +284,7 @@ class AccountController extends Controller
     {
         return [
             'id' => (int) $user->id, 'role' => $user->normalizedRole() === 'super_admin' ? 'superadmin' : $user->normalizedRole(),
+            'first_name'=>$user->first_name, 'last_name'=>$user->last_name, 'must_change_password'=>(bool)$user->must_change_password,
             'name' => $user->name, 'email' => $user->email, 'username' => $user->username,
             'status' => $user->isActive() ? 'Active' : 'Inactive', 'refundLimit' => $user->refundLimit === null ? null : (float) $user->refundLimit,
             'schedule' => $user->schedule, 'createdBy' => $user->createdBy,

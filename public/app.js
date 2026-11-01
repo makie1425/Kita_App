@@ -418,6 +418,7 @@ class Component extends DCLogic {
   };
   backToPassword=()=>this.setState({authStep:"login",otpCode:"",otpEmail:"",loginError:""});
   enterApp=(role,dashboard,user)=>{
+    if(user?.password_setup_required){window.location.assign("/password/setup");return;}
     role=String(role||"").toLowerCase().replace(/[ _-]/g,"");
     const d={cashier:"pos",manager:"mgrDashboard",admin:"admDashboard",superadmin:"saDashboard"}[role];
     if(!d || !user?.name){ this.setState({authStep:"login",role:null,screen:null,loginError:"Your session could not be loaded. Refresh the page and sign in again."}); return; }
@@ -878,7 +879,7 @@ class Component extends DCLogic {
     if(this.categoryBusy)return;
     if(!this.state.categoryEditing&&['subcategory','brand'].includes(this.state.categoryStep))return this.saveCategorySetup();
     const f=this.state.categoryForm;
-    if(!f.name.trim()||!["Perishable","Non-Perishable"].includes(f.classification)){this.setState({categoryError:"Enter a category name and classification."});return;}
+    if(!(f.first_name||"").trim()||!(f.last_name||"").trim()||!["Perishable","Non-Perishable"].includes(f.classification)){this.setState({categoryError:"Enter a category name and classification."});return;}
     this.categoryBusy=true;
     try{
       const original=this.state.categoryEditing?this.state.categoryOriginalName:this.state.categorySetupCategory;
@@ -977,14 +978,14 @@ class Component extends DCLogic {
   saveAccount=()=>{
     if(this.accountBusy) return;
     const f=this.state.acctForm,creating=this.state.acctModalMode==="create";
-    if(!f.name.trim()||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email||"")||(creating&&!f.password)||(f.password&&f.password.length<8)){
-      this.setState({acctError:"Enter a full name, valid email, and a password of at least 8 characters for new accounts."});return;
+    if(!(f.first_name||"").trim()||!(f.last_name||"").trim()||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email||"")){
+      this.setState({acctError:"Enter first name, last name, and a valid email."});return;
     }
     const original=(this.state.accountsLocal||[]).find(a=>a.id===f.id&&a.role===f.role);
     if(!creating&&original&&original.status!==f.status&&!this.confirmAccountStatus(f))return;
     this.accountBusy=true;
-    const payload={name:f.name,email:f.email,username:f.username||null,role:f.role,status:f.status,schedule:f.schedule||null};
-    if(f.password) payload.password=f.password;
+    const payload={first_name:f.first_name,last_name:f.last_name,email:f.email,username:f.username||null,role:f.role,status:f.status,schedule:f.schedule||null};
+
     this.authPost(creating?"/api/accounts":`/api/accounts/${encodeURIComponent(f.role)}/${f.id}`,payload,creating?"POST":"PATCH")
       .then(res=>{this.setState({acctModalOpen:false,acctError:""});this.toast(res.message);if(this.state.role==="superadmin")this.reloadSaDashboard();return Promise.all([this.reloadAccounts(),this.reloadCatalog()]);})
       .catch(error=>this.setState({acctError:error.message})).finally(()=>{this.accountBusy=false;});
@@ -2963,12 +2964,12 @@ class Component extends DCLogic {
         h("label",null,["Role ",h("select",{value:this.state.acctRoleFilter,onChange:e=>{this.setState({acctRoleFilter:e.target.value});this.setTableView("accounts",{page:1});}},[h("option",{value:""},"All roles"),...roles.map(r=>h("option",{value:r,key:r},r))])]),
         h("label",null,["Status ",h("select",{value:this.state.acctStatusFilter,onChange:e=>{this.setState({acctStatusFilter:e.target.value});this.setTableView("accounts",{page:1});}},[h("option",{value:""},"All statuses"),...['Active','Inactive'].map(v=>h("option",{value:v,key:v},v))])])
       ]),
-      this.recordTable("accounts",["Name","Email / Username","Role","Status","Created","Last OTP login","Actions"],(accountsLocal||[]).filter(a=>(!this.state.acctRoleFilter||a.role===this.state.acctRoleFilter)&&(!this.state.acctStatusFilter||a.status===this.state.acctStatusFilter)).map(a=>tr([td(a.name),td([h("div",null,a.email),h("small",null,a.username||"")]),td(a.role),td(h("span",{className:"sa-status "+(a.status==="Active"?"sa-status--healthy":"sa-status--inactive")},a.status.toUpperCase())),td(a.dateCreated||"Not recorded"),td(a.lastOtpLogin||"Not recorded"),td([btn("Edit",this.openAcctModal("edit",a)),btn(a.status==="Active"?"Deactivate":"Activate",()=>this.changeAccountStatus(a))])],a.role+"-"+a.id))),
+      this.recordTable("accounts",["Name","Email / Username","Role","Status","Password Setup","Created","Last OTP login","Actions"],(accountsLocal||[]).filter(a=>(!this.state.acctRoleFilter||a.role===this.state.acctRoleFilter)&&(!this.state.acctStatusFilter||a.status===this.state.acctStatusFilter)).map(a=>tr([td(a.name),td([h("div",null,a.email),h("small",null,a.username||"")]),td(a.role),td(h("span",{className:"sa-status "+(a.status==="Active"?"sa-status--healthy":"sa-status--inactive")},a.status.toUpperCase())),td(a.must_change_password?"Password Change Required":"Password Set"),td(a.dateCreated||"Not recorded"),td(a.lastOtpLogin||"Not recorded"),td([btn("Edit",this.openAcctModal("edit",a)),a.must_change_password?btn("Resend Setup Credentials",()=>this.authPost(`/api/accounts/${encodeURIComponent(a.role)}/${a.id}/resend-setup`,{}).then(r=>this.toast(r.message)).catch(e=>this.toast(e.message,"error"))):btn("Send Password Reset",()=>this.authPost(`/api/accounts/${encodeURIComponent(a.role)}/${a.id}/send-reset`,{}).then(r=>this.toast(r.message)).catch(e=>this.toast(e.message,"error"))),btn(a.status==="Active"?"Deactivate":"Activate",()=>this.changeAccountStatus(a))])],a.role+"-"+a.id))),
       acctModalOpen?h("div",{key:"modal",style:{position:"fixed",inset:0,background:"rgba(15,31,74,0.38)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:50,padding:16}},
         h("div",{role:"dialog","aria-modal":true,"aria-label":acctModalMode==="create"?"Create Account":"Edit Account",style:{width:400,maxHeight:"85vh",overflowY:"auto",background:"#fff",borderRadius:14,padding:20}},[
-          h("h3",{key:"title"},acctModalMode==="create"?"Create Account":"Edit Account"),input("name","Full Name"),input("email","Email","email"),input("username","Employee ID (optional)"),
+          h("h3",{key:"title"},acctModalMode==="create"?"Create Account":"Edit Account"),input("first_name","First Name"),input("last_name","Last Name"),input("email","Email","email"),input("username","Employee ID (optional)"),
           h("label",{key:"role"},["Role",h("select",{value:f.role,disabled:acctModalMode==="edit",onChange:this.setAcctField("role"),style:{width:"100%",padding:10,marginBottom:10}},roles.map(role=>h("option",{key:role,value:role},role)))]),
-          input("password",acctModalMode==="create"?"Password (at least 8 characters)":"New password (leave blank to keep current)","password"),input("schedule","Schedule (optional)"),
+          h("p",null,"Temporary credentials are emailed to new accounts. Password setup is required on first login."),input("schedule","Schedule (optional)"),
           h("label",{key:"status"},["Status",h("select",{value:f.status,onChange:this.setAcctField("status"),style:{width:"100%",padding:10,marginBottom:10}},(acctModalMode==="create"?["Active"]:["Active","Inactive"]).map(status=>h("option",{key:status},status)))]),
           this.state.acctError?h("p",{key:"error",role:"alert",style:{color:COLORS.red}},this.state.acctError):null,
           h("div",{key:"buttons",style:{display:"flex",gap:8}},[btn("Cancel",this.closeAcctModal),btn("Save",this.saveAccount,"primary")]),

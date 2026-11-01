@@ -15,7 +15,7 @@ class ExpiryMonitoring
     public static function batches(?int $days = null)
     {
         $days ??= self::days();
-        return DB::table('inventory_batches as b')->join('products as p', 'p.id', '=', 'b.productId')
+        return WorkspaceRead::table('inventory_batches as b')->joinSub(WorkspaceRead::table('products'),'p', 'p.id', '=', 'b.productId')
             ->where('b.quantityRemaining', '>', 0)->where('b.recalled', false)
             ->whereNotNull('b.expiryDate')->where('b.expiryDate', '<=', now()->addDays($days)->toDateString())
             ->orderBy('b.expiryDate')->orderBy('b.id')

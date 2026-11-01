@@ -131,3 +131,19 @@ Route::post('/api/stock-receipts', [\App\Services\StockReceiptWorkflow::class, '
 Route::patch('/api/stock-receipts/{id}/review', [\App\Services\StockReceiptWorkflow::class, 'review'])->middleware(['auth','role:admin']);
 Route::post('/api/stock-receipts/{id}/post', [\App\Services\StockReceiptWorkflow::class, 'post'])->middleware(['auth','role:manager']);
 Route::get('/stock-receipts/{id}/report', [\App\Services\StockReceiptWorkflow::class, 'report'])->middleware(['auth','role:manager,admin']);
+
+Route::get('/password/setup', [\App\Http\Controllers\PasswordSetupController::class,'page'])->middleware('auth');
+Route::post('/password/setup', [\App\Http\Controllers\PasswordSetupController::class,'save'])->middleware(['auth','throttle:5,1']);
+Route::get('/password/recovery', [\App\Http\Controllers\PasswordSetupController::class,'page']);
+Route::post('/password/recovery', [\App\Http\Controllers\PasswordSetupController::class,'save'])->middleware('throttle:5,1');
+Route::post('/password/code', [\App\Http\Controllers\PasswordSetupController::class,'requestCode'])->middleware('throttle:5,1');
+Route::post('/password/resend', [\App\Http\Controllers\PasswordSetupController::class,'resend'])->middleware('throttle:3,1');
+
+Route::post('/api/accounts/{role}/{id}/resend-setup', [AccountController::class,'resendSetup'])->middleware(['role:manager,admin,super_admin','throttle:3,1']);
+
+Route::post('/api/accounts/{role}/{id}/send-reset', [AccountController::class,'sendReset'])->middleware(['role:manager,admin,super_admin','throttle:3,1']);
+
+Route::post('/password/verify', [\App\Http\Controllers\PasswordSetupController::class,'verifyCode'])->middleware('throttle:5,1');
+
+Route::get('/api/workspaces', [\App\Http\Controllers\WorkspaceController::class,'index'])->middleware('role:manager,admin,super_admin');
+Route::post('/api/workspaces/select', [\App\Http\Controllers\WorkspaceController::class,'select'])->middleware('role:admin,super_admin');
