@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Services\SaleCheckout;
 use App\Services\StockMovement;
+use App\Services\WorkspaceRead;
+use App\Services\WorkspaceWrite;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\JsonResponse;
@@ -16,6 +18,7 @@ class PayMongoController extends Controller
 {
     public function createCheckout(Request $request): JsonResponse
     {
+        WorkspaceWrite::requireId();
         $data = $request->validate(SaleCheckout::rules('stockItems') + ['provider' => ['required', 'in:QR Ph']]);
         $transaction = DB::transaction(function () use ($request, $data) {
             $sale = SaleCheckout::prepare($request, $data, 'stockItems');
@@ -50,11 +53,12 @@ class PayMongoController extends Controller
             abort(502, 'Payment session is awaiting reconciliation. Keep transaction '.$data['uuid'].' before trying again.');
         }
         DB::transaction(function () use ($data, $session) {
-            $record = DB::table('transactions')->where('uuid', $data['uuid'])->lockForUpdate()->first();
+            $record = WorkspaceRead::table('transactions')->where('uuid', $data['uuid'])->lockForUpdate()->first();
+            abort_unless($record, 404);
             if ($record->referenceNo && $record->referenceNo !== $session['id']) {
                 abort(409, 'Payment session does not match.');
             }
-            DB::table('transactions')->where('uuid', $data['uuid'])->update(['referenceNo' => $session['id'], 'checkoutUrl' => $session['attributes']['checkout_url']]);
+            WorkspaceRead::table('transactions')->where('uuid', $data['uuid'])->update(['referenceNo' => $session['id'], 'checkoutUrl' => $session['attributes']['checkout_url']]);
         });
 
         return response()->json(['checkoutUrl' => $session['attributes']['checkout_url'], 'sessionId' => $session['id'], 'uuid' => $data['uuid']]);
@@ -62,10 +66,12 @@ class PayMongoController extends Controller
 
     public function cancelCheckout(Request $request, string $uuid): JsonResponse
     {
-        $transaction = DB::table('transactions')->where('uuid', $uuid)->first();
+        $transaction = WorkspaceRead::table('transactions')->where('uuid', $uuid)->first();
         abort_unless($transaction, 404, 'Transaction not found.');
-        abort_unless($request->user() && ($request->user()->normalizedRole() === 'super_admin'
-            || ((int) $transaction->cashierId === (int) $request->user()->id && $transaction->cashierRole === $request->user()->role)), 403);
+        if (! config('workspaces.enabled')) {
+            abort_unless($request->user() && ($request->user()->normalizedRole() === 'super_admin'
+                || ((int) $transaction->cashierId === (int) $request->user()->id && $transaction->cashierRole === $request->user()->role)), 403);
+        }
         if ($transaction->status === 'Cancelled') {
             return response()->json(['message' => 'Payment cancelled. Stock has been released.']);
         }
@@ -125,6 +131,7 @@ class PayMongoController extends Controller
         return DB::transaction(function () use ($uuid, $session, $payment) {
             $transaction = DB::table('transactions')->where('uuid', $uuid)->lockForUpdate()->first();
             abort_unless($transaction, 404, 'Transaction not found.');
+            abort_if(config('workspaces.enabled') && ! $transaction->workspace_id, 409, 'Payment ownership requires reconciliation.');
             abort_unless($transaction->paymentMode !== 'Cash' && (! $transaction->referenceNo || $transaction->referenceNo === $session['id'])
                 && SaleCheckout::cents($transaction->total) === data_get($payment, 'attributes.amount'), 422, 'Payment amount or session does not match.');
             if ($transaction->paymentReference === $payment['id']) {
@@ -132,20 +139,32 @@ class PayMongoController extends Controller
             }
             abort_unless($transaction->status === 'Pending Payment', 409, 'This payment requires reconciliation.');
             // A batch may have expired or been recalled after the wallet reserved it.
-            $productIds = DB::table('transaction_lines')->where('transaction_uuid', $uuid)->orderBy('productId')->pluck('productId');
-            $products = DB::table('products')->whereIn('id', $productIds)->orderBy('id')->lockForUpdate()->get();
+            $productIds = DB::table('transaction_lines')->where('transaction_uuid', $uuid)
+                ->when(config('workspaces.enabled'), fn ($query) => $query->where('workspace_id', $transaction->workspace_id))
+                ->orderBy('productId')->pluck('productId');
+            $products = DB::table('products')->whereIn('id', $productIds)
+                ->when(config('workspaces.enabled'), fn ($query) => $query->where('workspace_id', $transaction->workspace_id))
+                ->orderBy('id')->lockForUpdate()->get();
             foreach ($products as $product) {
                 abort_unless($product->status === 'Active' && $product->archivedAt === null
-                    && DB::table('categories')->where('name', $product->category)->where('status', 'Active')->whereNull('archivedAt')->exists(), 409, 'Reserved product is no longer eligible. Payment requires reconciliation; do not release goods.');
+                    && DB::table('categories')->where('name', $product->category)
+                        ->when(config('workspaces.enabled'), fn ($query) => $query->where('workspace_id', $transaction->workspace_id))
+                        ->where('status', 'Active')->whereNull('archivedAt')->exists(), 409, 'Reserved product is no longer eligible. Payment requires reconciliation; do not release goods.');
             }
             $batches = DB::table('inventory_allocations as a')->join('inventory_batches as b', 'b.id', '=', 'a.batchId')
-                ->where('a.referenceId', $uuid)->where('a.referenceType', 'payment_reservation')->lockForUpdate()->get(['b.recalled', 'b.expiryDate']);
+                ->join('products as p', 'p.id', '=', 'b.productId')
+                ->where('a.referenceId', $uuid)->where('a.referenceType', 'payment_reservation')
+                ->when(config('workspaces.enabled'), fn ($query) => $query->where('p.workspace_id', $transaction->workspace_id)
+                    ->where('a.workspace_id', $transaction->workspace_id)->where('b.workspace_id', $transaction->workspace_id))
+                ->lockForUpdate()->get(['b.recalled', 'b.expiryDate']);
             abort_if($products->count() !== $productIds->count() || $batches->isEmpty()
                 || $batches->contains(fn ($b) => $b->recalled || ($b->expiryDate && $b->expiryDate <= now()->toDateString())), 409,
                 'Reserved stock expired or was recalled. Payment requires reconciliation; do not release goods.');
-            DB::table('transactions')->where('uuid', $uuid)->update(['status' => 'Paid', 'paid' => $transaction->total,
+            DB::table('transactions')->where('uuid', $uuid)
+                ->when(config('workspaces.enabled'), fn ($query) => $query->where('workspace_id', $transaction->workspace_id))
+                ->update(['status' => 'Paid', 'paid' => $transaction->total,
                 'referenceNo' => $session['id'], 'paymentReference' => $payment['id']]);
-            SaleCheckout::recordSales($uuid);
+            SaleCheckout::recordSales($uuid, config('workspaces.enabled') ? (int) $transaction->workspace_id : null);
             SaleCheckout::audit('PayMongo', 'Payment confirmed', $uuid, 'Pending Payment', 'Paid');
 
             return response()->json(['received' => true]);
@@ -160,15 +179,15 @@ class PayMongoController extends Controller
     private function release(string $uuid, Request $request, string $status): void
     {
         DB::transaction(function () use ($uuid, $request, $status) {
-            $transaction = DB::table('transactions')->where('uuid', $uuid)->lockForUpdate()->first();
+            $transaction = WorkspaceRead::table('transactions')->where('uuid', $uuid)->lockForUpdate()->first();
             abort_unless($transaction && $transaction->status === 'Pending Payment', 409, 'Payment is no longer pending.');
-            foreach (DB::table('transaction_lines')->where('transaction_uuid', $uuid)->orderBy('productId')->get() as $line) {
-                $product = DB::table('products')->where('id', $line->productId)->lockForUpdate()->first();
+            foreach (WorkspaceRead::table('transaction_lines')->where('transaction_uuid', $uuid)->orderBy('productId')->get() as $line) {
+                $product = WorkspaceRead::table('products')->where('id', $line->productId)->lockForUpdate()->first();
                 abort_unless($product && $product->stock + $line->qty <= 2147483647, 409, 'Stock release requires reconciliation.');
-                DB::table('products')->where('id', $line->productId)->increment('stock', $line->qty);
+                WorkspaceRead::table('products')->where('id', $line->productId)->increment('stock', $line->qty);
                 StockMovement::record($line->productId, $product->stock, $product->stock + $line->qty, 'payment_release', $uuid, $request->user());
             }
-            DB::table('transactions')->where('uuid', $uuid)->update(['status' => $status]);
+            WorkspaceRead::table('transactions')->where('uuid', $uuid)->update(['status' => $status]);
             SaleCheckout::audit($request->user()->name, 'Payment reservation released', $uuid, 'Pending Payment', $status);
         }, 3);
     }

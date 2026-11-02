@@ -9,7 +9,7 @@ class NotificationController extends Controller
 {
     private function owned(Request $request)
     {
-        return DB::table('notifications')->where('recipientId', $request->user()->id)->where('recipientRole', $request->user()->role);
+        return \App\Services\NotificationAccess::owned($request->user());
     }
 
     public function index(Request $request)

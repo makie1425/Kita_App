@@ -36,7 +36,7 @@ class ProductController extends Controller
                     'barcodeStatus' => 'Scanned', 'archivedAt' => null, 'archivedBy' => null,
                 ];
                 $product['registrationQuantity'] = 0;
-                DB::table('products')->insert($product);
+                DB::table('products')->insert(\App\Services\WorkspaceWrite::owned($product));
                 InventoryRules::audit($request->user()->name, 'Registered item', (string) $id, null, json_encode($product));
                 DB::table('inventory_sequences')->where('name', 'products')->update(['lastValue' => max($latest, $id)]);
 
@@ -58,7 +58,7 @@ class ProductController extends Controller
             $product = DB::transaction(function () use ($validated, $id, $request): object {
                 InventoryRules::lockActor($request);
                 DB::table('inventory_sequences')->where('name', 'products')->lockForUpdate()->first();
-                $existing = DB::table('products')->where('id', $id)->lockForUpdate()->first();
+                $existing = \App\Services\WorkspaceRead::table('products')->where('id', $id)->lockForUpdate()->first();
                 abort_unless($existing, 404, 'Product not found.');
                 if (isset($validated['id']) && (int) $validated['id'] !== (int) $id) {
                     throw ValidationException::withMessages(['id' => 'Stock ID cannot be changed.']);
@@ -74,10 +74,10 @@ class ProductController extends Controller
                     }
                 }
                 $this->validateVariant($values, (int) $id);
-                if ($values['subcategoryId'] && ! DB::table('subcategories')->where('id', $values['subcategoryId'])->where('category', $values['category'])->exists()) {
+                if ($values['subcategoryId'] && ! \App\Services\WorkspaceRead::table('subcategories')->where('id', $values['subcategoryId'])->where('category', $values['category'])->exists()) {
                     throw ValidationException::withMessages(['subcategoryId' => 'Choose a subcategory belonging to the selected category.']);
                 }
-                if (($existing->stock > 0 || DB::table('inventory_batches')->where('productId', $id)->exists()) && $values['stockUnit'] !== $existing->stockUnit) {
+                if (($existing->stock > 0 || \App\Services\WorkspaceRead::table('inventory_batches')->where('productId', $id)->exists()) && $values['stockUnit'] !== $existing->stockUnit) {
                     throw ValidationException::withMessages(['stockUnit' => 'Cannot change the inventory unit after inventory history exists.']);
                 }
                 $priceChanged = (float) $existing->price !== (float) $values['price'] || (float) $existing->unitPrice !== (float) $values['unitPrice'];
@@ -85,18 +85,18 @@ class ProductController extends Controller
                     throw ValidationException::withMessages(['reason' => 'A reason is required for price changes.']);
                 }
                 $values['cost'] = $existing->cost;
-                DB::table('products')->where('id', $id)->update($values);
+                \App\Services\WorkspaceRead::table('products')->where('id', $id)->update($values);
                 foreach (['price', 'unitPrice'] as $field) {
                     if ((float) $existing->{$field} !== (float) $values[$field]) {
-                        DB::table('field_version_history')->insert([
+                        DB::table('field_version_history')->insert(\App\Services\WorkspaceWrite::owned([
                             'field' => $field, 'record' => $existing->name, 'oldValue' => $existing->{$field}, 'newValue' => $values[$field],
                             'user' => $request->user()->name, 'ts' => now(), 'reason' => $request->input('reason'),
-                        ]);
+                        ]));
                     }
                 }
                 InventoryRules::audit($request->user()->name, 'Updated item', (string) $id, json_encode($existing), json_encode($values));
 
-                return DB::table('products')->where('id', $id)->first();
+                return \App\Services\WorkspaceRead::table('products')->where('id', $id)->first();
             }, 3);
         } catch (QueryException $exception) {
             $this->handleDuplicate($exception);
@@ -108,7 +108,7 @@ class ProductController extends Controller
     private function rejectExistingProduct(array $values): void
     {
         $normalize = fn ($value) => mb_strtolower(preg_replace('/\s+/u', ' ', trim((string) $value)));
-        $candidates = DB::table('products')->where('brandId', $values['brandId'] ?? null)
+        $candidates = \App\Services\WorkspaceRead::table('products')->where('brandId', $values['brandId'] ?? null)
             ->where('parentId', $values['parentId'] ?? null)
             ->where('size', $values['size'] ?? null)->get(['id', 'name', 'sizeUnit', 'stockUnit', 'status', 'variantLabel']);
         foreach ($candidates as $product) {
@@ -132,20 +132,20 @@ class ProductController extends Controller
             'id' => ['nullable', 'integer', 'min:1', 'max:2147483647', Rule::unique('products', 'id')->ignore($id)],
             'name' => ['required', 'string', 'max:160'],
             'manufacturer'=>['required','string','max:160'],
-            'parentId' => ['nullable', 'integer', 'exists:products,id'],
+            'parentId' => ['nullable', 'integer', Rule::exists('products', 'id')->where(fn ($query) => \App\Services\WorkspaceWrite::scopeValidation($query))],
             'variantLabel' => ['required_with:parentId', 'nullable', 'string', 'max:80'],
-            'category' => ['required', 'string', Rule::exists('categories', 'name')->where('status', 'Active')->whereNull('archivedAt')],
+            'category' => ['required', 'string', Rule::exists('categories', 'name')->where('status', 'Active')->whereNull('archivedAt')->where(fn ($query) => \App\Services\WorkspaceWrite::scopeValidation($query))],
             'vatClass' => ['nullable', Rule::in(['VATable', 'VAT-Exempt', 'Zero-Rated'])],
             'price' => InventoryRules::moneyRules(),
             'unitPrice' => InventoryRules::moneyRules(),
             'stock' => ['sometimes', 'integer', 'min:0', $id === null ? 'max:0' : 'max:2147483647'],
-            'brandId' => ['required', 'integer', Rule::exists('brands', 'id')->where('status', 'Active')],
-            'subcategoryId' => ['required', 'integer', Rule::exists('subcategories', 'id')->where('category', $request->input('category'))->where('status', 'Active')],
+            'brandId' => ['required', 'integer', Rule::exists('brands', 'id')->where('status', 'Active')->where(fn ($query) => \App\Services\WorkspaceWrite::scopeValidation($query))],
+            'subcategoryId' => ['required', 'integer', Rule::exists('subcategories', 'id')->where('category', $request->input('category'))->where('status', 'Active')->where(fn ($query) => \App\Services\WorkspaceWrite::scopeValidation($query))],
             'size' => ['required', 'numeric', 'gt:0', 'max:999999999', 'decimal:0,3'],
             'sizeUnit' => ['required', Rule::in(\App\Services\ProductMeasurementUnits::VALUES)],
             'minStock' => ['required', 'integer', 'min:0', 'max:2147483647'],
-            'barcode' => ['required', 'string', 'max:80', Rule::unique('products', 'barcode')->ignore($id)],
-            'supplierId' => ['required', 'integer', Rule::exists('suppliers', 'id')->where('status', 'Active')->whereNull('archivedAt')],
+            'barcode' => ['required', 'string', 'max:80', Rule::unique('products', 'barcode')->ignore($id)->where(fn ($query) => \App\Services\WorkspaceWrite::scopeValidation($query))],
+            'supplierId' => ['required', 'integer', Rule::exists('suppliers', 'id')->where('status', 'Active')->whereNull('archivedAt')->where(fn ($query) => \App\Services\WorkspaceWrite::scopeValidation($query))],
             'batch' => ['nullable', 'string', 'max:40'],
             'lot' => ['nullable', 'string', 'max:40'],
             'expiry' => ['nullable', 'date_format:Y-m-d'],
@@ -190,7 +190,7 @@ class ProductController extends Controller
         $parentId = $values['parentId'] ?? null;
         $label = trim($values['variantLabel'] ?? '');
         if (!$parentId) {
-            if ($id && DB::table('products')->where('parentId', $id)->where('category', '!=', $values['category'])->exists()) {
+            if ($id && \App\Services\WorkspaceRead::table('products')->where('parentId', $id)->where('category', '!=', $values['category'])->exists()) {
                 throw ValidationException::withMessages(['category' => 'A parent product and its variants must remain in the same category.']);
             }
             if ($label !== '') {
@@ -200,10 +200,10 @@ class ProductController extends Controller
         }
         $parent = InventoryRules::product((int) $parentId, 'parentId');
         if ($parentId == $id || $parent->parentId || $parent->category !== $values['category'] || !$label
-            || ($id && DB::table('products')->where('parentId', $id)->exists())) {
+            || ($id && \App\Services\WorkspaceRead::table('products')->where('parentId', $id)->exists())) {
             throw ValidationException::withMessages(['parentId' => 'Choose an active main product in the same category and enter a variant label. Nested or circular variants are not allowed.']);
         }
-        if (DB::table('products')->where('parentId', $parentId)->when($id, fn ($q) => $q->where('id', '!=', $id))
+        if (\App\Services\WorkspaceRead::table('products')->where('parentId', $parentId)->when($id, fn ($q) => $q->where('id', '!=', $id))
             ->whereRaw('LOWER(TRIM(variantLabel)) = ?', [mb_strtolower($label)])->exists()) {
             throw ValidationException::withMessages(['variantLabel' => 'This variant already exists under the selected product.']);
         }

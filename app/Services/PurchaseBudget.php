@@ -9,7 +9,7 @@ class PurchaseBudget
 {
     public static function additional(string $id): float
     {
-        return (float) DB::table('purchase_budget_requests')->where('poId', $id)->where('status', 'Approved')->sum('amount');
+        return (float) WorkspaceRead::table('purchase_budget_requests')->where('poId', $id)->where('status', 'Approved')->sum('amount');
     }
 
     public static function limit(object $order): float
@@ -19,7 +19,8 @@ class PurchaseBudget
 
     public static function lineRemaining(object $line): float
     {
-        $spent = DB::table('receiving_record_lines as l')->join('receiving_records as r','r.id','=','l.receivingId')
+        $spent = WorkspaceRead::table('receiving_record_lines as l')->join('receiving_records as r','r.id','=','l.receivingId')
+            ->when(config('workspaces.enabled'), fn ($query) => $query->where('r.workspace_id', WorkspaceWrite::requireId()))
             ->where('r.poId',$line->poId)->whereRaw('COALESCE(l.originalProductId,l.productId) = ?',[$line->productId])
             ->selectRaw('COALESCE(SUM(l.deliveredQty * l.unitCost),0) as spent')->value('spent');
         return max(0, round($line->orderedQty * $line->unitCost - (float)$spent, 2));
@@ -46,9 +47,9 @@ class PurchaseBudget
         abort_unless(trim($data['reason']),422,'Explain the price increase.');
         return DB::transaction(function () use ($request,$id,$data) {
             InventoryRules::lockActor($request);
-            $order=DB::table('purchase_orders')->where('id',$id)->lockForUpdate()->first();
+            $order=WorkspaceRead::table('purchase_orders')->where('id',$id)->lockForUpdate()->first();
             abort_unless($order,404);
-            $existing=DB::table('purchase_budget_requests')->where('requestKey',$data['requestKey'])->first();
+            $existing=WorkspaceRead::table('purchase_budget_requests')->where('requestKey',$data['requestKey'])->first();
             if ($existing) {
                 abort_unless($existing->poId===$id && (float)$existing->amount===(float)$data['amount'] && $existing->reason===$data['reason'] && $existing->version==$data['version'],409,'This request key was already used.');
                 return response()->json(['message'=>'Additional amount already requested.']);
@@ -56,7 +57,7 @@ class PurchaseBudget
             abort_unless(in_array($order->status,[PurchaseWorkflow::WAITING,'Partially Received','Approved','Ordered','Completed','Received with Discrepancy']),409,'This PO is not open for receiving.');
             abort_unless($order->receivingVersion===$data['version'] || (int)$order->receivingVersion===$data['version'],409,'Refresh this PO before requesting an increase.');
             abort_if(DB::table('purchase_budget_requests')->where('poId',$id)->where('version',$data['version'])->where('status','Pending')->exists(),409,'An increase for this PO is already awaiting approval.');
-            DB::table('purchase_budget_requests')->insert($data+['poId'=>$id,'requestedBy'=>$request->user()->id,'created_at'=>now(),'updated_at'=>now()]);
+            DB::table('purchase_budget_requests')->insert(WorkspaceWrite::owned($data+['poId'=>$id,'requestedBy'=>$request->user()->id,'created_at'=>now(),'updated_at'=>now()]));
             InventoryRules::audit($request->user()->name,'Requested receiving budget increase',$id,null,json_encode($data));
             WorkflowNotifications::send(WorkflowNotifications::reviewers(),$request->user(),'PO budget approval','Review additional receiving amount for '.$id.': '.$data['amount'].'.','purchase',$id);
             return response()->json(['message'=>'Additional amount sent for admin approval.'],201);
@@ -70,9 +71,9 @@ class PurchaseBudget
         $data=$request->validate(['action'=>['required','in:Approved,Declined']]);
         return DB::transaction(function () use ($request,$id,$data) {
             InventoryRules::lockActor($request);
-            $entry=DB::table('purchase_budget_requests')->where('id',$id)->first(); abort_unless($entry,404);
-            $order=DB::table('purchase_orders')->where('id',$entry->poId)->lockForUpdate()->first(); abort_unless($order,404);
-            $entry=DB::table('purchase_budget_requests')->where('id',$id)->lockForUpdate()->first();
+            $entry=WorkspaceRead::table('purchase_budget_requests')->where('id',$id)->first(); abort_unless($entry,404);
+            $order=WorkspaceRead::table('purchase_orders')->where('id',$entry->poId)->lockForUpdate()->first(); abort_unless($order,404);
+            $entry=WorkspaceRead::table('purchase_budget_requests')->where('id',$id)->lockForUpdate()->first();
             abort_if($entry->requestedBy==$request->user()->id,403,'Another approver must review this request.');
             if ($entry->status!== 'Pending') {
                 abort_unless($entry->status===$data['action'],409,'This request has already been reviewed.');

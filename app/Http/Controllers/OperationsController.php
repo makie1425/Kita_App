@@ -31,14 +31,14 @@ class OperationsController extends Controller
             InventoryRules::lockActor($request);
             $product = InventoryRules::product($data['productId']);
             $this->stockAfter($product->stock, $data['qtyChange']);
-            DB::table('adjustments')->insert([
+            DB::table('adjustments')->insert(\App\Services\WorkspaceWrite::owned([
                 'id' => $id, 'productId' => $product->id, 'qtyChange' => $data['qtyChange'],
                 'reason' => $data['reason'], 'comment' => $data['comment'], 'photo' => $evidence !== null,
                 'status' => 'Pending Admin Approval', 'date' => now()->toDateString(), 'remarks' => 'Submitted by '.$request->user()->name,
                 'requestedById' => $request->user()->id, 'requestedByRole' => $request->user()->role,
-            ]);
+            ]));
             if ($evidence) {
-                DB::table('adjustment_evidence')->insert(['adjustmentId' => $id] + $evidence);
+                DB::table('adjustment_evidence')->insert(\App\Services\WorkspaceWrite::owned(['adjustmentId' => $id] + $evidence));
             }
             InventoryRules::audit($request->user()->name, 'Submitted adjustment', $id, null, 'Pending Admin Approval');
             WorkflowNotifications::send([...WorkflowNotifications::reviewers(), $request->user()], $request->user(),
@@ -54,7 +54,7 @@ class OperationsController extends Controller
         $data = $request->validate(['status' => ['required', 'in:Approved,Rejected']]);
 
         return DB::transaction(function () use ($request, $data, $id) {
-            $adjustment = DB::table('adjustments')->where('id', $id)->lockForUpdate()->first();
+            $adjustment = \App\Services\WorkspaceRead::table('adjustments')->where('id', $id)->lockForUpdate()->first();
             abort_unless($adjustment, 404, 'Adjustment not found.');
             abort_unless($adjustment->status === 'Pending Admin Approval', 409, 'This adjustment has already been processed.');
             if ($data['status'] === 'Approved') {
@@ -63,10 +63,10 @@ class OperationsController extends Controller
                 }
                 $product = InventoryRules::product($adjustment->productId);
                 $after = $this->stockAfter($product->stock, $adjustment->qtyChange);
-                DB::table('products')->where('id', $product->id)->update(['stock' => $after]);
+                \App\Services\WorkspaceRead::table('products')->where('id', $product->id)->update(['stock' => $after]);
                 StockMovement::record($product->id, $product->stock, $after, 'adjustment', $id, $request->user());
             }
-            DB::table('adjustments')->where('id', $id)->update(['status' => $data['status']]);
+            \App\Services\WorkspaceRead::table('adjustments')->where('id', $id)->update(['status' => $data['status']]);
             InventoryRules::audit($request->user()->name, $data['status'].' adjustment', $id, $adjustment->status, $data['status']);
             WorkflowNotifications::send([WorkflowNotifications::owner($adjustment->requestedById, $adjustment->requestedByRole), $request->user()], $request->user(),
                 'Inventory adjustment '.$data['status'], 'Adjustment '.$id.' was '.strtolower($data['status']).' by '.$request->user()->name.'.', 'adjustment', $id);
@@ -91,16 +91,16 @@ class OperationsController extends Controller
         $data = $request->validate($this->lineRules());
 
         return DB::transaction(function () use ($request, $data, $id) {
-            $order = DB::table('purchase_orders')->where('id', $id)->lockForUpdate()->first();
+            $order = \App\Services\WorkspaceRead::table('purchase_orders')->where('id', $id)->lockForUpdate()->first();
             abort_unless($order, 404, 'Purchase order not found.');
             abort_unless(in_array($order->status, ['Draft', 'Approved', 'Ordered']) && (float) $order->paidValue === 0.0
                 && (float) $order->deliveredValue === 0.0 && (float) $order->invoicedValue === 0.0, 409, 'Items cannot be added after delivery, invoicing, payment, or closure.');
-            if (DB::table('purchase_order_lines')->where('poId', $id)->where('deliveredQty', '>', 0)->exists()) {
+            if (\App\Services\WorkspaceRead::table('purchase_order_lines')->where('poId', $id)->where('deliveredQty', '>', 0)->exists()) {
                 abort(409, 'This order has already received items.');
             }
             $lines = $this->normalizeLines($data['lines'], $order->supplierId);
             foreach ($lines as $line) {
-                $existing = DB::table('purchase_order_lines')->where('poId', $id)->where('productId', $line['productId'])->orderBy('id')->lockForUpdate()->get();
+                $existing = \App\Services\WorkspaceRead::table('purchase_order_lines')->where('poId', $id)->where('productId', $line['productId'])->orderBy('id')->lockForUpdate()->get();
                 $qty = (int) $existing->sum('orderedQty') + $line['qty'];
                 $unitCost = $existing->isEmpty() ? $line['unitCost'] : (float) $existing->first()->unitCost;
                 if (isset($line['explicitCost']) && abs($line['explicitCost'] - $unitCost) > 0.001) {
@@ -108,17 +108,17 @@ class OperationsController extends Controller
                 }
                 $values = ['name' => $line['name'], 'orderedQty' => $qty, 'unitCost' => $unitCost, 'lineTotal' => InventoryRules::lineTotal($qty, $unitCost)];
                 if ($existing->isEmpty()) {
-                    DB::table('purchase_order_lines')->insert($values + ['poId' => $id, 'productId' => $line['productId'], 'deliveredQty' => 0]);
+                    DB::table('purchase_order_lines')->insert(\App\Services\WorkspaceWrite::owned($values + ['poId' => $id, 'productId' => $line['productId'], 'deliveredQty' => 0]));
                 } else {
-                    DB::table('purchase_order_lines')->where('id', $existing->first()->id)->update($values);
-                    DB::table('purchase_order_lines')->whereIn('id', $existing->skip(1)->pluck('id'))->delete();
+                    \App\Services\WorkspaceRead::table('purchase_order_lines')->where('id', $existing->first()->id)->update($values);
+                    \App\Services\WorkspaceRead::table('purchase_order_lines')->whereIn('id', $existing->skip(1)->pluck('id'))->delete();
                 }
             }
-            $total = round((float) DB::table('purchase_order_lines')->where('poId', $id)->sum('lineTotal'), 2);
+            $total = round((float) \App\Services\WorkspaceRead::table('purchase_order_lines')->where('poId', $id)->sum('lineTotal'), 2);
             if ($total > 9999999999.99) {
                 throw ValidationException::withMessages(['lines' => 'The order amount is too large.']);
             }
-            DB::table('purchase_orders')->where('id', $id)->update(['orderedValue' => $total, 'outstandingValue' => $total]);
+            \App\Services\WorkspaceRead::table('purchase_orders')->where('id', $id)->update(['orderedValue' => $total, 'outstandingValue' => $total]);
             InventoryRules::audit($request->user()->name, 'Added PO items', $id, (string) $order->orderedValue, (string) $total);
 
             return response()->json(['message' => 'Purchase order items saved.', 'orderedValue' => $total]);
@@ -129,7 +129,7 @@ class OperationsController extends Controller
     {
         return ['lines' => ['required', 'array', 'min:1', 'max:500'], 'lines.*.productId' => ['required', 'integer', 'min:1'],
             'lines.*.qty' => ['required', 'integer', 'min:1', 'max:1000000'], 'lines.*.unitCost' => ['sometimes', ...InventoryRules::moneyRules()],
-            'lines.*.supplierId' => ['nullable', 'integer', Rule::exists('suppliers', 'id')->where('status', 'Active')]];
+            'lines.*.supplierId' => ['nullable', 'integer', Rule::exists('suppliers', 'id')->where('status', 'Active')->where(fn ($query) => \App\Services\WorkspaceWrite::scopeValidation($query))]];
     }
 
     private function normalizeLines(array $input, ?int $supplierId = null): array
@@ -139,10 +139,10 @@ class OperationsController extends Controller
             $product = InventoryRules::product((int) $line['productId'], 'lines');
             $supplier = $supplierId ?? ($line['supplierId'] ?? $product->supplierId);
             $supplier = $supplier ? (int) $supplier : null;
-            if ($supplier && ! DB::table('suppliers')->where('id', $supplier)->where('status', 'Active')->whereNull('archivedAt')->exists()) {
+            if ($supplier && ! \App\Services\WorkspaceRead::table('suppliers')->where('id', $supplier)->where('status', 'Active')->whereNull('archivedAt')->exists()) {
                 throw ValidationException::withMessages(['lines' => 'Select an active supplier.']);
             }
-            if ($supplierId && (int) $product->supplierId !== $supplierId && ! DB::table('supplier_products')->where('supplierId', $supplierId)->where('productId', $product->id)->exists()) {
+            if ($supplierId && (int) $product->supplierId !== $supplierId && ! \App\Services\WorkspaceRead::table('supplier_products')->where('supplierId', $supplierId)->where('productId', $product->id)->exists()) {
                 throw ValidationException::withMessages(['lines' => 'This item is not supplied by the purchase order supplier.']);
             }
             $cost = isset($line['unitCost']) ? (float) $line['unitCost'] : InventoryRules::unitCost($product);

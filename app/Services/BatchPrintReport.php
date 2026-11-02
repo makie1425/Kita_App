@@ -10,9 +10,9 @@ class BatchPrintReport
     public static function build(Collection $batches): array
     {
         $receiptIds = $batches->pluck('receiptId')->filter()->unique();
-        $receipts = DB::table('receiving_records')->whereIn('id', $receiptIds)->get()->keyBy('id');
-        $lines = DB::table('receiving_record_lines')->whereIn('receivingId', $receiptIds)->get();
-        $orders = DB::table('purchase_order_lines')->whereIn('poId', $receipts->pluck('poId'))->get();
+        $receipts = WorkspaceRead::table('receiving_records')->whereIn('id', $receiptIds)->get()->keyBy('id');
+        $lines = WorkspaceRead::table('receiving_record_lines')->whereIn('receivingId', $receipts->keys())->get();
+        $orders = WorkspaceRead::table('purchase_order_lines')->whereIn('poId', $receipts->pluck('poId'))->get();
         $result = collect();
         foreach ($batches->groupBy(fn ($b) => $b->receiptId ?: 'stock-'.$b->id) as $entries) {
             $receipt = $receipts->get($entries->first()->receiptId);

@@ -23,13 +23,13 @@ class CategoryController extends Controller
             'classification' => ['required', Rule::in(['Perishable', 'Non-Perishable'])],
             'status' => ['sometimes', Rule::in(['Active', 'Inactive'])],
         ]);
-        if (DB::table('categories')->whereRaw('LOWER(name) = ?', [mb_strtolower($validated['name'])])->exists()) {
+        if (\App\Services\WorkspaceRead::table('categories')->whereRaw('LOWER(name) = ?', [mb_strtolower($validated['name'])])->exists()) {
             throw ValidationException::withMessages(['name' => 'This category already exists.']);
         }
         $category = $validated + ['created_at' => now()->format('Y-m-d H:i:s.u'), 'status' => 'Active', 'archivedAt' => null, 'archivedBy' => null];
         try {
             DB::transaction(function () use ($category, $request): void {
-                DB::table('categories')->insert($category);
+                DB::table('categories')->insert(\App\Services\WorkspaceWrite::owned($category));
                 InventoryRules::audit($request->user()->name, 'Created category', $category['name'], null, $category['classification']);
             });
         } catch (QueryException $exception) {
@@ -47,24 +47,28 @@ class CategoryController extends Controller
         InventoryRules::authorize($request);
         $request->merge(['name' => trim((string) $request->input('name', $name))]);
         $validated = $request->validate([
-            'name' => ['required', 'string', 'max:100', Rule::unique('categories', 'name')->ignore($name, 'name')],
+            'name' => ['required', 'string', 'max:100'],
             'classification' => ['sometimes', 'required', Rule::in(['Perishable', 'Non-Perishable'])],
             'status' => ['sometimes', 'required', Rule::in(['Active', 'Inactive'])],
         ]);
         $category = DB::transaction(function () use ($validated, $name, $request): object {
-            $category = DB::table('categories')->where('name', $name)->lockForUpdate()->first();
+            $category = \App\Services\WorkspaceRead::table('categories')->where('name', $name)->lockForUpdate()->first();
             abort_unless($category, 404, 'Category not found.');
+            if (\App\Services\WorkspaceRead::table('categories')->where('name', '!=', $name)
+                ->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower($validated['name'])])->exists()) {
+                throw ValidationException::withMessages(['name' => 'This category already exists.']);
+            }
             if ($validated) {
-                DB::table('categories')->where('name', $name)->update($validated);
+                \App\Services\WorkspaceRead::table('categories')->where('id', $category->id)->update($validated);
                 if ($validated['name'] !== $name) {
-                    DB::table('products')->where('category', $name)->update(['category' => $validated['name']]);
-                    DB::table('subcategories')->where('category', $name)->update(['category' => $validated['name']]);
-                    DB::table('promotions')->where('category', $name)->update(['category' => $validated['name']]);
+                    \App\Services\WorkspaceRead::table('products')->where('category', $name)->update(['category' => $validated['name']]);
+                    \App\Services\WorkspaceRead::table('subcategories')->where('category', $name)->update(['category' => $validated['name']]);
+                    \App\Services\WorkspaceRead::table('promotions')->where('category', $name)->update(['category' => $validated['name']]);
                 }
                 InventoryRules::audit($request->user()->name, 'Updated category', $name, json_encode($category), json_encode($validated));
             }
 
-            return DB::table('categories')->where('name', $validated['name'])->first();
+            return \App\Services\WorkspaceRead::table('categories')->where('name', $validated['name'])->first();
         });
 
         return response()->json(['message' => 'Category updated.', 'category' => $category]);

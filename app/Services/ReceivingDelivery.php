@@ -29,16 +29,16 @@ class ReceivingDelivery
         return DB::transaction(function () use ($request,$data,$hash) {
             InventoryRules::lockActor($request);
             // Supplier lock serializes delivery retries, including requests from different managers.
-            $supplier=DB::table('suppliers')->where('id',$data['supplierId'])->lockForUpdate()->first();
+            $supplier=WorkspaceRead::table('suppliers')->where('id',$data['supplierId'])->lockForUpdate()->first();
             abort_unless($supplier,422,'Select a valid supplier.');
-            $existing=DB::table('receiving_deliveries')->where('requestKey',$data['requestKey'])->first();
+            $existing=WorkspaceRead::table('receiving_deliveries')->where('requestKey',$data['requestKey'])->first();
             if ($existing) {
                 abort_unless($existing->payloadHash===$hash,409,'This delivery key was already used for different items.');
                 return response()->json(['message'=>'Delivery already recorded; stock was not added again.','batchNumber'=>$existing->batchNumber,'receipts'=>json_decode($existing->receipts,true)]);
             }
             $ids=array_column($data['orders'],'poId');
-            $sourceIds=DB::table('receiving_carryovers')->whereIn('targetPo',$ids)->pluck('sourcePo')->all();
-            $orders=DB::table('purchase_orders')->whereIn('id',array_unique([...$ids,...$sourceIds]))->orderBy('id')->lockForUpdate()->get();
+            $sourceIds=WorkspaceRead::table('receiving_carryovers')->whereIn('targetPo',$ids)->pluck('sourcePo')->all();
+            $orders=WorkspaceRead::table('purchase_orders')->whereIn('id',array_unique([...$ids,...$sourceIds]))->orderBy('id')->lockForUpdate()->get();
             foreach ($ids as $id) {
                 $order=$orders->firstWhere('id',$id);
                 abort_unless($order && (int)$order->supplierId===$data['supplierId'],422,'All selected POs must belong to the delivery supplier.');
@@ -64,7 +64,7 @@ class ReceivingDelivery
                 DB::table('receiving_records')->where('id',$result['id'])->update(['received_at'=>$receivedAt]);
                 $receipts[]=['poId'=>$order['poId'],'receiptId'=>$result['id'],'status'=>$result['status']];
             }
-            DB::table('receiving_deliveries')->insert(['batchNumber'=>$batch,'requestKey'=>$data['requestKey'],'payloadHash'=>$hash,'supplierId'=>$data['supplierId'],'receivedDate'=>$data['receivedDate'],'receivedBy'=>$request->user()->id,'receipts'=>json_encode($receipts),'created_at'=>now()]);
+            DB::table('receiving_deliveries')->insert(WorkspaceWrite::owned(['batchNumber'=>$batch,'requestKey'=>$data['requestKey'],'payloadHash'=>$hash,'supplierId'=>$data['supplierId'],'receivedDate'=>$data['receivedDate'],'receivedBy'=>$request->user()->id,'receipts'=>json_encode($receipts),'created_at'=>now()]));
             return response()->json(['message'=>'Delivery recorded. All included POs share batch '.$batch.'.','batchNumber'=>$batch,'receipts'=>$receipts],201);
         },3);
     }

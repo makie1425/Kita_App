@@ -18,8 +18,8 @@ class SeedInitialSuperAdmin extends Command
     public function handle(): int
     {
         $data = [
-            'email' => strtolower(trim((string) env('INITIAL_SUPERADMIN_EMAIL'))),
-            'password' => env('INITIAL_SUPERADMIN_PASSWORD'),
+            'email' => strtolower(trim((string) config('initial_super_admin.email'))),
+            'password' => config('initial_super_admin.password'),
         ];
 
         if (Validator::make($data, [
@@ -39,6 +39,7 @@ class SeedInitialSuperAdmin extends Command
                 }
                 $existing = User::query()->whereRaw('LOWER(TRIM(email)) = ?', [$data['email']])->first();
                 if ($existing && $existing->normalizedRole() === 'super_admin' && $existing->isActive()) {
+                    $this->createInitialWorkspace($existing);
                     return;
                 }
                 if ($existing) {
@@ -61,6 +62,7 @@ class SeedInitialSuperAdmin extends Command
                     'updated_at' => now(),
                 ]);
                 DB::table('account_sequences')->where('name', 'users')->update(['next_id' => $id + 1]);
+                $this->createInitialWorkspace(User::query()->where('email', $data['email'])->firstOrFail());
             });
         } catch (RuntimeException $exception) {
             $this->error($exception->getMessage());
@@ -71,5 +73,26 @@ class SeedInitialSuperAdmin extends Command
         $this->info('Initial Super Admin is available. Disable SEED_INITIAL_SUPERADMIN after provisioning.');
 
         return self::SUCCESS;
+    }
+
+    private function createInitialWorkspace(User $user): void
+    {
+        if (DB::table('users')->count() !== 1 || DB::table('organizations')->exists() || DB::table('workspaces')->exists()) {
+            return;
+        }
+
+        $organizationId = DB::table('organizations')->insertGetId([
+            'name' => 'KITA', 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $workspaceId = DB::table('workspaces')->insertGetId([
+            'organization_id' => $organizationId, 'name' => 'Initial workspace',
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $user->forceFill(['workspace_id' => $workspaceId])->save();
+        DB::table('workspace_memberships')->insert([
+            'workspace_id' => $workspaceId, 'user_id' => $user->id,
+            'user_role' => 'super_admin', 'can_manage_accounts' => true, 'active' => true,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
     }
 }

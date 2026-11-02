@@ -28,7 +28,7 @@ Route::middleware('role:super_admin')->prefix('api/backups')->group(function () 
 });
 
 Route::get('/api/kita-data', KitaDataController::class)->middleware('role:cashier,manager,admin,super_admin')->name('kita.data');
-Route::get('/api/inventory/availability', \App\Http\Controllers\InventoryAvailabilityController::class)->middleware('role:cashier,manager,admin,super_admin');
+Route::get('/api/inventory/availability', \App\Http\Controllers\InventoryAvailabilityController::class)->middleware('role:cashier,manager,admin');
 Route::post('/api/price-overrides/decline', [\App\Http\Controllers\ManagerWorkflowController::class, 'declineOverride'])->middleware('role:cashier,manager');
 Route::middleware('role:manager,admin')->group(function () {
     Route::post('/api/promotions', [\App\Http\Controllers\ManagerWorkflowController::class, 'promotion']);
@@ -53,6 +53,8 @@ Route::middleware('role:manager,admin')->group(function () {
     Route::patch('/api/products/{id}', [ProductController::class, 'update']);
     Route::post('/api/categories', [CategoryController::class, 'store']);
     Route::patch('/api/categories/{name}', [CategoryController::class, 'update']);
+});
+Route::middleware('role:manager,admin,super_admin')->group(function () {
     Route::get('/api/accounts', [AccountController::class, 'index']);
     Route::post('/api/accounts', [AccountController::class, 'store']);
     Route::patch('/api/accounts/{role}/{id}', [AccountController::class, 'update']);
@@ -92,7 +94,7 @@ Route::middleware('role:cashier,manager,admin,super_admin')->group(function () {
     Route::patch('/api/notifications/{id}/read', [NotificationController::class, 'read']);
 });
 
-Route::middleware('role:manager,admin,super_admin')->group(function () {
+Route::middleware('role:manager,admin')->group(function () {
     Route::post('/api/product-master/subcategories/populate', [ProductMasterController::class, 'populateSubcategories']);
     Route::post('/api/product-master/brands/populate', [ProductMasterController::class, 'populateBrands']);
     Route::post('/api/product-master/{kind}', [ProductMasterController::class, 'save'])->whereIn('kind', ['brands', 'subcategories']);
@@ -101,7 +103,7 @@ Route::middleware('role:manager,admin,super_admin')->group(function () {
     Route::get('/inventory/batches/{id}/print', \App\Http\Controllers\BatchReportController::class)->whereNumber('id');
 });
 
-Route::middleware('role:manager,admin,super_admin')->prefix('api/inventory/workflows')->group(function () {
+Route::middleware('role:manager,admin')->prefix('api/inventory/workflows')->group(function () {
     Route::post('/archive', [\App\Http\Controllers\InventoryWorkflowController::class, 'archive']);
     Route::get('/', [\App\Http\Controllers\InventoryWorkflowController::class, 'index']);
     Route::post('/events', [\App\Http\Controllers\InventoryWorkflowController::class, 'event']);

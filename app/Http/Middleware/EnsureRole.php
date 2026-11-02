@@ -23,7 +23,7 @@ class EnsureRole
 
         $allowedRoles = array_map(fn (string $role): string => $this->normalizedRole($role), $roles);
 
-        if ($this->normalizedRole($user->role) === 'super_admin' || in_array($this->normalizedRole($user->role), $allowedRoles, true)) {
+        if (in_array($this->normalizedRole($user->role), $allowedRoles, true)) {
             return $next($request);
         }
 

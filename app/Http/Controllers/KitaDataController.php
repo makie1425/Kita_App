@@ -14,6 +14,18 @@ class KitaDataController extends Controller
     public function __invoke(): JsonResponse
     {
         try {
+            if (request()->user()->normalizedRole() === 'super_admin') {
+                $admins = DB::table('users')->where('role', 'admin');
+                if (config('workspaces.enabled')) {
+                    $workspaceId = WorkspaceRead::id();
+                    $admins->where('workspace_id', $workspaceId ?: -1);
+                }
+                return response()->json([
+                    'BUSINESS_DATE' => now()->toDateString(),
+                    'USERS' => ['cashier' => [], 'manager' => [], 'admin' => $admins->orderBy('id')->get(['id','name','username','email','status','createdBy'])->toArray(), 'superadmin' => []],
+                    'NOTIFICATIONS' => \App\Services\NotificationAccess::owned(request()->user())->orderByDesc('id')->limit(50)->get(['id','type','priority','message'])->toArray(),
+                ] + array_fill_keys(['CATEGORIES','PRODUCTS','EXPIRING_BATCHES','BRANDS','SUBCATEGORIES','SUPPLIERS','ITEM_REQUESTS','PURCHASE_ORDERS','RECEIVING_RECORDS','ADJUSTMENTS','PROMOTIONS','AUDIT_LOGS','FIELD_VERSION_HISTORY','SALES_LOG','TRANSACTIONS'], []) + ['EXPIRY_ALERT_DAYS' => 7, 'BATCH_RECALL' => ['batch' => '', 'lot' => '', 'product' => '', 'affected' => []]])->header('Cache-Control', 'private, no-store');
+            }
             $pdo = DB::connection()->getPdo();
 
             $payload = [
@@ -33,7 +45,7 @@ class KitaDataController extends Controller
                 'USERS' => $this->users($pdo),
                 'AUDIT_LOGS' => $this->auditLogs($pdo),
                 'FIELD_VERSION_HISTORY' => $this->rows($pdo, ['table'=>'field_version_history','columns'=>['field','record','oldValue','newValue','user','ts','reason'],'order'=>'ts DESC, id DESC']),
-                'NOTIFICATIONS' => DB::table('notifications')->where('recipientId', request()->user()->id)->where('recipientRole', request()->user()->role)->orderByDesc('id')->limit(50)->get(['id', 'type', 'priority', 'message'])->toArray(),
+                'NOTIFICATIONS' => \App\Services\NotificationAccess::owned(request()->user())->orderByDesc('id')->limit(50)->get(['id', 'type', 'priority', 'message'])->toArray(),
                 'SALES_LOG' => $this->numericRows($pdo, ['table'=>'sales_log','columns'=>['date','hour','productId','qty','amount'],'order'=>'date, hour, id'], ['hour', 'productId', 'qty', 'amount']),
                 'TRANSACTIONS' => $this->transactions($pdo),
                 'BATCH_RECALL' => $this->batchRecall($pdo),
@@ -247,7 +259,8 @@ class KitaDataController extends Controller
     {
         $users = ['cashier' => [], 'manager' => [], 'admin' => [], 'superadmin' => []];
 
-        foreach ($this->rows($pdo, ['table'=>'users','columns'=>['role','id','name','username','email','status','refundLimit','schedule','createdBy'],'order'=>'role, id']) as $user) {
+        foreach (WorkspaceRead::table('users')->orderBy('role')->orderBy('id')->get(['role','id','name','username','email','status','refundLimit','schedule','createdBy']) as $record) {
+            $user = (array) $record;
             $role = (new User(['role' => $user['role']]))->normalizedRole();
             if ($role === 'super_admin') {
                 $role = 'superadmin';
@@ -257,11 +270,24 @@ class KitaDataController extends Controller
             $users[$role][] = $this->numericRow($user, ['id', 'refundLimit']);
         }
 
+        if (request()->user()->normalizedRole() === 'cashier' && ($workspaceId = WorkspaceRead::id())) {
+            $managerId = WorkspaceRead::managerId($workspaceId);
+            if ($managerId) {
+                $users['manager'] = DB::table('users')->where('id', $managerId)
+                    ->where('role', 'manager')->where('workspace_id', $workspaceId)
+                    ->whereRaw("LOWER(COALESCE(status, 'Active')) = 'active'")
+                    ->get(['id', 'name', 'status'])->map(fn ($manager) => [
+                        'id' => (int) $manager->id, 'name' => $manager->name, 'status' => $manager->status,
+                    ])->all();
+            }
+        }
+
         return $users;
     }
 
     private function auditLogs(PDO $pdo): array
     {
+        if (config('workspaces.enabled') && request()->user()->normalizedRole() === 'super_admin') return [];
         return array_map(fn (array $row): array => [
             'ts' => $row['ts'],
             'user' => $row['user'],

@@ -19,11 +19,14 @@ class AccountController extends Controller
     public function index(Request $request): JsonResponse
     {
         $roles = $this->manageableRoles($request);
-        $lastOtpLogins = DB::table('login_otps')->whereNotNull('used_at')
+        $accounts = \App\Services\WorkspaceAccess::accounts($request->user())->orderByDesc('created_at')->orderByDesc('id')->get()
+            ->filter(fn (User $user) => in_array($user->normalizedRole(), $roles, true));
+        $emails = $accounts->map(fn (User $user) => Str::lower((string) $user->email))->all();
+        $lastOtpLogins = $emails ? DB::table('login_otps')->whereNotNull('used_at')
+            ->whereIn(DB::raw('LOWER(email)'), $emails)
             ->selectRaw('LOWER(email) as address, MAX(used_at) as last_login')
-            ->groupByRaw('LOWER(email)')->pluck('last_login', 'address');
-        $accounts = (config('workspaces.enabled') ? \App\Services\WorkspaceAccess::accounts($request->user()) : User::query())->orderByDesc('created_at')->orderByDesc('id')->get()
-            ->filter(fn (User $user) => in_array($user->normalizedRole(), $roles, true))
+            ->groupByRaw('LOWER(email)')->pluck('last_login', 'address') : collect();
+        $accounts = $accounts
             ->map(fn (User $user) => $this->account($user) + ['lastOtpLogin' => $lastOtpLogins[Str::lower((string) $user->email)] ?? null])->values();
 
         return response()->json(['accounts' => $accounts]);
@@ -52,6 +55,8 @@ class AccountController extends Controller
                     'username' => $data['username'] ?? null, 'status' => 'Active',
                     'refundLimit' => $data['refundLimit'] ?? 300, 'schedule' => $data['schedule'] ?? null,
                     'workspace_id'=>$workspaceId, 'created_by_user_id'=>$request->user()->id, 'created_by_user_role'=>$request->user()->normalizedRole(),
+                    'assigned_manager_id' => $request->user()->normalizedRole() === 'manager' ? $request->user()->id : null,
+                    'assigned_manager_role' => $request->user()->normalizedRole() === 'manager' ? 'manager' : null,
                     'createdBy' => $request->user()->name, 'created_at' => now(), 'updated_at' => now(),
                 ]);
                 $user = User::where('role', $role)->where('id', $id)->firstOrFail();
@@ -90,7 +95,7 @@ class AccountController extends Controller
                     User::query()->whereIn('role', ['superadmin', 'super_admin', 'Super Admin', 'super-admin'])->orderBy('id')->lockForUpdate()->get();
                 }
                 $aliases = $role === 'super_admin' ? ['superadmin', 'super_admin', 'Super Admin', 'super-admin'] : [$role, ucfirst($role)];
-                $user = (config('workspaces.enabled') ? \App\Services\WorkspaceAccess::accounts($request->user()) : User::query())->where('id', $id)->whereIn('role', $aliases)->lockForUpdate()->firstOrFail();
+                $user = \App\Services\WorkspaceAccess::accounts($request->user())->where('id', $id)->whereIn('role', $aliases)->lockForUpdate()->firstOrFail();
                 if (isset($data['email'])) {
                     $this->validateEmail($data['email'], $user);
                 }
@@ -131,9 +136,7 @@ class AccountController extends Controller
     public function resendSetup(Request $request, string $role, string $id): JsonResponse
     {
         $roles=$this->manageableRoles($request);
-        $query = config('workspaces.enabled')
-            ? \App\Services\WorkspaceAccess::accounts($request->user())
-            : User::query();
+        $query = \App\Services\WorkspaceAccess::accounts($request->user());
         $user=$query->where('id',$id)->get()->first(fn($u)=>$u->normalizedRole()===$this->normalizedRole($role));
         abort_unless($user && in_array($user->normalizedRole(),$roles,true),404);
         \App\Services\AccountCredentials::issue($user);
@@ -144,9 +147,7 @@ class AccountController extends Controller
     public function sendReset(Request $request, string $role, string $id): JsonResponse
     {
         $roles=$this->manageableRoles($request);
-        $query = config('workspaces.enabled')
-            ? \App\Services\WorkspaceAccess::accounts($request->user())
-            : User::query();
+        $query = \App\Services\WorkspaceAccess::accounts($request->user());
         $user=$query->where('id',$id)->get()->first(fn($u)=>$u->normalizedRole()===$this->normalizedRole($role));
         abort_unless($user && in_array($user->normalizedRole(),$roles,true),404);
         $request->merge(['email'=>$user->email]);
@@ -160,7 +161,7 @@ class AccountController extends Controller
         abort_unless($request->user() && $request->user()->isActive(), 401);
 
         return match ($request->user()->normalizedRole()) {
-            'super_admin' => ['cashier', 'manager', 'admin', 'super_admin'],
+            'super_admin' => ['admin'],
             'admin' => ['cashier', 'manager'],
             'manager' => ['cashier'],
             default => abort(403, 'You cannot manage accounts.'),
@@ -238,7 +239,8 @@ class AccountController extends Controller
             return true;
         }
 
-        $orders = DB::table('purchase_orders')->whereNotIn('status', ['Closed', 'Cancelled', 'Completed', 'Fully Received', 'Received with Discrepancy']);
+        $orders = DB::table('purchase_orders')->where('workspace_id', $user->workspace_id ?: -1)
+            ->whereNotIn('status', ['Closed', 'Cancelled', 'Completed', 'Fully Received', 'Received with Discrepancy']);
         $orders->where(function (Builder $query) use ($user) {
             if (Schema::hasColumn('purchase_orders', 'createdById')) {
                 $query->where(fn (Builder $owner) => $owner->where('createdById', $user->id)->where('createdByRole', $user->role));
@@ -266,6 +268,7 @@ class AccountController extends Controller
                 $owner->whereRaw('1 = 0');
             }
             $owner->orWhere(function (Builder $legacy) use ($user, $idColumn, $legacyColumn, $emailColumn, $hasIdentity, $hasEmail, $identifiers) {
+                $legacy->where('workspace_id', $user->workspace_id ?: -1);
                 if ($hasIdentity) {
                     $legacy->whereNull($idColumn);
                 }
@@ -296,11 +299,12 @@ class AccountController extends Controller
     {
         $statusChanged = $before && $before['status'] !== $after['status'];
         \App\Services\WorkflowNotifications::send([$user, $request->user()], $request->user(), $statusChanged ? 'Account status changed' : $action,
-            $user->name.': '.($statusChanged ? 'account is now '.$after['status'] : strtolower($action)).' by '.$request->user()->name.'.', 'account');
+            $user->name.': '.($statusChanged ? 'account is now '.$after['status'] : strtolower($action)).' by '.$request->user()->name.'.', 'account', null, $user->workspace_id ? (int) $user->workspace_id : null);
         DB::table('audit_logs')->insert([
             'ts' => now(), 'user' => Str::limit($request->user()->name, 80, ''), 'action' => $action,
             'record' => 'Account '.$user->role.':'.$user->id,
             'beforeValue' => $before === null ? null : json_encode($before), 'afterValue' => json_encode($after),
+            'workspace_id' => $user->workspace_id,
         ]);
     }
 }

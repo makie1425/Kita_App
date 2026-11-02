@@ -22,10 +22,10 @@ class ReportController extends Controller
             'from' => ['nullable', 'date_format:Y-m-d'],
             'to' => ['nullable', 'date_format:Y-m-d', ...($request->filled('from') ? ['after_or_equal:from'] : [])],
             'category' => ['nullable', 'string', 'max:100'],
-            'brandId' => ['nullable', 'integer', 'exists:brands,id'],
-            'subcategoryId' => ['nullable', 'integer', 'exists:subcategories,id'],
-            'productId' => ['nullable', 'integer', 'exists:products,id'],
-            'supplierId' => ['nullable', 'integer', 'exists:suppliers,id'],
+            'brandId' => ['nullable', 'integer', Rule::exists('brands', 'id')->where(fn ($query) => \App\Services\WorkspaceWrite::scopeValidation($query))],
+            'subcategoryId' => ['nullable', 'integer', Rule::exists('subcategories', 'id')->where(fn ($query) => \App\Services\WorkspaceWrite::scopeValidation($query))],
+            'productId' => ['nullable', 'integer', Rule::exists('products', 'id')->where(fn ($query) => \App\Services\WorkspaceWrite::scopeValidation($query))],
+            'supplierId' => ['nullable', 'integer', Rule::exists('suppliers', 'id')->where(fn ($query) => \App\Services\WorkspaceWrite::scopeValidation($query))],
             'lowStock' => ['nullable', 'boolean'],
             'batch' => ['nullable', 'string', 'max:100'],
             'manager' => ['nullable', 'string', 'max:120'],
@@ -34,9 +34,16 @@ class ReportController extends Controller
             'expiryStatus' => ['nullable', Rule::in(['Nearly expired', 'Expired', 'Critical', 'Warning', 'Good', 'Unknown'])],
         ]);
         $type = $filters['type'];
-        if (in_array($type, \App\Services\PurchasingReports::TYPES)) return $this->respond($request, $type, \App\Services\PurchasingReports::data($request));
-        $query = DB::table('products as p')->leftJoin('brands as brand', 'brand.id', '=', 'p.brandId')
+        if (in_array($type, \App\Services\PurchasingReports::TYPES)) {
+            return $this->respond($request, $type, \App\Services\PurchasingReports::data($request));
+        }
+        $query = \App\Services\WorkspaceRead::table('products as p')->leftJoin('brands as brand', 'brand.id', '=', 'p.brandId')
             ->leftJoin('subcategories as sub', 'sub.id', '=', 'p.subcategoryId');
+        $workspaceId = config('workspaces.enabled') ? \App\Services\WorkspaceWrite::requireId() : null;
+        if ($workspaceId) {
+            $query->where(fn ($joined) => $joined->whereNull('brand.id')->orWhere('brand.workspace_id', $workspaceId))
+                ->where(fn ($joined) => $joined->whereNull('sub.id')->orWhere('sub.workspace_id', $workspaceId));
+        }
         $columns = ['Product' => 'product', 'Category' => 'category', 'Brand' => 'brand', 'Subcategory' => 'subcategory'];
         $select = ['p.name as product', 'p.category', 'brand.name as brand', 'sub.name as subcategory'];
         $dateColumn = null;
@@ -93,9 +100,13 @@ class ReportController extends Controller
         } else {
             $title = 'Stock Movements';
             $query->join('stock_movements as m', 'm.productId', '=', 'p.id');
-            $query->leftJoin('transaction_numbers as tn', function ($join) {
-                $join->on('tn.transaction_uuid', '=', 'm.referenceId')
+            $query->leftJoin('transactions as movement_t', function ($join) use ($workspaceId) {
+                $join->on('movement_t.uuid', '=', 'm.referenceId')
                     ->whereIn('m.referenceType', ['checkout', 'payment_reservation', 'payment_release', 'refund', 'void', 'exchange', 'exchange_replacement']);
+                if ($workspaceId) $join->where('movement_t.workspace_id', $workspaceId);
+            });
+            $query->leftJoin('transaction_numbers as tn', function ($join) {
+                $join->on('tn.transaction_uuid', '=', 'movement_t.uuid');
             });
             $dateColumn = 'm.created_at';
             $columns += ['Product ID'=>'productId','Batch references'=>'batchNumbers','Recorded at' => 'date', 'Type' => 'movement', 'Reference' => 'reference', 'Change' => 'change', 'Before' => 'before', 'After' => 'after'];
@@ -129,6 +140,23 @@ class ReportController extends Controller
         }
         if ($type === 'inventory') {
             $query->orderByDesc('p.created_at');
+        }
+        if ($workspaceId) {
+            $joined = match ($type) {
+                'sales' => ['line', 't'],
+                'receiving' => ['rl', 'rr', 'po'],
+                'expiry', 'receipts', 'batches' => ['b'],
+                'movements' => ['m'],
+                default => [],
+            };
+            foreach ($joined as $alias) $query->where($alias.'.workspace_id', $workspaceId);
+            foreach (match ($type) {
+                'receiving' => ['supplier'],
+                'receipts', 'batches' => ['s', 'receipt'],
+                default => [],
+            } as $alias) {
+                $query->where(fn ($optional) => $optional->whereNull($alias.'.id')->orWhere($alias.'.workspace_id', $workspaceId));
+            }
         }
         $rows = $query->orderByDesc('p.id')->get($select);
         if ($type === 'receiving') {
@@ -203,7 +231,7 @@ class ReportController extends Controller
         }
         foreach (['brandId' => ['brands', 'Brand'], 'subcategoryId' => ['subcategories', 'Subcategory'], 'productId' => ['products', 'Product'], 'supplierId' => ['suppliers', 'Supplier']] as $key => [$table, $label]) {
             if ($request->filled($key)) {
-                $labels[$label] = DB::table($table)->where('id', $filters[$key])->value('name');
+                $labels[$label] = \App\Services\WorkspaceRead::table($table)->where('id', $filters[$key])->value('name');
             }
         }
         return $this->respond($request, $type, compact('title', 'columns', 'rows', 'note', 'generated', 'labels', 'summary', 'moneyKeys', 'numericKeys', 'preparedBy'));

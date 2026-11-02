@@ -11,6 +11,8 @@ use App\Services\ReceivingRemarks;
 use App\Services\ReceivingNumber;
 use App\Services\StockMovement;
 use App\Services\WorkflowNotifications;
+use App\Services\WorkspaceRead;
+use App\Services\WorkspaceWrite;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -97,19 +99,19 @@ class PurchasingController extends Controller
         return DB::transaction(function () use ($request, $id, $data, $hash, $deliveryBatch, $inspectionLots) {
             InventoryRules::lockActor($request);
             DB::table('inventory_sequences')->where('name', 'purchase_orders')->lockForUpdate()->first();
-            $sourceIds=DB::table('receiving_carryovers')->where('targetPo',$id)->pluck('sourcePo')->push($id)->unique()->all();
-            $lockedOrders=DB::table('purchase_orders')->whereIn('id',$sourceIds)->orderBy('id')->lockForUpdate()->get();
+            $sourceIds=WorkspaceRead::table('receiving_carryovers')->where('targetPo',$id)->pluck('sourcePo')->push($id)->unique()->all();
+            $lockedOrders=WorkspaceRead::table('purchase_orders')->whereIn('id',$sourceIds)->orderBy('id')->lockForUpdate()->get();
             $order=$lockedOrders->firstWhere('id',$id);
             abort_unless($order, 404, 'Purchase order not found.');
-            $existing = DB::table('receiving_records')->where('idempotencyKey', $data['idempotencyKey'])->first();
+            $existing = WorkspaceRead::table('receiving_records')->where('idempotencyKey', $data['idempotencyKey'])->first();
             if ($existing) {
-                $linkedDelivery = DB::table('receiving_carryovers')->where('sourcePo', $id)->where('targetPo', $existing->poId)->exists();
+                $linkedDelivery = WorkspaceRead::table('receiving_carryovers')->where('sourcePo', $id)->where('targetPo', $existing->poId)->exists();
                 abort_unless(($existing->poId === $id || $linkedDelivery) && $existing->payloadHash === $hash, 409, 'This receiving key was already used for another submission.');
 
-                return response()->json(['message' => 'Delivery was already recorded; inventory was not added again.', 'id' => $existing->id, 'poId' => $existing->poId, 'status'=>DB::table('purchase_orders')->where('id', $existing->poId)->value('status')]);
+                return response()->json(['message' => 'Delivery was already recorded; inventory was not added again.', 'id' => $existing->id, 'poId' => $existing->poId, 'status'=>WorkspaceRead::table('purchase_orders')->where('id', $existing->poId)->value('status')]);
             }
-            abort_unless(DB::table('purchase_order_lines')->where('poId', $id)->get()->contains(fn ($line) => ReceivingCarryover::remaining($line) > 0), 409, 'This purchase order is fully received.');
-            $purchaseRequest = DB::table('item_requests')->where('id', $order->itemRequestId)->first();
+            abort_unless(WorkspaceRead::table('purchase_order_lines')->where('poId', $id)->get()->contains(fn ($line) => ReceivingCarryover::remaining($line) > 0), 409, 'This purchase order is fully received.');
+            $purchaseRequest = WorkspaceRead::table('item_requests')->where('id', $order->itemRequestId)->first();
             abort_unless($purchaseRequest && in_array($purchaseRequest->status, [PurchaseWorkflow::WAITING, 'Partially Received', 'Approved', 'Completed', 'Received with Discrepancy']), 409, 'The linked purchase request is not approved.');
             // The previous approval endpoint created Draft orders from approved requests.
             $approvedLegacyDraft = $order->status === 'Draft' && $purchaseRequest->status === 'Approved';
@@ -117,17 +119,17 @@ class PurchasingController extends Controller
             abort_unless((int) $order->receivingVersion === $data['version'], 409, 'Another delivery was recorded. Refresh this PO before receiving again.');
             // Imported receipts may already use this format. Allocate the next free suffix.
             $number = $data['version'] + 1;
-            while (DB::table('receiving_records')->where('poId', $id)->where('deliveryReference', $data['deliveryReference'])->exists()) {
+            while (WorkspaceRead::table('receiving_records')->where('poId', $id)->where('deliveryReference', $data['deliveryReference'])->exists()) {
                 $data['deliveryReference'] = $id.'-R'.str_pad((string) ++$number, 3, '0', STR_PAD_LEFT);
             }
             if ($data['receivedDate'] < substr($purchaseRequest->approved_at ?? $order->created, 0, 10)) {
                 throw ValidationException::withMessages(['receivedDate' => 'Receiving date cannot precede approval.']);
             }
-            $orderLines = DB::table('purchase_order_lines')->where('poId', $id)->orderBy('productId')->lockForUpdate()->get();
+            $orderLines = WorkspaceRead::table('purchase_order_lines')->where('poId', $id)->orderBy('productId')->lockForUpdate()->get();
             abort_if($orderLines->pluck('productId')->duplicates()->isNotEmpty(), 409, 'This legacy PO has duplicate item lines and requires reconciliation before receiving.');
             abort_if($inspectionLots === null && $orderLines->contains(fn ($l) => $l->damageOutstanding !== null),422,'Use the Stock Receipt inspection form for this PO.');
             $receiptId = ReceivingNumber::next('RCV');
-            DB::table('receiving_records')->insert(['id' => $receiptId, 'poId' => $id]);
+            DB::table('receiving_records')->insert(WorkspaceWrite::owned(['id' => $receiptId, 'poId' => $id]));
             $batch = $deliveryBatch ?? ReceivingNumber::next('BATCH');
             $receivedCents = 0;
             $replacementReasons = [];
@@ -147,6 +149,7 @@ class PurchasingController extends Controller
                 $damageTotal+=$damage;
                 $substitute = ! empty($line['substituteProductId']);
                 $product = InventoryRules::product($line['substituteProductId'] ?? $line['productId'], 'lines');
+                abort_unless(WorkspaceRead::table('products')->where('id', $product->id)->exists(), 422, 'Select an inventory item in this workspace.');
                 if ($substitute) {
                     $replacementReasons[] = ucfirst($line['substitutionReason'] ?? '').' replacement';
                     $limit = (int) round((float) $ordered->unitCost * 100);
@@ -172,7 +175,7 @@ class PurchasingController extends Controller
                 PurchaseBudget::checkLine($ordered, InventoryRules::lineTotal($line['qty'],$cost));
                 $carried=ReceivingCarryover::resolve($ordered,$line['qty'],$cost,$receiptId);
                 $receivedCents += (int) round(InventoryRules::lineTotal($line['qty']-$carried, $cost) * 100);
-                $previousInspection=DB::table('receiving_inspections')->where('orderLine',$ordered->id)->orderByDesc('id')->first();
+                $previousInspection=WorkspaceRead::table('receiving_inspections')->where('orderLine',$ordered->id)->orderByDesc('id')->first();
                 $previousNote=$line['qty']>0 && $previousInspection && ($previousInspection->missing>0 || $previousInspection->damaged>0)
                     ? '; Follow-up for '.implode(' and ',array_filter([$previousInspection->missing>0?'missing items':null,$previousInspection->damaged>0?'damaged items':null])).' from previous delivery '.$previousInspection->receiptId.' under original PO '.$id : '';
                 $line['batchNumber']=$line['qty']>0?$batch:null; $line['lotNumber']=$line['batchNumber'];
@@ -181,7 +184,7 @@ class PurchasingController extends Controller
                 FifoInventory::opening($product->id, (int) $product->stock);
                 foreach ($lots as $lot) FifoInventory::receive($product->id, $lot['quantity'], $cost, $data['receivedDate'], $receiptId, $order->supplierId, 'purchase_receiving', $lot['batchNumber'], $lot['expiryDate'] ?? null, $lot['manufacturedDate'] ?? null, $lot['supplierLot'] ?? null, $lot['physicalLotId'] ?? null);
                 $sellingPrice = (float) ($line['sellingPrice'] ?? $product->price);
-                DB::table('products')->where('id', $product->id)->update(['stock' => $after, 'unitPrice' => $cost, 'price' => $sellingPrice]);
+                WorkspaceRead::table('products')->where('id', $product->id)->update(['stock' => $after, 'unitPrice' => $cost, 'price' => $sellingPrice]);
                 if ((float) $product->price !== $sellingPrice || (float) $product->unitPrice !== $cost) {
                     InventoryRules::audit($request->user()->name, 'Prices set on receipt', (string) $product->id,
                         json_encode(['price' => $product->price, 'unitPrice' => $product->unitPrice]),
@@ -189,16 +192,16 @@ class PurchasingController extends Controller
                 }
                 StockMovement::record($product->id, $product->stock, $after, 'purchase_receiving', $receiptId, $request->user());
                 }
-                DB::table('purchase_order_lines')->where('id', $ordered->id)->update(['deliveredQty' => $received]);
+                WorkspaceRead::table('purchase_order_lines')->where('id', $ordered->id)->update(['deliveredQty' => $received]);
                 $ordered->deliveredQty = $received;
-                foreach ($lots ?: [['quantity'=>0,'batchNumber'=>null]] as $lot) DB::table('receiving_record_lines')->insert([
+                foreach ($lots ?: [['quantity'=>0,'batchNumber'=>null]] as $lot) DB::table('receiving_record_lines')->insert(WorkspaceWrite::owned([
                     'receivingId' => $receiptId, 'productId' => $product->id, 'poQty' => $ordered->orderedQty,
                     'deliveredQty' => $lot['quantity'], 'name' => $product->name, 'category' => $product->category,
                     'unit' => $ordered->unit ?? ($product->stockUnit ?: $product->unit), 'conditionText' => ($substitute ? ucfirst($line['substitutionReason']).' replacement for product #'.$ordered->productId.' ('.$ordered->name.')' : ($damage ? 'Damaged units returned, not received: '.$damage : 'Accepted')), 'followupNote' => ltrim($previousNote, '; ') ?: null,
                     'originalProductId'=>$ordered->productId, 'physicalLotId'=>$lot['physicalLotId'] ?? null, 'internalBatch' => $lot['batchNumber'], 'unitCost' => $cost, 'batchNumber' => $lot['batchNumber'] ?? null, 'expiryDate' => $lot['expiryDate'] ?? null,
                     'manufacturedDate' => $lot['manufacturedDate'] ?? null,
                     'lotNumber' => $lot['supplierLot'] ?? null,
-                ]);
+                ]));
             }
             $matches = $orderLines->every(fn ($line) => (int) $line->deliveredQty + (int)$line->resolvedQty === (int) $line->orderedQty);
             $short = $orderLines->contains(fn ($line) => $line->deliveredQty + $line->resolvedQty < $line->orderedQty);
@@ -219,7 +222,7 @@ class PurchasingController extends Controller
             })->values()->all();
             foreach ($orderLines as $item) {
                 $input=collect($data['lines'])->firstWhere('productId',$item->productId);
-                DB::table('receiving_inspections')->insert(['receiptId'=>$receiptId,'poId'=>$id,'orderLine'=>$item->id,'productId'=>$item->productId,'accepted'=>$input['qty'] ?? 0,'damaged'=>$input['damagedQty'] ?? 0,'missing'=>max(0,ReceivingCarryover::remaining($item)-($inspectionLots !== null ? (int)$item->damageOutstanding : ($input['damagedQty'] ?? 0))),'newMissing'=>max(0,ReceivingCarryover::remaining($item)-($inspectionLots !== null ? (int)$item->damageOutstanding : ($input['damagedQty'] ?? 0))-(int)DB::table('receiving_carryovers')->where('targetLine',$item->id)->selectRaw('COALESCE(SUM(quantity-receivedQty-releasedQty),0) as qty')->value('qty')),'damageReason'=>$input['damageReason'] ?? null,'created_at'=>now()]);
+                DB::table('receiving_inspections')->insert(WorkspaceWrite::owned(['receiptId'=>$receiptId,'poId'=>$id,'orderLine'=>$item->id,'productId'=>$item->productId,'accepted'=>$input['qty'] ?? 0,'damaged'=>$input['damagedQty'] ?? 0,'missing'=>max(0,ReceivingCarryover::remaining($item)-($inspectionLots !== null ? (int)$item->damageOutstanding : ($input['damagedQty'] ?? 0))),'newMissing'=>max(0,ReceivingCarryover::remaining($item)-($inspectionLots !== null ? (int)$item->damageOutstanding : ($input['damagedQty'] ?? 0))-(int)WorkspaceRead::table('receiving_carryovers')->where('targetLine',$item->id)->selectRaw('COALESCE(SUM(quantity-receivedQty-releasedQty),0) as qty')->value('qty')),'damageReason'=>$input['damageReason'] ?? null,'created_at'=>now()]));
             }
             $remarks = ReceivingRemarks::forReceipt((object) ['inspection'=>$inspection, 'outcome'=>$data['notes'] ?? '']);
             $status = $short ? 'Partially Received' : 'Fully Received';
@@ -228,7 +231,7 @@ class PurchasingController extends Controller
                 throw ValidationException::withMessages(['lines' => 'Received value exceeds the supported amount.']);
             }
             PurchaseBudget::check($order, $deliveredValue);
-            DB::table('receiving_records')->where('id', $receiptId)->update([
+            WorkspaceRead::table('receiving_records')->where('id', $receiptId)->update([
                 'deliveryBatch' => $batch, 'id' => $receiptId, 'poId' => $id, 'date' => $data['receivedDate'], 'received_at' => now(),
                 'deliveryStatus' => 'Completed', 'discrepancy' => ! $matches || $damageTotal>0 || count($replacementReasons) > 0, 'discrepancyType' => implode('; ', array_unique(array_filter([collect($inspection)->sum('missing')>0 ? 'Missing items' : ($matches || $short ? null : 'Quantity difference'), $damageTotal?'Damaged items':null, ...$replacementReasons]))) ?: null,
                 'inspection' => json_encode($inspection),
@@ -236,15 +239,15 @@ class PurchasingController extends Controller
                 'idempotencyKey' => $data['idempotencyKey'], 'deliveryReference' => $data['deliveryReference'], 'payloadHash' => $hash,
                 ...(\App\Services\SupplierAccounts::ready() ? ['paymentDueDate' => $data['paymentDueDate'] ?? null, 'supplierDocument' => $data['supplierDocument'] ?? null] : []),
                 'receivedById' => $request->user()->id, 'receivedByRole' => $request->user()->role, 'receivedBy' => $request->user()->name,
-                'supplierName' => $order->supplierName ?? DB::table('suppliers')->where('id', $order->supplierId)->value('name'),
+                'supplierName' => $order->supplierName ?? WorkspaceRead::table('suppliers')->where('id', $order->supplierId)->value('name'),
             ]);
-            $receiptIds = DB::table('receiving_records')->where('poId', $id)->pluck('id')->all();
-            DB::table('purchase_orders')->where('id', $id)->update([
+            $receiptIds = WorkspaceRead::table('receiving_records')->where('poId', $id)->pluck('id')->all();
+            WorkspaceRead::table('purchase_orders')->where('id', $id)->update([
                 'status' => $status, 'receivingVersion' => $order->receivingVersion + 1, 'received_at' => now(),
                 'receivingRecordIds' => json_encode($receiptIds), 'deliveredValue' => $deliveredValue,
                 'outstandingValue' => max(0, PurchaseBudget::limit($order) - $deliveredValue),
             ]);
-            DB::table('item_requests')->where('id', $order->itemRequestId)->update(['status' => $status]);
+            WorkspaceRead::table('item_requests')->where('id', $order->itemRequestId)->update(['status' => $status]);
             InventoryRules::audit($request->user()->name, 'Received purchase delivery', $id, $order->status, json_encode(['receiptId' => $receiptId, 'status' => $status, 'lines' => $data['lines']]));
             $approver = WorkflowNotifications::owner($purchaseRequest->approvedById ?? $order->createdById, $purchaseRequest->approvedByRole ?? $order->createdByRole);
             WorkflowNotifications::send([
@@ -269,12 +272,12 @@ class PurchasingController extends Controller
             InventoryRules::lockActor($request);
             $sequence = DB::table('inventory_sequences')->where('name', 'suppliers')->lockForUpdate()->first();
             $data['name'] = trim($data['name']);
-            if (! $data['name'] || DB::table('suppliers')->whereRaw('LOWER(TRIM(name)) = ?', [Str::lower($data['name'])])->exists()) {
+            if (! $data['name'] || WorkspaceRead::table('suppliers')->whereRaw('LOWER(TRIM(name)) = ?', [Str::lower($data['name'])])->exists()) {
                 throw ValidationException::withMessages(['name' => 'Enter a unique supplier name.']);
             }
             $id = max((int) $sequence->lastValue, (int) DB::table('suppliers')->max('id')) + 1;
             DB::table('inventory_sequences')->where('name', 'suppliers')->update(['lastValue' => $id]);
-            DB::table('suppliers')->insert($data + ['id' => $id, 'status' => 'Active', 'callbackLog' => '[]']);
+            DB::table('suppliers')->insert(WorkspaceWrite::owned($data + ['id' => $id, 'status' => 'Active', 'callbackLog' => '[]']));
             InventoryRules::audit($request->user()->name, 'Created supplier', (string) $id, null, json_encode($data));
 
             return response()->json(['message' => 'Supplier created.', 'supplier' => $data + ['id' => $id, 'status' => 'Active']], 201);

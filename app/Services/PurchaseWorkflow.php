@@ -17,7 +17,7 @@ class PurchaseWorkflow
         $data = $request->validate([
             'id' => ['prohibited'],
             'submissionKey' => ['sometimes', 'required', 'uuid'],
-            'category' => ['required', 'string', Rule::exists('categories', 'name')->where('status', 'Active')],
+            'category' => ['required', 'string', Rule::exists('categories', 'name')->where(fn ($query) => WorkspaceWrite::scopeValidation($query))->where('status', 'Active')],
             'notes' => ['nullable', 'string', 'max:2000'],
             'expectedDeliveryDate' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:today'],
             'lines' => ['required', 'array', 'min:1', 'max:500'],
@@ -36,7 +36,7 @@ class PurchaseWorkflow
             InventoryRules::lockActor($request);
             $sequence = DB::table('inventory_sequences')->where('name', 'purchase_orders')->lockForUpdate()->first();
             if (isset($data['submissionKey'])) {
-                $existing = DB::table('item_requests')->where('submissionKey', $data['submissionKey'])->first();
+                $existing = WorkspaceRead::table('item_requests')->where('submissionKey', $data['submissionKey'])->first();
                 if ($existing) {
                     abort_unless($existing->submissionHash === $hash && (int) $existing->requestedById === (int) $request->user()->id
                         && $existing->requestedByRole === $request->user()->role, 409, 'This submission key is already used. Refresh the requests list.');
@@ -56,7 +56,7 @@ class PurchaseWorkflow
             foreach (collect($data['lines'])->sortBy('productId') as $line) {
                 $product = InventoryRules::product($line['productId'], 'lines');
                 $supplierId = $line['supplierId'];
-                $supplier = DB::table('suppliers')->where('id', $supplierId)->where('status', 'Active')->whereNull('archivedAt')->first();
+                $supplier = WorkspaceRead::table('suppliers')->where('id', $supplierId)->where('status', 'Active')->whereNull('archivedAt')->first();
                 if (! $supplier) {
                     throw ValidationException::withMessages(['lines' => 'Select an active supplier for every item.']);
                 }
@@ -103,14 +103,14 @@ class PurchaseWorkflow
                     // Retain the existing column for compatibility with historical box orders.
                     'piecesPerBox' => $packaged ? $factor : null];
             }
-            DB::table('item_requests')->insert([
+            DB::table('item_requests')->insert(WorkspaceWrite::owned([
                 'id' => $id, 'category' => $data['category'], 'status' => 'Pending Approval', 'dateRequested' => now()->toDateString(),
                 'requested_at' => now(), 'requestedBy' => $request->user()->name, 'requestedById' => $request->user()->id,
                 'requestedByRole' => $request->user()->role, 'supplierName' => $supplier->name, 'notes' => $data['notes'] ?? null,
                 ...(SupplierAccounts::ready() ? ['expectedDeliveryDate' => $data['expectedDeliveryDate'] ?? null] : []),
                 'submissionKey' => $data['submissionKey'] ?? null, 'submissionHash' => $hash,
-            ]);
-            DB::table('item_request_lines')->insert(array_values($lines));
+            ]));
+            DB::table('item_request_lines')->insert(array_values(array_map(fn ($line) => WorkspaceWrite::owned($line), $lines)));
             InventoryRules::audit($request->user()->name, 'Submitted purchase request', $id, null, json_encode(['status' => 'Pending Approval', 'requestedLines' => $data['lines']]));
             WorkflowNotifications::send([...WorkflowNotifications::reviewers(), $request->user()], $request->user(), 'Purchase request submitted',
                 $request->user()->name.' submitted PO '.$id.' for approval.', 'purchase', $id);
@@ -133,13 +133,13 @@ class PurchaseWorkflow
 
         return DB::transaction(function () use ($request, $data, $id) {
             InventoryRules::lockActor($request);
-            $record = DB::table('item_requests')->where('id', $id)->lockForUpdate()->first();
+            $record = WorkspaceRead::table('item_requests')->where('id', $id)->lockForUpdate()->first();
             abort_unless($record, 404);
             abort_unless(in_array($record->status, ['Pending', 'Pending Approval', 'Proceed to Purchase']) && ! $record->poId, 409, 'This request has already been reviewed.');
             if (isset($data['revision'])) {
                 abort_unless($record->revision === $data['revision'], 409, 'The request changed. Refresh before reviewing.');
             }
-            $before = ['request' => $record, 'lines' => DB::table('item_request_lines')->where('requestId', $id)->get()];
+            $before = ['request' => $record, 'lines' => WorkspaceRead::table('item_request_lines')->where('requestId', $id)->get()];
             if (isset($data['lines'])) {
                 $original = $before['lines']->keyBy('productId');
                 $changed = count($data['lines']) !== $original->count();
@@ -151,23 +151,23 @@ class PurchaseWorkflow
                     throw ValidationException::withMessages(['note' => 'Enter a reason for changing purchase quantities or removing items.']);
                 }
                 foreach ($data['lines'] as $line) {
-                    $query = DB::table('item_request_lines')->where('requestId', $id)->where('productId', $line['productId']);
+                    $query = WorkspaceRead::table('item_request_lines')->where('requestId', $id)->where('productId', $line['productId']);
                     if (! $query->exists()) {
                         throw ValidationException::withMessages(['lines' => 'An edited item is not in this request.']);
                     }
                     $query->update(['confirmedQty' => $line['qty']]);
                 }
                 // The submitted edit is the complete set of retained lines.
-                DB::table('item_request_lines')->where('requestId', $id)->whereNotIn('productId', array_column($data['lines'], 'productId'))->delete();
+                WorkspaceRead::table('item_request_lines')->where('requestId', $id)->whereNotIn('productId', array_column($data['lines'], 'productId'))->delete();
             }
             $status = match ($data['action']) {
                 'approved' => self::WAITING, 'disapproved' => 'Declined', default => 'Pending Approval',
             };
             $poId = null;
             if ($data['action'] === 'approved') {
-                $lines = DB::table('item_request_lines')->where('requestId', $id)->orderBy('productId')->get();
+                $lines = WorkspaceRead::table('item_request_lines')->where('requestId', $id)->orderBy('productId')->get();
                 $suppliers = $lines->pluck('supplierId')->unique();
-                $supplier = $suppliers->count() === 1 ? DB::table('suppliers')->where('id', $suppliers->first())->where('status', 'Active')->whereNull('archivedAt')->first() : null;
+                $supplier = $suppliers->count() === 1 ? WorkspaceRead::table('suppliers')->where('id', $suppliers->first())->where('status', 'Active')->whereNull('archivedAt')->first() : null;
                 if (! $supplier || $lines->isEmpty()) {
                     throw ValidationException::withMessages(['lines' => 'A PO requires items from one active supplier.']);
                 }
@@ -188,14 +188,14 @@ class PurchaseWorkflow
                 if ($total > 9999999999.99) {
                     throw ValidationException::withMessages(['lines' => 'The order amount is too large.']);
                 }
-                DB::table('purchase_orders')->insert([
+                DB::table('purchase_orders')->insert(WorkspaceWrite::owned([
                     'id' => $poId, 'itemRequestId' => $id, 'supplierId' => $supplier->id, 'supplierName' => $record->supplierName ?? $supplier->name,
                     ...(SupplierAccounts::ready() ? ['expectedDeliveryDate' => $record->expectedDeliveryDate ?? null] : []),
                     'status' => self::WAITING, 'orderedValue' => round($total, 2), 'outstandingValue' => round($total, 2),
                     'deliveredValue' => 0, 'invoicedValue' => 0, 'paidValue' => 0, 'cancelledValue' => 0,
                     'receivingRecordIds' => '[]', 'created' => now()->toDateString(), 'createdById' => $request->user()->id, 'createdByRole' => $request->user()->role,
-                ]);
-                DB::table('purchase_order_lines')->insert($orderLines);
+                ]));
+                DB::table('purchase_order_lines')->insert(array_map(fn ($line) => WorkspaceWrite::owned($line), $orderLines));
             }
             $values = ['status' => $status, 'adminNote' => filled($data['note'] ?? null) ? trim($data['note']) : ($record->adminNote ?? ''), 'revision' => $record->revision + 1,
                 'disapprovalReason' => $status === 'Declined' ? $data['note'] : null, 'poId' => $poId];
@@ -203,7 +203,7 @@ class PurchaseWorkflow
                 $values += ['reviewed_at' => now(), 'approved_at' => $poId ? now() : null, 'approvedById' => $request->user()->id,
                     'approvedByRole' => $request->user()->role, 'approvedBy' => $request->user()->name];
             }
-            DB::table('item_requests')->where('id', $id)->update($values);
+            WorkspaceRead::table('item_requests')->where('id', $id)->update($values);
             InventoryRules::audit($request->user()->name, 'Purchase review: '.$data['action'], $id, json_encode($before), json_encode($data));
             $label = match ($data['action']) {
                 'approved' => 'Approved', 'disapproved' => 'Declined', default => 'Updated'

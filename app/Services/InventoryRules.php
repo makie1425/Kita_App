@@ -10,11 +10,12 @@ class InventoryRules
 {
     public static function lockActor(Request $request): void
     {
+        WorkspaceWrite::requireId();
         $user = DB::table('users')->where('id', $request->user()->id)->where('role', $request->user()->role)->lockForUpdate()->first();
         abort_unless($user && strtolower($user->status) === 'active', 403, 'This account is inactive.');
     }
 
-    public static function authorize(Request $request, array $roles = ['manager', 'admin', 'superadmin', 'super_admin']): void
+    public static function authorize(Request $request, array $roles = ['manager', 'admin']): void
     {
         $user = $request->user();
         abort_unless($user, 401, 'Please log in.');
@@ -39,11 +40,11 @@ class InventoryRules
 
     public static function product(int $id, string $field = 'productId'): object
     {
-        $product = DB::table('products')->where('id', $id)->lockForUpdate()->first();
+        $product = WorkspaceRead::table('products')->where('id', $id)->lockForUpdate()->first();
         if (! $product || $product->status !== 'Active' || $product->archivedAt !== null || $product->stock === null || $product->stock < 0) {
             throw ValidationException::withMessages([$field => 'Select an active inventory item.']);
         }
-        if (! DB::table('categories')->where('name', $product->category)->where('status', 'Active')->whereNull('archivedAt')->exists()) {
+        if (! WorkspaceRead::table('categories')->where('name', $product->category)->where('status', 'Active')->whereNull('archivedAt')->exists()) {
             throw ValidationException::withMessages([$field => 'The item category is inactive or unavailable.']);
         }
 
@@ -52,7 +53,7 @@ class InventoryRules
 
     public static function productLabel(object $product): string
     {
-        $brand = empty($product->brandId) ? null : DB::table('brands')->where('id', $product->brandId)->value('name');
+        $brand = empty($product->brandId) ? null : WorkspaceRead::table('brands')->where('id', $product->brandId)->value('name');
         $size = empty($product->size) ? null : (string) (float) $product->size;
 
         return implode(' ', array_filter([$product->name, $product->variantLabel ?? null, $brand, $size, $product->sizeUnit ?? null], fn ($v) => $v !== null && $v !== ''));

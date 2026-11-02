@@ -53,7 +53,8 @@ class StockReceiptWorkflow
             }
         }
         $entered=collect($data['entries'])->where('poId',$data['primaryPo'])->pluck('productId')->map(fn($id)=>(int)$id);
-        foreach (DB::table('purchase_order_lines')->where('poId',$data['primaryPo'])->get() as $line) {
+        abort_unless(WorkspaceRead::table('purchase_orders')->where('id',$data['primaryPo'])->exists(),404);
+        foreach (WorkspaceRead::table('purchase_order_lines')->where('poId',$data['primaryPo'])->get() as $line) {
             if (ReceivingCarryover::remaining($line)>0) abort_unless($entered->contains((int)$line->productId),422,'Complete every item on this PO. Enter 0 for items not delivered.');
         }
         return $data;
@@ -63,11 +64,11 @@ class StockReceiptWorkflow
     private function inspect(array $data): array
     {
         DB::table('inventory_sequences')->where('name','purchase_orders')->lockForUpdate()->first();
-        $supplier=DB::table('suppliers')->where('id',$data['supplierId'])->where('status','Active')->whereNull('archivedAt')->lockForUpdate()->first();
+        $supplier=WorkspaceRead::table('suppliers')->where('id',$data['supplierId'])->where('status','Active')->whereNull('archivedAt')->lockForUpdate()->first();
         abort_unless($supplier,422,'Select an active supplier.');
         $ids=collect($data['entries'])->pluck('poId')->push($data['primaryPo'])->unique()->sort()->values()->all();
-        $orders=DB::table('purchase_orders')->whereIn('id',$ids)->orderBy('id')->lockForUpdate()->get()->keyBy('id');
-        $lines=DB::table('purchase_order_lines')->whereIn('poId',$ids)->orderBy('id')->lockForUpdate()->get();
+        $orders=WorkspaceRead::table('purchase_orders')->whereIn('id',$ids)->orderBy('id')->lockForUpdate()->get()->keyBy('id');
+        $lines=WorkspaceRead::table('purchase_order_lines')->whereIn('poId',$ids)->orderBy('id')->lockForUpdate()->get();
         $primary=$orders->get($data['primaryPo']);
         abort_unless($primary && (int)$primary->supplierId===(int)$data['supplierId'],422,'Choose a PO for the selected supplier.');
         $summary=[];$exceptions=[];$groups=[];$balances=[];$seen=[];
@@ -82,7 +83,7 @@ class StockReceiptWorkflow
             abort_unless(ReceivingCarryover::remaining($line)>0,422,'This item is already fully received.');
             if ($entry['type']==='current') abort_unless($order->id===$primary->id,422,'Current products must belong to the main PO.');
             else {
-                abort_unless(DB::table('receiving_records')->where('poId',$order->id)->exists(),422,'Choose an item with a previous delivery.');
+                abort_unless(WorkspaceRead::table('receiving_records')->where('poId',$order->id)->exists(),422,'Choose an item with a previous delivery.');
                 abort_unless($order->created<=$primary->created,422,'Choose an earlier PO for outstanding items.');
             }
             $key=$order->id.'|'.$line->productId;
@@ -99,6 +100,7 @@ class StockReceiptWorkflow
             if ($type==='outstanding') abort_if($delivered>$balance['total'],422,'Delivery exceeds the previous outstanding quantity.');
             abort_if($delivered>$balance['total'],422,'Delivery cannot exceed the outstanding quantity.');
             $target=InventoryRules::product(($entry['substituteProductId'] ?? null) ?: $entry['productId']);
+            abort_unless(WorkspaceRead::table('products')->where('id',$target->id)->exists(),422,'Select an inventory item in this workspace.');
             abort_unless(strtolower($line->unit)===strtolower($target->stockUnit ?: $target->unit),422,'Replacement products must use the same stock unit.');
             $substitute=(int)$target->id!==(int)$line->productId;
             if ($substitute) {
@@ -108,7 +110,7 @@ class StockReceiptWorkflow
             }
             if ((int)round($entry['unitCost']*100)!==(int)round($line->unitCost*100)) $exceptions[]='Purchase-cost change: '.$order->id.' / '.$line->name;
             abort_unless(array_sum(array_column($entry['lots'],'quantity'))===$accepted,422,'Lot quantities must equal accepted quantity for '.$target->name.'.');
-            $perishable=DB::table('categories')->where('name',$target->category)->value('classification')==='Perishable';
+            $perishable=WorkspaceRead::table('categories')->where('name',$target->category)->value('classification')==='Perishable';
             foreach ($entry['lots'] as $lot) {
                 abort_if($perishable && empty($lot['expiryDate']),422,'Expiration date is required for '.$target->name.'.');
                 abort_if(!empty($lot['expiryDate']) && $lot['expiryDate']<=now()->toDateString(),422,'Expired stock cannot be accepted.');
@@ -144,14 +146,14 @@ class StockReceiptWorkflow
         return DB::transaction(function () use ($request,$data,$hash) {
             InventoryRules::lockActor($request);
             DB::table('inventory_sequences')->where('name','purchase_orders')->lockForUpdate()->first();
-            $existing=DB::table('stock_receipts')->where('requestKey',$data['requestKey'])->first();
+            $existing=WorkspaceRead::table('stock_receipts')->where('requestKey',$data['requestKey'])->first();
             if ($existing) {
                 abort_unless($existing->payloadHash===$hash,409,'This receipt key was already used. Reopen the form for another delivery.');
                 return response()->json(['id'=>$existing->id,'status'=>$existing->status,'message'=>'Stock receipt already saved.']);
             }
             $checked=$this->inspect($data);$id=ReceivingNumber::next('SR');
             $status=$checked['exceptions']?'Pending Approval':'Ready';
-            DB::table('stock_receipts')->insert(['id'=>$id,'requestKey'=>$data['requestKey'],'payloadHash'=>$hash,'supplierId'=>$data['supplierId'],'deliveryDate'=>$data['deliveryDate'],'status'=>$status,'payload'=>json_encode($data),'summary'=>json_encode($checked['summary']),'exceptions'=>json_encode($checked['exceptions']),'requestedBy'=>$request->user()->id,'created_at'=>now(),'updated_at'=>now()]);
+            DB::table('stock_receipts')->insert(WorkspaceWrite::owned(['id'=>$id,'requestKey'=>$data['requestKey'],'payloadHash'=>$hash,'supplierId'=>$data['supplierId'],'deliveryDate'=>$data['deliveryDate'],'status'=>$status,'payload'=>json_encode($data),'summary'=>json_encode($checked['summary']),'exceptions'=>json_encode($checked['exceptions']),'requestedBy'=>$request->user()->id,'created_at'=>now(),'updated_at'=>now()]));
             if ($status==='Ready') $this->postChecked($request,$id,$data,$checked,false);
             else WorkflowNotifications::send(WorkflowNotifications::reviewers(),$request->user(),'Stock receipt approval','Review stock receipt '.$id.'. No inventory has been posted.','purchase',$data['primaryPo']);
             InventoryRules::audit($request->user()->name,'Submitted stock receipt',$id,null,$status);
@@ -167,7 +169,7 @@ class StockReceiptWorkflow
         return DB::transaction(function () use ($request,$id,$data) {
             InventoryRules::lockActor($request);
             DB::table('inventory_sequences')->where('name','purchase_orders')->lockForUpdate()->first();
-            $record=DB::table('stock_receipts')->where('id',$id)->lockForUpdate()->first();abort_unless($record,404);
+            $record=WorkspaceRead::table('stock_receipts')->where('id',$id)->lockForUpdate()->first();abort_unless($record,404);
             abort_if($record->requestedBy==$request->user()->id,403,'Another admin must review this receipt.');
             abort_unless($record->status==='Pending Approval',409,'This receipt has already been reviewed.');
             if ($data['action']==='Approved') $this->inspect(json_decode($record->payload,true));
@@ -183,7 +185,7 @@ class StockReceiptWorkflow
         return DB::transaction(function () use ($request,$id) {
             InventoryRules::lockActor($request);
             DB::table('inventory_sequences')->where('name','purchase_orders')->lockForUpdate()->first();
-            $record=DB::table('stock_receipts')->where('id',$id)->lockForUpdate()->first();abort_unless($record,404);
+            $record=WorkspaceRead::table('stock_receipts')->where('id',$id)->lockForUpdate()->first();abort_unless($record,404);
             if ($record->status==='Posted') return response()->json(['id'=>$id,'message'=>'Receipt already posted; stock was not added again.']);
             abort_unless($record->status==='Approved',422,'This receipt requires approval before posting.');
             $data=json_decode($record->payload,true);$checked=$this->inspect($data);
@@ -210,7 +212,7 @@ class StockReceiptWorkflow
                     $key=!empty($lot['supplierLot'])?json_encode([$group['targetProductId'],trim($lot['supplierLot']),$lot['expiryDate'] ?? null,$lot['manufacturedDate'] ?? null]):(string)Str::uuid();
                     if (!isset($lotMap[$key])) {
                         $lotId=$deliveryBatch.'-L'.str_pad((string)(count($lotMap)+1),3,'0',STR_PAD_LEFT);$lotMap[$key]=$lotId;
-                        DB::table('physical_inventory_lots')->insert(['id'=>$lotId,'productId'=>$group['targetProductId'],'supplierId'=>$data['supplierId'],'supplierLot'=>trim($lot['supplierLot'] ?? '') ?: null,'expiryDate'=>$lot['expiryDate'] ?? null,'manufacturedDate'=>$lot['manufacturedDate'] ?? null,'stockReceipt'=>$id,'created_at'=>now()]);
+                        DB::table('physical_inventory_lots')->insert(WorkspaceWrite::owned(['id'=>$lotId,'productId'=>$group['targetProductId'],'supplierId'=>$data['supplierId'],'supplierLot'=>trim($lot['supplierLot'] ?? '') ?: null,'expiryDate'=>$lot['expiryDate'] ?? null,'manufacturedDate'=>$lot['manufacturedDate'] ?? null,'stockReceipt'=>$id,'created_at'=>now()]));
                     }
                     $lots[]=$lot+['batchNumber'=>$deliveryBatch,'physicalLotId'=>$lotMap[$key]];
                 }
@@ -229,7 +231,7 @@ class StockReceiptWorkflow
             $receipts[]=['poId'=>$order->id,'receiptId'=>$receipt['id'],'batchNumber'=>$deliveryBatch];
         }
         foreach ($checked['summary'] as $entry) {
-            DB::table('receiving_obligation_events')->insert(['stockReceipt'=>$id,'orderLine'=>$entry['orderLine'],'type'=>$entry['type'],'delivered'=>$entry['delivered'],'accepted'=>$entry['accepted'],'damaged'=>$entry['damaged'],'missingAfter'=>$entry['missingDue'],'damageAfter'=>$entry['damageDue'],'disposition'=>$entry['disposition'] ?? null,'reason'=>$entry['damageReason'] ?? null,'created_at'=>now()]);
+            DB::table('receiving_obligation_events')->insert(WorkspaceWrite::owned(['stockReceipt'=>$id,'orderLine'=>$entry['orderLine'],'type'=>$entry['type'],'delivered'=>$entry['delivered'],'accepted'=>$entry['accepted'],'damaged'=>$entry['damaged'],'missingAfter'=>$entry['missingDue'],'damageAfter'=>$entry['damageDue'],'disposition'=>$entry['disposition'] ?? null,'reason'=>$entry['damageReason'] ?? null,'created_at'=>now()]));
             DB::table('purchase_order_lines')->where('id',$entry['orderLine'])->update(['damageOutstanding'=>$entry['damageDue']]);
         }
         DB::table('stock_receipts')->where('id',$id)->update(['status'=>'Posted','receipts'=>json_encode($receipts),'posted_at'=>$receivedAt,'updated_at'=>$receivedAt]);
@@ -239,12 +241,12 @@ class StockReceiptWorkflow
     public function report(Request $request,string $id)
     {
         InventoryRules::authorize($request);
-        $receipt=DB::table('stock_receipts')->where('id',$id)->first();abort_unless($receipt,404);
+        $receipt=WorkspaceRead::table('stock_receipts')->where('id',$id)->first();abort_unless($receipt,404);
         $summary=json_decode($receipt->summary,true);$payload=json_decode($receipt->payload,true);
-        $supplier=DB::table('suppliers')->where('id',$receipt->supplierId)->value('name');
-        $receiver=DB::table('users')->where('id',$receipt->requestedBy)->value('name');
-        $lots=DB::table('physical_inventory_lots')->where('stockReceipt',$id)->get();
-        foreach ($lots as $lot) $lot->allocations=DB::table('receiving_record_lines as l')->join('receiving_records as r','r.id','=','l.receivingId')->where('l.physicalLotId',$lot->id)->select('r.poId','l.deliveredQty','l.unitCost','l.batchNumber')->get();
+        $supplier=WorkspaceRead::table('suppliers')->where('id',$receipt->supplierId)->value('name');
+        $receiver=WorkspaceRead::table('users')->where('id',$receipt->requestedBy)->value('name');
+        $lots=WorkspaceRead::table('physical_inventory_lots')->where('stockReceipt',$id)->get();
+        foreach ($lots as $lot) $lot->allocations=WorkspaceRead::table('receiving_record_lines as l')->join('receiving_records as r','r.id','=','l.receivingId')->when(config('workspaces.enabled'), fn ($query) => $query->where('r.workspace_id', WorkspaceWrite::requireId()))->where('l.physicalLotId',$lot->id)->select('r.poId','l.deliveredQty','l.unitCost','l.batchNumber')->get();
         return response()->view('stock-receipt',compact('receipt','summary','payload','supplier','receiver','lots'))->header('Cache-Control','private, no-store');
     }
 }

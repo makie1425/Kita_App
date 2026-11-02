@@ -350,6 +350,7 @@ class Component extends DCLogic {
     this.setState({compactNavigation:compact,...(!compact?{sidebarOpen:false}:{})});
   };
   componentDidMount() {
+    if(window.KITA_AUTH?.user?.role==='admin')this.loadWorkspaces();
     this.previousAppState=this.state;
     this.syncNavigationViewport();
     window.addEventListener("resize",this.syncNavigationViewport);
@@ -372,9 +373,18 @@ class Component extends DCLogic {
     fieldVersionHistoryLocal:m.FIELD_VERSION_HISTORY,suppliersLocal:m.SUPPLIERS,promotionsLocal:m.PROMOTIONS,checkoutPromotions:m.PROMOTIONS,
     rolesMatrix:this.state.rolesMatrix||this.defaultRolesMatrix(),mgrNotificationsLocal:this.state.mgrNotificationsLocal||[],
   },()=>resolve(m)))));
+  loadWorkspaces=()=>fetch('/api/workspaces',{credentials:'same-origin',headers:{Accept:'application/json'}}).then(async r=>{
+    const body=await r.json();if(!r.ok)throw new Error(body.message||'Could not load workspaces.');
+    this.setState({assignedWorkspaces:body.workspaces,currentWorkspace:body.current});
+  }).catch(e=>this.toast(e.message,'error'));
+  selectWorkspace=async e=>{
+    const workspace_id=Number(e.target.value);if(!workspace_id)return;
+    try{await this.authPost('/api/workspaces/select',{workspace_id});window.location.reload();}
+    catch(error){this.toast(error.message,'error');}
+  };
   reloadAccounts=()=>this.trackLoad(()=>fetch("/api/accounts",{headers:{Accept:"application/json"},credentials:"same-origin"}).then(async r=>{
     const body=await r.json(); this.handleSessionResponse(r,body); if(!r.ok) throw new Error(body.message||"Could not load accounts.");
-    this.setState({accountsLocal:body.accounts}); return body.accounts;
+      this.setState({accountsLocal:body.accounts}); if(this.state.role==='admin')this.loadWorkspaces(); return body.accounts;
   }));
   defaultRolesMatrix(){
     const modules=["Checkout","Refunds","Item Requests","Purchase Orders","Receiving","Inventory Adjustments","Promotions","Analytics","Approvals","Manager Accounts","Admin Accounts","Roles & Permissions","Backup Configuration","Audit Logs"];
@@ -450,7 +460,7 @@ class Component extends DCLogic {
     role=String(role||"").toLowerCase().replace(/[ _-]/g,"");
     const d={cashier:"pos",manager:"mgrDashboard",admin:"admDashboard",superadmin:"saDashboard"}[role];
     if(!d || !user?.name){ this.setState({authStep:"login",role:null,screen:null,loginError:"Your session could not be loaded. Refresh the page and sign in again."}); return; }
-    this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificationsLocal:[],notificationUnread:0,notificationNext:null,mgrNotifOpen:false},()=>{this.reloadNotifications();this.reloadCatalog().catch(error=>this.setState({dataError:error.message}));if(role==="superadmin")this.reloadSaDashboard();if(["manager","admin","superadmin"].includes(role))this.reloadPurchasing().catch(()=>{});if(role!=="cashier") this.reloadAccounts().catch(error=>this.toast(error.message,"error"));});
+this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificationsLocal:[],notificationUnread:0,notificationNext:null,mgrNotifOpen:false},()=>{this.reloadNotifications();this.reloadCatalog().catch(error=>this.setState({dataError:error.message}));if(role==="superadmin")this.reloadSaDashboard();if(["manager","admin"].includes(role))this.reloadPurchasing().catch(()=>{});if(role!=="cashier") this.reloadAccounts().catch(error=>this.toast(error.message,"error"));});
   };
   logout=()=>{ this.authPost((window.KITA_AUTH&&window.KITA_AUTH.logoutUrl)||"/logout",{}).then(res=>{ if(window.KITA_AUTH) window.KITA_AUTH.csrfToken=res.csrf_token; this.newSale(); this.setState({role:null,authenticatedUser:null,mgrNotificationsLocal:[],notificationUnread:0,mgrNotifOpen:false,data:null,accountsLocal:null,purchaseData:null,purchaseReceivingId:null,purchaseRequestDetail:null,newReqCart:[],cart:[],discountManagerPin:"",approvalPin:"",approvalManagerId:"",newApprovalPin:"",confirmApprovalPin:"",currentApprovalPin:"",refundTxn:null,authStep:"login",screen:null,pendingRole:null,loginUsername:"",loginPassword:"",otpEmail:"",loginError:""}); }).catch(error=>this.toast(error.message,"error")); };
   toggleSidebar=()=>this.setState(s=>({sidebarOpen:!s.sidebarOpen}),()=>{
@@ -3095,7 +3105,7 @@ class Component extends DCLogic {
   }
   buildAdmManagers(){
     const h=React.createElement,{accountsLocal,acctModalOpen,acctModalMode,acctForm:f}=this.state;
-    const roles=this.state.role==="manager"?["cashier"]:this.state.role==="superadmin"?["admin","manager","cashier","superadmin"]:["cashier","manager"];
+    const roles=this.state.role==="manager"?["cashier"]:this.state.role==="superadmin"?["admin"]:["cashier","manager"];
     const title=this.state.role==="superadmin"?"User Management":this.state.role==="manager"?"Cashier Accounts":"Manage Accounts";
     const input=(key,label,type="text")=>h("label",{key,style:{display:"block",fontSize:12,fontWeight:700,marginBottom:10}},[label,h("input",{type,value:f[key]||"",onChange:this.setAcctField(key),autoComplete:type==="password"?"new-password":"off",style:{width:"100%",boxSizing:"border-box",padding:10,marginTop:4,border:"1px solid "+COLORS.border,borderRadius:8}})]);
     return h("div",null,[moduleTitle(title),btn("Create Account",this.openAcctModal("create"),"primary"),
@@ -3230,7 +3240,7 @@ class Component extends DCLogic {
         {label:"PURCHASING",items:[{key:"admPurchasedOrders",label:"Purchase Orders"},{key:"admForwarded",label:"Forwarded Purchase Requests"},{key:"admDisapproved",label:"Disapproved Purchase Requests"},{key:"admReceivingApprovals",label:"Receiving History"}]},
         {label:"CONTROLS",items:[{key:"mgrCategories",label:"Categories / Brands"},{key:"mgrRegistration",label:"Product Registration"},{key:"mgrInventory",label:"Inventory"},{key:"admInventoryApprovals",label:"Inventory Adjustment Approvals"},{key:"admSuppliers",label:"Supplier Records"},{key:"purchaseOrders",label:"Purchase Orders"},{key:"supplierAccounts",label:"Supplier Accounts"},{key:"admReports",label:"Reports"},{key:"archive",label:"Archive"}]},
         {label:"ADMIN",items:[{key:"admManagers",label:"Manage Accounts"},{key:"admNotifications",label:"Notifications"}]}],
-      superadmin:[{label:null,items:[{key:"saDashboard",label:"Dashboard"},{key:"saAdmins",label:"User Management"},{key:"saRoles",label:"Roles & Permissions"},{key:"saBackup",label:"Backup Configuration"},{key:"saAudit",label:"Audit Logs"}]}],
+      superadmin:[{label:null,items:[{key:"saDashboard",label:"Dashboard"},{key:"saAdmins",label:"User Management"}]}],
     };
     const navGroups=(navMap[s.role]||[]).map(g=>({label:g.label,items:g.items.map(it=>({key:it.key,label:it.label,icon:navigationIcon(it.key),go:this.goScreen(it.key),className:s.screen===it.key?"nav-item nav-item--active":"nav-item",current:s.screen===it.key?"page":undefined,
       style:{padding:"9px 12px",borderRadius:8,fontSize:13,fontWeight:600,cursor:"pointer",marginBottom:2,background:s.screen===it.key?"rgba(255,255,255,0.14)":"transparent"}}))}));
@@ -3249,6 +3259,7 @@ class Component extends DCLogic {
         admManagers:()=>this.buildAdmManagers(), admNotifications:()=>this.buildAdmNotifications(),
         saDashboard:()=>this.buildSaDashboard(), saAdmins:()=>this.buildSaAdmins(), saRoles:()=>this.buildSaRoles(), saBackup:()=>this.buildSaBackup(), saAudit:()=>this.buildSaAudit()};
       activeScreen = map[s.screen] ? map[s.screen]() : null;
+      if(s.role==='admin')activeScreen=h('div',null,[h('label',null,['Workspace ',h('select',{'aria-label':'Workspace',value:s.currentWorkspace||'',onChange:this.selectWorkspace},[h('option',{value:'',disabled:true},'Select workspace'),...(s.assignedWorkspaces||[]).map(w=>h('option',{key:w.id,value:w.id},w.name))])]),activeScreen]);
     }
 
     return {

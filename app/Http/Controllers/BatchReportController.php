@@ -11,11 +11,17 @@ class BatchReportController extends Controller
     public function __invoke(Request $request, int $id)
     {
         InventoryRules::authorize($request);
-        $entry = DB::table('inventory_batches')->where('id', $id)->first();
+        $entry = \App\Services\WorkspaceRead::table('inventory_batches')->where('id', $id)->first();
         abort_unless($entry, 404);
-        $query = DB::table('inventory_batches as b')->join('products as p', 'p.id', '=', 'b.productId')
+        $query = \App\Services\WorkspaceRead::table('inventory_batches as b')->join('products as p', 'p.id', '=', 'b.productId')
             ->leftJoin('receiving_records as r', 'r.id', '=', 'b.receiptId')
             ->leftJoin('suppliers as s', 's.id', '=', 'b.supplierId');
+        if (config('workspaces.enabled')) {
+            $workspaceId = \App\Services\WorkspaceWrite::requireId();
+            $query->where('p.workspace_id', $workspaceId)
+                ->where(fn ($joined) => $joined->whereNull('r.id')->orWhere('r.workspace_id', $workspaceId))
+                ->where(fn ($joined) => $joined->whereNull('s.id')->orWhere('s.workspace_id', $workspaceId));
+        }
         if ($entry->batchNumber) $query->where('b.batchNumber', $entry->batchNumber);
         else $query->where('b.id', $entry->id);
         $rows = $query->orderBy('p.name')->orderBy('b.id')->get([

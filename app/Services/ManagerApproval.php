@@ -19,6 +19,20 @@ class ManagerApproval
 
         // Legacy accounts have role-scoped numeric IDs. Never use User::find here.
         $manager = User::where('id', $managerId)->whereRaw('LOWER(role) = ?', ['manager'])->first();
+        if (config('workspaces.enabled')) {
+            $actor = $request->user();
+            $authorized = $manager && $actor->workspace_id && $actor->workspace_id === $manager->workspace_id
+                && WorkspaceRead::id() === (int) $manager->workspace_id
+                && ($actor->normalizedRole() === 'manager'
+                    ? (int) $actor->id === (int) $manager->id
+                    : ($actor->normalizedRole() === 'cashier'
+                        && (int) $actor->assigned_manager_id === (int) $manager->id
+                        && $actor->assigned_manager_role === 'manager'));
+            if (! $authorized) {
+                RateLimiter::hit($requesterKey, 300);
+                throw ValidationException::withMessages([$field => 'The selected active manager or approval PIN is incorrect.']);
+            }
+        }
         if (! $manager || strtolower($manager->status ?? 'Active') !== 'active' || ! $manager->verifyApprovalPin($pin)) {
             RateLimiter::hit($key, 300);
             RateLimiter::hit($requesterKey, 300);

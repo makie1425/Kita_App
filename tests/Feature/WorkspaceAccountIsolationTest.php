@@ -8,6 +8,33 @@ use Tests\TestCase;
 class WorkspaceAccountIsolationTest extends TestCase
 {
  use RefreshDatabase;
+ public function test_super_admin_account_actions_cannot_reach_other_roles(): void {
+  config(['workspaces.enabled'=>true]);
+  $super=$this->manager('Super');$super->forceFill(['role'=>'superadmin'])->save();
+  DB::table('workspace_memberships')->where('user_id',$super->id)->update(['user_role'=>'super_admin']);
+  $admin=User::factory()->create(['role'=>'admin','workspace_id'=>$super->workspace_id]);
+  $cashier=User::factory()->create(['role'=>'cashier','workspace_id'=>$super->workspace_id]);
+  $manager=User::factory()->create(['role'=>'manager','workspace_id'=>$super->workspace_id]);
+  $this->assertSame([$admin->id],\App\Services\WorkspaceAccess::accounts($super)->pluck('id')->all());
+  $this->actingAs($super)->getJson('/api/accounts')->assertOk()->assertJsonCount(1,'accounts')->assertJsonPath('accounts.0.role','admin');
+  $this->postJson('/api/accounts',['first_name'=>'New','last_name'=>'Manager','email'=>'blocked@example.com','role'=>'manager'])->assertForbidden();
+  $this->assertDatabaseMissing('users',['email'=>'blocked@example.com']);
+  $this->actingAs($super)->postJson('/api/accounts/cashier/'.$cashier->id.'/resend-setup')->assertNotFound();
+  $this->postJson('/api/accounts/manager/'.$manager->id.'/send-reset')->assertNotFound();
+  $this->patchJson('/api/accounts/cashier/'.$cashier->id,['status'=>'Inactive'])->assertForbidden();
+  $this->assertSame('Active',$cashier->fresh()->status);
+  $this->assertSame('Active',$admin->fresh()->status);
+ }
+ public function test_manager_created_cashier_has_explicit_assignment_and_other_manager_cannot_access_it(): void {
+  config(['workspaces.enabled'=>true]);\Illuminate\Support\Facades\Mail::fake();
+  $owner=$this->manager('Owner');$other=$this->manager('Other');
+  $this->actingAs($owner)->postJson('/api/accounts',['first_name'=>'Owned','last_name'=>'Cashier','email'=>'owned@example.com','role'=>'cashier'])->assertCreated();
+  $cashier=User::where('email','owned@example.com')->firstOrFail();
+  $this->assertSame($owner->id,(int)$cashier->assigned_manager_id);
+  $this->assertSame('manager',$cashier->assigned_manager_role);
+  $this->actingAs($other)->getJson('/api/accounts')->assertOk()->assertJsonCount(0,'accounts');
+  $this->postJson('/api/accounts/cashier/'.$cashier->id.'/send-reset')->assertNotFound();
+ }
  private function manager(string $name): User {
   $org=DB::table('organizations')->insertGetId(['name'=>$name]);
   $scope=DB::table('workspaces')->insertGetId(['organization_id'=>$org,'name'=>$name]);
@@ -77,10 +104,9 @@ class WorkspaceAccountIsolationTest extends TestCase
   $args=['owner'=>'owner@example.com','--admins'=>'admin@example.com','--superadmins'=>'super@example.com','--cashiers'=>'cashier@example.com'];
   $this->artisan('workspaces:assign-legacy',$args)->assertExitCode(0);
   $this->assertNull($owner->fresh()->workspace_id);$this->assertNull(DB::table('products')->where('id',345)->value('workspace_id'));
-  $args['--apply']=true;$this->artisan('workspaces:assign-legacy',$args)->assertExitCode(0);
-  $scope=$owner->fresh()->workspace_id;$this->assertNotNull($scope);
-  $this->assertSame($scope,$admin->fresh()->workspace_id);$this->assertSame($scope,$super->fresh()->workspace_id);$this->assertSame($scope,$cashier->fresh()->workspace_id);
-  $this->assertSame('Historic Creator',$cashier->fresh()->createdBy);$this->assertSame($owner->id,$cashier->fresh()->assigned_manager_id);
-  $this->assertSame($scope,DB::table('products')->where('id',345)->value('workspace_id'));
+  $args['--apply']=true;$this->artisan('workspaces:assign-legacy',$args)->assertExitCode(1);
+  foreach([$owner,$admin,$super,$cashier] as $account)$this->assertNull($account->fresh()->workspace_id);
+  $this->assertSame('Historic Creator',$cashier->fresh()->createdBy);
+  $this->assertNull(DB::table('products')->where('id',345)->value('workspace_id'));
  }
 }

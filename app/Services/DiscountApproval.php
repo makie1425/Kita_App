@@ -30,7 +30,7 @@ class DiscountApproval
     public static function record(string $uuid, ?array $approval): void
     {
         if ($approval) {
-            DB::table('discount_approvals')->insert($approval + ['transaction_uuid' => $uuid, 'created_at' => now(), 'updated_at' => now()]);
+            DB::table('discount_approvals')->insert(WorkspaceWrite::owned($approval + ['transaction_uuid' => $uuid, 'created_at' => now(), 'updated_at' => now()]));
             $actor = WorkflowNotifications::owner($approval['requested_by'], $approval['requested_by_role']);
             if ($actor) {
                 WorkflowNotifications::send([$actor, WorkflowNotifications::owner($approval['manager_id'], 'manager')], $actor,

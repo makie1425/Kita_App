@@ -14,9 +14,9 @@ class InventoryWorkflowController extends Controller
     public function index(Request $r)
     {
         InventoryRules::authorize($r);
-        $counts = DB::table('inventory_counts')->orderByDesc('id')->get();
+        $counts = \App\Services\WorkspaceRead::table('inventory_counts')->orderByDesc('id')->get();
         foreach ($counts as $count) {
-            $count->lines = DB::table('inventory_count_lines as l')->join('products as p', 'p.id', '=', 'l.productId')->where('countId', $count->id)->get(['l.*', 'p.name', 'p.stockUnit']);
+            $count->lines = \App\Services\WorkspaceRead::table('inventory_count_lines as l')->join('products as p', 'p.id', '=', 'l.productId')->when(config('workspaces.enabled'), fn ($query) => $query->where('p.workspace_id', \App\Services\WorkspaceWrite::requireId()))->where('countId', $count->id)->get(['l.*', 'p.name', 'p.stockUnit']);
             if ($count->mode === 'Blind' && $count->status === 'Open') {
                 foreach ($count->lines as $line) {
                     unset($line->expected);
@@ -25,8 +25,8 @@ class InventoryWorkflowController extends Controller
         }
 
         return response()->json([
-            'batches' => \App\Services\InventoryAvailability::batches(DB::table('inventory_batches as b')->join('products as p', 'p.id', '=', 'b.productId')->orderByDesc('b.id')->get(['b.*', 'p.name', 'p.category', 'p.stockUnit', 'p.status as productStatus', 'p.archivedAt as productArchivedAt'])),
-            'events' => DB::table('inventory_events as e')->join('products as p', 'p.id', '=', 'e.productId')->join('inventory_batches as b', 'b.id', '=', 'e.batchId')->orderByDesc('e.id')->get(['e.*', 'p.name', 'b.batchNumber']),
+            'batches' => \App\Services\InventoryAvailability::batches(\App\Services\WorkspaceRead::table('inventory_batches as b')->join('products as p', 'p.id', '=', 'b.productId')->when(config('workspaces.enabled'), fn ($query) => $query->where('p.workspace_id', \App\Services\WorkspaceWrite::requireId()))->orderByDesc('b.id')->get(['b.*', 'p.name', 'p.category', 'p.stockUnit', 'p.status as productStatus', 'p.archivedAt as productArchivedAt'])),
+            'events' => \App\Services\WorkspaceRead::table('inventory_events as e')->join('products as p', 'p.id', '=', 'e.productId')->join('inventory_batches as b', 'b.id', '=', 'e.batchId')->when(config('workspaces.enabled'), fn ($query) => $query->where('p.workspace_id', \App\Services\WorkspaceWrite::requireId())->where('b.workspace_id', \App\Services\WorkspaceWrite::requireId()))->orderByDesc('e.id')->get(['e.*', 'p.name', 'b.batchNumber']),
             'counts' => $counts, 'today' => now()->toDateString(),
         ])->header('Cache-Control', 'no-store');
     }
@@ -34,20 +34,21 @@ class InventoryWorkflowController extends Controller
     public function event(Request $r)
     {
         InventoryRules::authorize($r);
-        $d = $r->validate(['requestKey' => ['required', 'uuid'], 'batchId' => ['required', 'integer', 'exists:inventory_batches,id'],
+        $d = $r->validate(['requestKey' => ['required', 'uuid'], 'batchId' => ['required', 'integer', Rule::exists('inventory_batches', 'id')->where(fn ($query) => \App\Services\WorkspaceWrite::scopeValidation($query))],
             'type' => ['required', Rule::in(['Write-off', 'Disposal', 'Transfer', 'Supplier return', 'Recall', 'Release recall'])], 'quantity' => ['required', 'integer', 'min:0', 'max:1000000'],
             'destination' => ['required_if:type,Transfer', 'nullable', 'string', 'max:255'], 'reason' => ['required', 'string', 'max:2000']]);
 
         return DB::transaction(function () use ($r, $d) {
             InventoryRules::lockActor($r);
-            $info = DB::table('inventory_batches')->where('id', $d['batchId'])->first();
+            $info = \App\Services\WorkspaceRead::table('inventory_batches')->where('id', $d['batchId'])->first();
+            abort_unless($info, 404);
             $p = InventoryRules::product($info->productId);
             if ($d['type'] === 'Supplier return') {
-                $supplier = DB::table('suppliers')->where('id', $info->supplierId)->first();
+                $supplier = \App\Services\WorkspaceRead::table('suppliers')->where('id', $info->supplierId)->first();
                 abort_unless($supplier, 422, 'This batch has no recorded supplier. Reconcile its source before returning it.');
                 $d['destination'] = $supplier->name;
             }
-            $old = DB::table('inventory_events')->where('requestKey', $d['requestKey'])->first();
+            $old = \App\Services\WorkspaceRead::table('inventory_events')->where('requestKey', $d['requestKey'])->first();
             if ($old) {
                 foreach (['batchId', 'type', 'quantity', 'reason'] as $field) {
                     abort_unless((string) $old->$field === (string) $d[$field], 409, 'This submission key was already used.');
@@ -56,27 +57,27 @@ class InventoryWorkflowController extends Controller
 
                 return response()->json(['message' => 'Already recorded.']);
             }
-            $b = DB::table('inventory_batches')->where('id', $d['batchId'])->lockForUpdate()->first();
+            $b = \App\Services\WorkspaceRead::table('inventory_batches')->where('id', $d['batchId'])->lockForUpdate()->first();
             abort_if($d['quantity'] > $b->quantityRemaining || $d['quantity'] > $p->stock, 422, 'Quantity exceeds the available batch stock.');
             if (in_array($d['type'], ['Recall', 'Release recall'], true)) {
                 abort_unless((int) $d['quantity'] === (int) $b->quantityRemaining, 422, 'Recall the entire remaining batch quantity.');
                 $recalled = $d['type'] === 'Recall';
                 abort_if((bool) $b->recalled === $recalled, 409, $recalled ? 'This batch is already recalled.' : 'This batch is not recalled.');
-                DB::table('inventory_batches')->where('id', $b->id)->update(['recalled' => $recalled]);
-                $id = DB::table('inventory_events')->insertGetId($d + ['productId' => $p->id, 'actor' => $r->user()->name, 'created_at' => now()]);
+                \App\Services\WorkspaceRead::table('inventory_batches')->where('id', $b->id)->update(['recalled' => $recalled]);
+                $id = DB::table('inventory_events')->insertGetId(\App\Services\WorkspaceWrite::owned($d + ['productId' => $p->id, 'actor' => $r->user()->name, 'created_at' => now()]));
                 // Quarantine changes eligibility, never the physical quantity.
-                DB::table('stock_movements')->insert(['productId' => $p->id, 'quantityChange' => 0, 'quantityBefore' => $p->stock, 'quantityAfter' => $p->stock, 'referenceType' => $recalled ? 'recall' : 'recall_release', 'referenceId' => 'INV-'.$id, 'userId' => $r->user()->id, 'userRole' => $r->user()->role, 'created_at' => now()]);
+                DB::table('stock_movements')->insert(\App\Services\WorkspaceWrite::owned(['productId' => $p->id, 'quantityChange' => 0, 'quantityBefore' => $p->stock, 'quantityAfter' => $p->stock, 'referenceType' => $recalled ? 'recall' : 'recall_release', 'referenceId' => 'INV-'.$id, 'userId' => $r->user()->id, 'userRole' => $r->user()->role, 'created_at' => now()]));
                 InventoryRules::audit($r->user()->name, 'Inventory '.$d['type'], 'INV-'.$id, null, json_encode($d));
 
                 return response()->json(['message' => $recalled ? 'Batch recalled. Stock on hand is unchanged; this batch is blocked from sale.' : 'Recall released. Expiry and other eligibility checks still apply.'], 201);
             }
             abort_if($d['quantity'] < 1, 422, 'Enter a positive quantity to remove.');
-            $id = DB::table('inventory_events')->insertGetId($d + ['productId' => $p->id, 'actor' => $r->user()->name, 'created_at' => now()]);
-            DB::table('inventory_batches')->where('id', $b->id)->decrement('quantityRemaining', $d['quantity']);
-            DB::table('products')->where('id', $p->id)->decrement('stock', $d['quantity']);
-            DB::table('inventory_allocations')->insert(['batchId' => $b->id, 'productId' => $p->id, 'referenceType' => strtolower($d['type']), 'referenceId' => 'INV-'.$id, 'quantity' => $d['quantity'], 'unitCost' => $b->unitCost, 'created_at' => now()]);
-            abort_unless((int) DB::table('inventory_batches')->where('productId', $p->id)->sum('quantityRemaining') === $p->stock - $d['quantity'], 422, 'Batch balances do not match stock.');
-            DB::table('stock_movements')->insert(['productId' => $p->id, 'quantityChange' => -$d['quantity'], 'quantityBefore' => $p->stock, 'quantityAfter' => $p->stock - $d['quantity'], 'referenceType' => strtolower($d['type']), 'referenceId' => 'INV-'.$id, 'userId' => $r->user()->id, 'userRole' => $r->user()->role, 'created_at' => now()]);
+            $id = DB::table('inventory_events')->insertGetId(\App\Services\WorkspaceWrite::owned($d + ['productId' => $p->id, 'actor' => $r->user()->name, 'created_at' => now()]));
+            \App\Services\WorkspaceRead::table('inventory_batches')->where('id', $b->id)->decrement('quantityRemaining', $d['quantity']);
+            \App\Services\WorkspaceRead::table('products')->where('id', $p->id)->decrement('stock', $d['quantity']);
+            DB::table('inventory_allocations')->insert(\App\Services\WorkspaceWrite::owned(['batchId' => $b->id, 'productId' => $p->id, 'referenceType' => strtolower($d['type']), 'referenceId' => 'INV-'.$id, 'quantity' => $d['quantity'], 'unitCost' => $b->unitCost, 'created_at' => now()]));
+            abort_unless((int) \App\Services\WorkspaceRead::table('inventory_batches')->where('productId', $p->id)->sum('quantityRemaining') === $p->stock - $d['quantity'], 422, 'Batch balances do not match stock.');
+            DB::table('stock_movements')->insert(\App\Services\WorkspaceWrite::owned(['productId' => $p->id, 'quantityChange' => -$d['quantity'], 'quantityBefore' => $p->stock, 'quantityAfter' => $p->stock - $d['quantity'], 'referenceType' => strtolower($d['type']), 'referenceId' => 'INV-'.$id, 'userId' => $r->user()->id, 'userRole' => $r->user()->role, 'created_at' => now()]));
             InventoryRules::audit($r->user()->name, 'Inventory '.$d['type'], 'INV-'.$id, null, json_encode($d));
 
             return response()->json(['message' => 'Inventory action recorded.'], 201);
@@ -91,15 +92,15 @@ class InventoryWorkflowController extends Controller
         return DB::transaction(function () use ($r, $d) {
             InventoryRules::lockActor($r);
             $key = $d['kind'] === 'categories' ? 'name' : 'id';
-            $records = DB::table($d['kind'])->whereIn($key, $d['ids'])->orderBy($key)->lockForUpdate()->get();
+            $records = \App\Services\WorkspaceRead::table($d['kind'])->whereIn($key, $d['ids'])->orderBy($key)->lockForUpdate()->get();
             abort_unless($records->count() === count(array_unique($d['ids'])), 422, 'Some selected records no longer exist.');
             $action = $d['action'] ?? 'archive';
             if ($action !== 'archive') abort_if($records->contains(fn ($record) => $record->status !== 'Inactive'), 422, 'Only inactive records can be restored or deleted.');
             if ($action === 'delete') {
                 \App\Services\ArchiveReferences::ensureUnused($d['kind'], $records);
-                DB::table($d['kind'])->whereIn($key, $d['ids'])->delete();
+                \App\Services\WorkspaceRead::table($d['kind'])->whereIn($key, $d['ids'])->delete();
             } else {
-                DB::table($d['kind'])->whereIn($key, $d['ids'])->update($action === 'restore'
+                \App\Services\WorkspaceRead::table($d['kind'])->whereIn($key, $d['ids'])->update($action === 'restore'
                     ? ['status'=>'Active','archivedAt'=>null,'archivedBy'=>null]
                     : ['status'=>'Inactive','archivedAt'=>now()->toDateString(),'archivedBy'=>$r->user()->name]);
             }
@@ -112,21 +113,21 @@ class InventoryWorkflowController extends Controller
     public function start(Request $r)
     {
         InventoryRules::authorize($r);
-        $d = $r->validate(['mode' => ['required', Rule::in(['Cycle', 'Blind', 'Full'])], 'category' => ['nullable', 'string', 'exists:categories,name']]);
+        $d = $r->validate(['mode' => ['required', Rule::in(['Cycle', 'Blind', 'Full'])], 'category' => ['nullable', 'string', Rule::exists('categories', 'name')->where(fn ($query) => \App\Services\WorkspaceWrite::scopeValidation($query))]]);
 
         return DB::transaction(function () use ($r, $d) {
             InventoryRules::lockActor($r);
-            $query = DB::table('products')->where('status', 'Active')->whereNull('archivedAt');
+            $query = \App\Services\WorkspaceRead::table('products')->where('status', 'Active')->whereNull('archivedAt');
             if ($d['mode'] !== 'Full' && ! empty($d['category'])) {
                 $query->where('category', $d['category']);
             }
             $products = $query->orderBy('id')->lockForUpdate()->get();
             abort_if($products->isEmpty(), 422, 'No active products to count.');
-            abort_if(DB::table('inventory_allocations as a')->join('transactions as t', 't.uuid', '=', 'a.referenceId')->where('a.referenceType', 'payment_reservation')->where('t.status', 'Pending Payment')->whereIn('a.productId', $products->pluck('id'))->exists(), 409, 'Resolve pending payment reservations before counting these products.');
-            abort_if(DB::table('inventory_count_lines as l')->join('inventory_counts as c', 'c.id', '=', 'l.countId')->where('c.status', 'Open')->whereIn('l.productId', $products->pluck('id'))->exists(), 409, 'An open count already includes these products. Complete or cancel it first.');
-            $id = DB::table('inventory_counts')->insertGetId(['mode' => $d['mode'], 'category' => $d['mode'] === 'Full' ? null : ($d['category'] ?? null), 'actor' => $r->user()->name, 'created_at' => now(), 'status' => 'Open']);
+            abort_if(\App\Services\WorkspaceRead::table('inventory_allocations as a')->join('transactions as t', 't.uuid', '=', 'a.referenceId')->when(config('workspaces.enabled'), fn ($query) => $query->where('t.workspace_id', \App\Services\WorkspaceWrite::requireId()))->where('a.referenceType', 'payment_reservation')->where('t.status', 'Pending Payment')->whereIn('a.productId', $products->pluck('id'))->exists(), 409, 'Resolve pending payment reservations before counting these products.');
+            abort_if(\App\Services\WorkspaceRead::table('inventory_count_lines as l')->join('inventory_counts as c', 'c.id', '=', 'l.countId')->when(config('workspaces.enabled'), fn ($query) => $query->where('c.workspace_id', \App\Services\WorkspaceWrite::requireId()))->where('c.status', 'Open')->whereIn('l.productId', $products->pluck('id'))->exists(), 409, 'An open count already includes these products. Complete or cancel it first.');
+            $id = DB::table('inventory_counts')->insertGetId(\App\Services\WorkspaceWrite::owned(['mode' => $d['mode'], 'category' => $d['mode'] === 'Full' ? null : ($d['category'] ?? null), 'actor' => $r->user()->name, 'created_at' => now(), 'status' => 'Open']));
             foreach ($products as $p) {
-                DB::table('inventory_count_lines')->insert(['countId' => $id, 'productId' => $p->id, 'expected' => $p->stock, 'movementId' => DB::table('stock_movements')->where('productId', $p->id)->max('id') ?? 0]);
+                DB::table('inventory_count_lines')->insert(\App\Services\WorkspaceWrite::owned(['countId' => $id, 'productId' => $p->id, 'expected' => $p->stock, 'movementId' => \App\Services\WorkspaceRead::table('stock_movements')->where('productId', $p->id)->max('id') ?? 0]));
             }
             InventoryRules::audit($r->user()->name, 'Started stock count', (string) $id, null, $d['mode']);
 
@@ -142,29 +143,29 @@ class InventoryWorkflowController extends Controller
 
         return DB::transaction(function () use ($r, $d, $id) {
             InventoryRules::lockActor($r);
-            $c = DB::table('inventory_counts')->where('id', $id)->lockForUpdate()->first();
+            $c = \App\Services\WorkspaceRead::table('inventory_counts')->where('id', $id)->lockForUpdate()->first();
             abort_unless($c, 404);
             abort_unless($c->status === 'Open', 409, 'This count is already closed.');
             if ($d['action'] === 'Complete') {
-                $lines = DB::table('inventory_count_lines')->where('countId', $id)->orderBy('productId')->get();
+                $lines = \App\Services\WorkspaceRead::table('inventory_count_lines')->where('countId', $id)->orderBy('productId')->get();
                 $entered = collect($d['lines'])->keyBy('productId');
                 abort_unless($entered->count() === $lines->count(), 422, 'Enter a physical count for every product.');
                 foreach ($lines as $line) {
                     abort_unless($entered->has($line->productId), 422, 'Missing count item.');
                     $p = InventoryRules::product($line->productId);
-                    $movement = (int) (DB::table('stock_movements')->where('productId', $p->id)->max('id') ?? 0);
+                    $movement = (int) (\App\Services\WorkspaceRead::table('stock_movements')->where('productId', $p->id)->max('id') ?? 0);
                     abort_if($movement !== (int) $line->movementId || (int) $p->stock !== (int) $line->expected, 409, 'Stock moved during this count. Cancel and start a fresh count before reconciling.');
                     $actual = $entered[$p->id]['counted'];
                     FifoInventory::opening($p->id, (int) $p->stock);
                     if ($actual > $p->stock) {
                         FifoInventory::receive($p->id, $actual - $p->stock, max(0, (float) $p->unitPrice), now()->toDateString(), 'COUNT-'.$id, null, 'count_surplus');
                     }
-                    DB::table('products')->where('id', $p->id)->update(['stock' => $actual]);
+                    \App\Services\WorkspaceRead::table('products')->where('id', $p->id)->update(['stock' => $actual]);
                     StockMovement::record($p->id, $p->stock, $actual, 'reconciliation', 'COUNT-'.$id, $r->user());
-                    DB::table('inventory_count_lines')->where('id', $line->id)->update(['counted' => $actual]);
+                    \App\Services\WorkspaceRead::table('inventory_count_lines')->where('id', $line->id)->update(['counted' => $actual]);
                 }
             }
-            DB::table('inventory_counts')->where('id',$id)->update(['status' => $d['action'] === 'Complete' ? 'Completed' : 'Cancelled', 'closed_at' => now(), 'reason' => $d['reason']]);
+            \App\Services\WorkspaceRead::table('inventory_counts')->where('id',$id)->update(['status' => $d['action'] === 'Complete' ? 'Completed' : 'Cancelled', 'closed_at' => now(), 'reason' => $d['reason']]);
             InventoryRules::audit($r->user()->name,'Closed stock count',(string) $id,'Open',json_encode($d));
 
             return response()->json(['message' => 'Stock count '.$d['action'].'.']);

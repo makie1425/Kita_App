@@ -22,9 +22,10 @@ class ArchiveReferences
             if ($name === $kind || $name === 'migrations') continue;
             $available = Schema::getColumnListing($name);
             foreach (array_intersect($columns, $available) as $column) {
-                abort_if(DB::table($name)->whereIn($column, $ids)->exists(), 422, 'Selected records are linked to inventory or transaction history. Keep them archived or restore them.');
+                $query = in_array($name, WorkspaceTables::BUSINESS, true) ? WorkspaceRead::table($name) : DB::table($name);
+                abort_if($query->whereIn($column, $ids)->exists(), 422, 'Selected records are linked to inventory or transaction history. Keep them archived or restore them.');
             }
         }
-        if ($kind === 'products') abort_if(DB::table('products')->whereIn('parentId', $ids)->exists(), 422, 'Products with linked variants must remain archived.');
+        if ($kind === 'products') abort_if(WorkspaceRead::table('products')->whereIn('parentId', $ids)->exists(), 422, 'Products with linked variants must remain archived.');
     }
 }

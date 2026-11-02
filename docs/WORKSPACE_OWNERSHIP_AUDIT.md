@@ -1,0 +1,7 @@
+# Workspace ownership audit
+
+Run `php artisan workspaces:audit-ownership` against the database you want to review. The command only reads data. It does not assign workspaces, create memberships, or delete records. Use `--sample=0` to suppress IDs or `--sample=50` for the maximum bounded sample per finding; the default is 10.
+
+The report counts unassigned `workspace_id` rows in `users` and every table in `WorkspaceTables::BUSINESS`. It lists bounded samples of primary-key values, including composite keys. It also reports managers sharing a workspace; cashiers with missing or invalid manager assignments, missing, invalid, or conflicting creator links, or a different workspace from their assigned manager; manager child workspaces in a different organization or equal to their creator workspace; missing creator grants on manager child workspaces; and accounts without an active matching membership.
+
+Counts can overlap: one account may appear under several findings. A missing assignment is a review item, not proof of who owns a historical record. For legacy cashiers created by an Admin, a valid creator link and an assigned Manager are separate relationships. The parent/child checks infer the relationship from the creator account and workspace organizations because the schema has no parent workspace column. Review the full records and verify ownership independently before using any assignment command. Do not use this report as approval to run `workspaces:assign-legacy --apply`.

@@ -21,7 +21,13 @@ class WorkspaceProvisioning
             // Only the administrator creating this workspace receives its management grant.
             self::grant($actor, $workspace, true);
         }
-        $account->forceFill(['workspace_id' => $workspace])->save();
+        $ownership = ['workspace_id' => $workspace];
+        if ($account->normalizedRole() === 'cashier') {
+            $managerId = WorkspaceRead::managerId($workspace);
+            abort_unless($managerId, 403, 'Select a workspace with one active assigned Manager before creating a Cashier.');
+            $ownership += ['assigned_manager_id' => $managerId, 'assigned_manager_role' => 'manager'];
+        }
+        $account->forceFill($ownership)->save();
         self::grant($account, $workspace, $account->normalizedRole() !== 'cashier');
     }
 

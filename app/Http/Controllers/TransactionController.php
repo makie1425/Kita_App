@@ -7,6 +7,8 @@ use App\Services\ManagerApproval;
 use App\Services\SaleCheckout;
 use App\Services\StockMovement;
 use App\Services\WorkflowNotifications;
+use App\Services\WorkspaceRead;
+use App\Services\WorkspaceWrite;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\JsonResponse;
@@ -20,10 +22,12 @@ class TransactionController extends Controller
 {
     public function show(Request $request, string $uuid): JsonResponse
     {
-        $transaction = DB::table('transactions')->where('uuid', $uuid)->first();
+        $transaction = WorkspaceRead::table('transactions')->where('uuid', $uuid)->first();
         abort_unless($transaction, 404, 'Transaction not found.');
-        abort_unless($request->user()->normalizedRole() === 'super_admin'
-            || ((int) $transaction->cashierId === (int) $request->user()->id && $transaction->cashierRole === $request->user()->role), 403);
+        if (! config('workspaces.enabled')) {
+            abort_unless($request->user()->normalizedRole() === 'super_admin'
+                || ((int) $transaction->cashierId === (int) $request->user()->id && $transaction->cashierRole === $request->user()->role), 403);
+        }
 
         return response()->json(['uuid' => $transaction->uuid, 'status' => $transaction->status, 'total' => $transaction->total, 'paid' => $transaction->paid,
             'checkoutUrl' => $transaction->status === 'Pending Payment' ? $transaction->checkoutUrl : null]);
@@ -31,6 +35,7 @@ class TransactionController extends Controller
 
     public function store(Request $request): JsonResponse
     {
+        WorkspaceWrite::requireId();
         $data = $request->validate(SaleCheckout::rules() + [
             'paymentMode' => ['required', 'in:Cash'],
             'tendered' => ['required', 'numeric', 'min:0', 'max:99999999.99', 'decimal:0,2'],
@@ -47,7 +52,7 @@ class TransactionController extends Controller
                 return response()->json(['message' => 'Transaction saved.', 'uuid' => $data['uuid'], 'transaction' => $transaction], 201);
             }, 3);
         } catch (UniqueConstraintViolationException $exception) {
-            if (DB::table('transactions')->where('uuid', $data['uuid'])->exists()) {
+            if (WorkspaceRead::table('transactions')->where('uuid', $data['uuid'])->exists()) {
                 return response()->json(['message' => 'This transaction has already been saved.'], 409);
             }
             throw $exception;
@@ -56,6 +61,8 @@ class TransactionController extends Controller
 
     public function updateStatus(Request $request, string $uuid): JsonResponse
     {
+        WorkspaceWrite::requireId();
+        abort_unless(WorkspaceRead::table('transactions')->where('uuid', $uuid)->exists(), 404);
         $data = $request->validate([
             'action' => ['required', 'in:refund,void,exchange'],
             'manager_id' => ['required', 'integer', 'min:1'],
@@ -72,22 +79,25 @@ class TransactionController extends Controller
             'exchange_tendered' => ['sometimes', 'required', 'numeric', 'min:0', 'max:99999999.99', 'decimal:0,2'],
         ]);
         $manager = ManagerApproval::verify($request, $data['manager_id'], $data['manager_pin']);
+        if (config('workspaces.enabled')) {
+            abort_unless(WorkspaceRead::table('users')->where('id', $manager->id)->where('role', $manager->role)->exists(), 403);
+        }
 
         return DB::transaction(function () use ($data, $uuid, $manager, $request) {
-            $transaction = DB::table('transactions')->where('uuid', $uuid)->lockForUpdate()->first();
+            $transaction = WorkspaceRead::table('transactions')->where('uuid', $uuid)->lockForUpdate()->first();
             abort_unless($transaction, 404, 'Transaction was not found.');
             $action = $data['action'];
             if ($action === 'exchange' && $transaction->paymentMode !== 'Cash') {
                 throw ValidationException::withMessages(['action' => 'Wallet purchases require a verified refund and a new sale.']);
             }
             if ($transaction->status === 'Closed' && $action === 'void'
-                && DB::table('transaction_approvals')->where('transaction_uuid', $uuid)->where('action', 'void')->exists()) {
+                && WorkspaceRead::table('transaction_approvals')->where('transaction_uuid', $uuid)->where('action', 'void')->exists()) {
                 abort(409, 'This transaction has already been voided.');
             }
             if (! in_array($transaction->status, ['Unused', 'Paid', 'Partially Refunded'], true)) {
                 abort(409, 'This transaction is not eligible for '.$action.'.');
             }
-            if (! empty($data['request_key']) && DB::table('transaction_approvals')->where('request_key', $data['request_key'])->exists()) {
+            if (! empty($data['request_key']) && WorkspaceRead::table('transaction_approvals')->where('request_key', $data['request_key'])->exists()) {
                 abort(409, 'This return request has already been processed.');
             }
             if ($action !== 'refund' && ((float) $transaction->refundedAmount > 0 || $transaction->status === 'Partially Refunded')) {
@@ -101,7 +111,7 @@ class TransactionController extends Controller
                     throw ValidationException::withMessages(['action' => 'A paid wallet transaction must use the refund workflow.']);
                 }
             }
-            $lines = DB::table('transaction_lines')->where('transaction_uuid', $uuid)->orderBy('productId')->lockForUpdate()->get()->keyBy('productId');
+            $lines = WorkspaceRead::table('transaction_lines')->where('transaction_uuid', $uuid)->orderBy('productId')->lockForUpdate()->get()->keyBy('productId');
             if ($lines->isEmpty()) {
                 throw ValidationException::withMessages(['action' => 'This legacy transaction has no saved item details. Reconcile it manually before returning stock or money.']);
             }
@@ -138,14 +148,14 @@ class TransactionController extends Controller
             if ($action === 'exchange') {
                 $productIds[] = $data['replacement_product_id'];
             }
-            $products = DB::table('products')->whereIn('id', $productIds)->orderBy('id')->lockForUpdate()->get()->keyBy('id');
+            $products = WorkspaceRead::table('products')->whereIn('id', $productIds)->orderBy('id')->lockForUpdate()->get()->keyBy('id');
             $replacement = null;
             $replacementCents = $difference = $exchangeTendered = 0;
             $replacementSale = null;
             if ($action === 'exchange') {
                 $replacement = $products->get($data['replacement_product_id']);
                 if (! $replacement || $replacement->status !== 'Active' || $replacement->archivedAt !== null || $replacement->stock < 1
-                    || ! DB::table('categories')->where('name', $replacement->category)->where('status', 'Active')->whereNull('archivedAt')->exists()) {
+                    || ! WorkspaceRead::table('categories')->where('name', $replacement->category)->where('status', 'Active')->whereNull('archivedAt')->exists()) {
                     throw ValidationException::withMessages(['replacement_product_id' => 'The replacement is unavailable.']);
                 }
                 if ($replacement->price === null || ! is_numeric($replacement->price) || (float) $replacement->price < 0
@@ -161,14 +171,14 @@ class TransactionController extends Controller
                 }
             }
             $restock = $action === 'void' || ($data['restock'] ?? true);
-            $approvalId = DB::table('transaction_approvals')->insertGetId([
+            $approvalId = DB::table('transaction_approvals')->insertGetId(WorkspaceWrite::owned([
                 'transaction_uuid' => $uuid, 'manager_id' => $manager->id, 'requested_by' => $request->user()->id,
                 'requested_by_role' => $request->user()->role,
                 'action' => $action, 'reason' => $data['reason'], 'replacement_product_id' => $replacement?->id,
                 'amount' => $action === 'exchange' ? 0 : $refundCents / 100, 'restock' => $restock,
                 'provider_refund_id' => $action === 'refund' && $transaction->paymentMode !== 'Cash' ? $data['provider_refund_id'] : null,
                 'request_key' => $data['request_key'] ?? null, 'created_at' => now(), 'updated_at' => now(),
-            ]);
+            ]));
             foreach ($returns as $return) {
                 $line = $return['line'];
                 if ($restock) {
@@ -181,23 +191,23 @@ class TransactionController extends Controller
                     if ($after > 2147483647) {
                         throw ValidationException::withMessages(['items' => 'Restoring these items would exceed the stock limit.']);
                     }
-                    DB::table('products')->where('id', $line->productId)->update(['stock' => $after]);
+                    WorkspaceRead::table('products')->where('id', $line->productId)->update(['stock' => $after]);
                     StockMovement::record($line->productId, $before, $after, $action, $uuid, $request->user());
                     $product->stock = $after;
                 }
                 if (! $restock) {
                     FifoInventory::returnStock($line->productId, $return['qty'], $uuid, false);
                 }
-                DB::table('transaction_lines')->where('id', $line->id)->update([
+                WorkspaceRead::table('transaction_lines')->where('id', $line->id)->update([
                     'refundedQty' => $return['newQty'], 'refundedAmount' => $return['cumulative'] / 100, 'updated_at' => now(),
                 ]);
-                DB::table('transaction_return_lines')->insert([
+                DB::table('transaction_return_lines')->insert(WorkspaceWrite::owned([
                     'approval_id' => $approvalId, 'transaction_line_id' => $line->id,
                     'qty' => $return['qty'], 'amount' => $return['amount'] / 100, 'restocked' => $restock,
                     'created_at' => now(), 'updated_at' => now(),
-                ]);
-                DB::table('sales_log')->insert(['date' => now()->toDateString(), 'hour' => (int) now()->format('G'),
-                    'productId' => $line->productId, 'qty' => -$return['qty'], 'amount' => -$return['amount'] / 100]);
+                ]));
+                DB::table('sales_log')->insert(WorkspaceWrite::owned(['date' => now()->toDateString(), 'hour' => (int) now()->format('G'),
+                    'productId' => $line->productId, 'qty' => -$return['qty'], 'amount' => -$return['amount'] / 100]));
             }
             if ($replacement) {
                 $replacementSale = SaleCheckout::save($request, ['uuid' => 'EX-'.Str::ulid()], [
@@ -207,10 +217,10 @@ class TransactionController extends Controller
                         'discountAmount' => 0, 'lineTotal' => $replacementCents / 100, 'stockBefore' => (int) $replacement->stock]],
                 ], 'Unused', 'Cash', $exchangeTendered + $refundCents, $uuid, $refundCents);
             }
-            $fullyReturned = ! DB::table('transaction_lines')->where('transaction_uuid', $uuid)->whereColumn('refundedQty', '<', 'qty')->exists();
+            $fullyReturned = ! WorkspaceRead::table('transaction_lines')->where('transaction_uuid', $uuid)->whereColumn('refundedQty', '<', 'qty')->exists();
             $status = $action === 'refund' ? ($fullyReturned ? 'Refunded' : 'Partially Refunded') : 'Closed';
             $refunded = SaleCheckout::cents($transaction->refundedAmount) + $refundCents;
-            DB::table('transactions')->where('uuid', $uuid)->update(['status' => $status, 'refundedAmount' => $refunded / 100, 'refundDate' => now()->toDateString()]);
+            WorkspaceRead::table('transactions')->where('uuid', $uuid)->update(['status' => $status, 'refundedAmount' => $refunded / 100, 'refundDate' => now()->toDateString()]);
             SaleCheckout::audit($request->user()->name, ucfirst($action).' approved by '.$manager->name, $uuid, $transaction->status, $status.'; '.$data['reason']);
             WorkflowNotifications::send([$request->user(), $manager], $request->user(), ucfirst($action).' approved',
                 'Transaction '.$uuid.': '.$action.' approved by '.$manager->name.'.', 'activity', $uuid);
@@ -222,7 +232,7 @@ class TransactionController extends Controller
             return response()->json(['message' => $message, 'status' => $status, 'replacementTransaction' => $replacementSale,
                 'exchangeDifference' => $difference / 100, 'exchangeChange' => ($exchangeTendered - $difference) / 100,
                 'refundDate' => now()->toDateString(), 'approved_by' => $manager->name, 'amount' => $refundCents / 100,
-                'refundedAmount' => $refunded / 100, 'lines' => DB::table('transaction_lines')->where('transaction_uuid', $uuid)->get()]);
+                'refundedAmount' => $refunded / 100, 'lines' => WorkspaceRead::table('transaction_lines')->where('transaction_uuid', $uuid)->get()]);
         });
     }
 
@@ -231,7 +241,7 @@ class TransactionController extends Controller
         if (empty($data['provider_refund_id']) || ! $transaction->paymentReference) {
             throw ValidationException::withMessages(['provider_refund_id' => 'Refund the wallet payment in PayMongo, then enter its successful refund reference for verification.']);
         }
-        if (DB::table('transaction_approvals')->where('provider_refund_id', $data['provider_refund_id'])->exists()) {
+        if (WorkspaceRead::table('transaction_approvals')->where('provider_refund_id', $data['provider_refund_id'])->exists()) {
             throw ValidationException::withMessages(['provider_refund_id' => 'This PayMongo refund has already been recorded.']);
         }
         abort_unless(config('services.paymongo.secret'), 503, 'PayMongo is not configured.');

@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use App\Services\WorkspaceRead;
 use Throwable;
 
 class SuperAdminDashboardController extends Controller
@@ -17,13 +18,13 @@ class SuperAdminDashboardController extends Controller
             $probe = hrtime(true);
             DB::select('SELECT 1');
             $databaseMs = (hrtime(true) - $probe) / 1e6;
-            $total = User::count();
-            $active = User::whereRaw("LOWER(COALESCE(status, 'Active')) = 'active'")->count();
+            $users = \App\Services\WorkspaceAccess::accounts($request->user());
+            $total = (clone $users)->count();
+            $active = (clone $users)->whereRaw("LOWER(COALESCE(status, 'Active')) = 'active'")->count();
             // Seven completed calendar days, including days without recorded events.
             $end = now()->startOfDay();
             $start = $end->copy()->subDays(7);
-            $counts = DB::table('audit_logs')->where('ts', '>=', $start)->where('ts', '<', $end)
-                ->selectRaw('DATE(ts) as day, COUNT(*) as total')->groupByRaw('DATE(ts)')->pluck('total', 'day');
+            $counts = collect();
             $days = [];
             for ($date = $start->copy(); $date->lt($end); $date->addDay()) {
                 $days[] = ['date' => $date->toDateString(), 'events' => (int) ($counts[$date->toDateString()] ?? 0)];
@@ -33,7 +34,7 @@ class SuperAdminDashboardController extends Controller
                 'total_users' => $total, 'active_users' => $active, 'inactive_users' => $total - $active,
                 'average_daily_events' => round(array_sum(array_column($days, 'events')) / 7, 2),
                 'activity_days' => $days,
-                'recent_activity' => DB::table('audit_logs')->orderByDesc('ts')->orderByDesc('id')->limit(10)->get(['ts', 'user', 'action', 'record']),
+                'recent_activity' => [],
                 'application_status' => 'Operational', 'database_status' => 'Connected',
                 'database_response_ms' => $databaseMs,
                 'generation_ms' => (hrtime(true) - $started) / 1e6,

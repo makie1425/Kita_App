@@ -82,6 +82,11 @@ Artisan::command('workspaces:assignment-preview {owner}', function () {
 })->purpose('Preview legacy business ownership without changing records or granting account access');
 
 Artisan::command('workspaces:assign-legacy {owner} {--admins=} {--superadmins=} {--cashiers=} {--apply}', function () {
+    if ($this->option('apply')) {
+        $this->error('Bulk legacy assignment is disabled. Review and map each historical record to its verified owner manually, then audit the result. No records changed.');
+
+        return 1;
+    }
     $resolve=function(string $email,string $expectedRole){
         $matches=User::query()->whereRaw('LOWER(TRIM(email)) = ?', [strtolower(trim($email))])->get();
         if($matches->count()!==1 || !$matches->first()->isActive() || $matches->first()->normalizedRole()!==$expectedRole) throw new RuntimeException('Identity/role check failed for '.$email.'. No assignment applied.');
@@ -97,7 +102,6 @@ Artisan::command('workspaces:assign-legacy {owner} {--admins=} {--superadmins=} 
         foreach($supers as $email)$assignments->push([$resolve($email,'super_admin'),'super_admin',true]);
         foreach($cashiers as $email)$assignments->push([$resolve($email,'cashier'),'cashier',false]);
         if($assignments->pluck(0)->pluck('email')->unique()->count()!==$assignments->count()) throw new RuntimeException('Duplicate account assignment provided.');
-        $orgId=DB::table('organizations')->where('name','KITA Business')->value('id');
         $workspaceId=$owner->workspace_id;
         if($workspaceId && DB::table('workspaces')->where('id',$workspaceId)->value('name')!=='KITA Business') throw new RuntimeException('Manager already has a different workspace assignment.');
         $this->info('Manager: '.$owner->name.' <'.$owner->email.'>');
@@ -105,21 +109,7 @@ Artisan::command('workspaces:assign-legacy {owner} {--admins=} {--superadmins=} 
         foreach($assignments as [$user,$role,$manage])$this->line('- '.$role.': '.$user->name.' <'.$user->email.'>; account management: '.($manage?'yes':'no'));
         $this->info('Business records currently unassigned:');
         foreach(\App\Services\WorkspaceTables::BUSINESS as $table){$count=DB::table($table)->whereNull('workspace_id')->count();if($count)$this->line('- '.$table.': '.$count);}
-        if(!$this->option('apply')){$this->warn('Preview only. Pass --apply after reviewing this exact account and table list.');return 0;}
-        DB::transaction(function()use($owner,$assignments,&$orgId,&$workspaceId){
-            $orgId=$orgId ?: DB::table('organizations')->insertGetId(['name'=>'KITA Business','created_at'=>now(),'updated_at'=>now()]);
-            $workspaceId=$workspaceId ?: DB::table('workspaces')->insertGetId(['organization_id'=>$orgId,'name'=>'KITA Business','created_at'=>now(),'updated_at'=>now()]);
-            $owner->forceFill(['workspace_id'=>$workspaceId])->save();
-            DB::table('workspace_memberships')->updateOrInsert(['workspace_id'=>$workspaceId,'user_id'=>$owner->id,'user_role'=>'manager'],['active'=>true,'can_manage_accounts'=>true,'created_at'=>now(),'updated_at'=>now()]);
-            foreach($assignments as [$user,$role,$manage]){
-                $user->forceFill(['workspace_id'=>$workspaceId]);
-                if($role==='cashier')$user->forceFill(['assigned_manager_id'=>$owner->id,'assigned_manager_role'=>'manager']);
-                $user->save();
-                DB::table('workspace_memberships')->updateOrInsert(['workspace_id'=>$workspaceId,'user_id'=>$user->id,'user_role'=>$role],['active'=>true,'can_manage_accounts'=>$manage,'created_at'=>now(),'updated_at'=>now()]);
-            }
-            foreach(\App\Services\WorkspaceTables::BUSINESS as $table)DB::table($table)->whereNull('workspace_id')->update(['workspace_id'=>$workspaceId]);
-            DB::table('audit_logs')->insert(['ts'=>now(),'user'=>$owner->name,'action'=>'Assigned legacy workspace ownership','record'=>'Workspace '.$workspaceId,'beforeValue'=>'Unassigned legacy records','afterValue'=>json_encode(['manager'=>$owner->email,'organization'=>$orgId]),'workspace_id'=>$workspaceId]);
-        });
-        $this->info('Legacy records and explicitly listed accounts assigned to workspace '.$workspaceId.'.');
+        $this->warn('Preview only. Bulk --apply is disabled; review and map historical records individually with an audit trail.');
+        return 0;
     } catch(\Throwable $e) {$this->error($e->getMessage());return 1;}
-})->purpose('Preview or explicitly assign legacy business records and named accounts to one Manager workspace');
+})->purpose('Preview legacy ownership; bulk assignment is permanently disabled');

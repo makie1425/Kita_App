@@ -9,13 +9,23 @@ class InventoryAvailability
 {
     public static function reservations()
     {
-        return \App\Services\WorkspaceRead::table('inventory_allocations as a')->joinSub(\App\Services\WorkspaceRead::table('transactions'), 't', 't.uuid', '=', 'a.referenceId')
+        $transactions = DB::table('transactions');
+        if (config('workspaces.enabled')) {
+            $workspaceId = WorkspaceRead::id();
+            $transactions->where('workspace_id', $workspaceId ?: -1);
+        }
+
+        return WorkspaceRead::table('inventory_allocations as a')->joinSub($transactions, 't', 't.uuid', '=', 'a.referenceId')
             ->where('a.referenceType', 'payment_reservation')->where('t.status', 'Pending Payment')
             ->groupBy('a.batchId')->select('a.batchId')->selectRaw('SUM(a.quantity - a.returnedQuantity) as reserved');
     }
 
     public static function products(array $products): array
     {
+        if (config('workspaces.enabled')) {
+            $visible = WorkspaceRead::table('products')->whereIn('id', array_column($products, 'id'))->pluck('id')->all();
+            $products = array_values(array_filter($products, fn ($product) => in_array($product['id'], $visible)));
+        }
         $today = now()->toDateString();
         $balances = \App\Services\WorkspaceRead::table('inventory_batches as b')->leftJoinSub(self::reservations(), 'r', 'r.batchId', '=', 'b.id')
             ->whereIn('b.productId', array_column($products, 'id'))->groupBy('b.productId')
@@ -72,7 +82,10 @@ class InventoryAvailability
 
     public static function assertSellable(object $product, int $quantity, string $field = 'items'): array
     {
-        $stock = self::products([(array) $product])[0];
+        $stock = self::products([(array) $product])[0] ?? null;
+        if (! $stock) {
+            throw ValidationException::withMessages([$field => 'Select an inventory item available to this account.']);
+        }
         if ($quantity < 1 || $quantity > $stock['sellableStock']) {
             throw ValidationException::withMessages([$field => 'Only '.$stock['sellableStock'].' sellable units of '.$product->name.' are available. '.implode('; ', $stock['exclusionReasons']).'. Expired or recalled batches cannot be sold.']);
         }
@@ -82,6 +95,10 @@ class InventoryAvailability
 
     public static function batches($batches)
     {
+        if (config('workspaces.enabled')) {
+            $visible = WorkspaceRead::table('inventory_batches')->whereIn('id', $batches->pluck('id'))->pluck('id')->all();
+            $batches = $batches->filter(fn ($batch) => in_array($batch->id, $visible))->values();
+        }
         $reservations = self::reservations()->get()->keyBy('batchId');
         $categories = \App\Services\WorkspaceRead::table('categories')->where('status', 'Active')->whereNull('archivedAt')->pluck('name')->all();
 
