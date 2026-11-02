@@ -42,6 +42,9 @@ fi
 if [[ "${SEED_DEMO_USERS:-false}" == 'true' ]]; then
     artisan accounts:seed-demo
 fi
+if [[ "${SEED_INITIAL_SUPERADMIN:-false}" == 'true' ]]; then
+    artisan accounts:seed-initial-superadmin
+fi
 artisan config:cache
 if ! artisan route:cache; then
     echo 'Route cache unavailable; continuing with uncached routes.' >&2
