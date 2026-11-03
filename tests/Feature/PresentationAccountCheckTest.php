@@ -62,4 +62,31 @@ class PresentationAccountCheckTest extends TestCase
         $this->assertDatabaseCount('products',0);
         $this->assertDatabaseCount('transactions',0);
     }
+
+    public function test_unassigned_accounts_receive_a_new_isolated_workspace(): void
+    {
+        $admin=User::factory()->create(['role'=>'admin']);
+        $manager=User::factory()->create(['role'=>'manager']);
+        $unrelated=User::factory()->create(['role'=>'manager']);
+        $args=['admin'=>$admin->email,'manager'=>$manager->email,'--apply'=>true];
+        $this->artisan('presentation:load-grocery',$args)->assertSuccessful();
+        $this->assertNotNull($manager->fresh()->workspace_id);
+        $this->assertEquals($admin->fresh()->workspace_id,$manager->fresh()->workspace_id);
+        $this->assertNull($unrelated->fresh()->workspace_id);
+        $this->assertDatabaseCount('workspace_memberships',2);
+        $this->assertDatabaseCount('products',50);
+        $this->artisan('presentation:load-grocery',$args)->assertSuccessful();
+        $this->assertDatabaseCount('workspaces',1);
+    }
+
+    public function test_conflicting_creator_is_not_reassigned(): void
+    {
+        $admin=User::factory()->create(['role'=>'admin']);
+        $other=User::factory()->create(['role'=>'admin']);
+        $manager=User::factory()->create(['role'=>'manager']);
+        $manager->forceFill(['created_by_user_id'=>$other->id,'created_by_user_role'=>'admin'])->save();
+        $this->artisan('presentation:load-grocery',['admin'=>$admin->email,'manager'=>$manager->email,'--apply'=>true])->assertFailed();
+        $this->assertDatabaseCount('workspaces',0);
+        $this->assertDatabaseCount('products',0);
+    }
 }

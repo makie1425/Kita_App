@@ -15,6 +15,10 @@ class LoadGroceryPresentation extends Command
 
     public function handle(): int
     {
+        if ($this->option('apply')) {
+            try { $this->provisionUnassignedManager(); }
+            catch (\Throwable $error) { $this->error($error->getMessage()); return self::FAILURE; }
+        }
         if ($this->call('presentation:check-accounts', ['admin'=>$this->argument('admin'),'manager'=>$this->argument('manager')]) !== 0) return self::FAILURE;
         $manager = User::whereRaw('LOWER(TRIM(email)) = ?', [strtolower(trim($this->argument('manager')))])->firstOrFail();
         $workspace = WorkspaceRead::forUser($manager);
@@ -99,5 +103,40 @@ class LoadGroceryPresentation extends Command
             if($previous)Auth::setUser($previous);else Auth::forgetUser();
         }
         return self::SUCCESS;
+    }
+
+    private function provisionUnassignedManager(): void
+    {
+        DB::transaction(function () {
+            $accounts=[];
+            foreach(['admin','manager'] as $role){
+                $matches=User::whereRaw('LOWER(TRIM(email)) = ?', [strtolower(trim($this->argument($role)))])->lockForUpdate()->get();
+                if($matches->count()!==1 || $matches->first()->normalizedRole()!==$role || !$matches->first()->isActive())
+                    throw new \RuntimeException('Workspace setup refused: account role or status does not match.');
+                $accounts[$role]=$matches->first();
+            }
+            $admin=$accounts['admin'];$manager=$accounts['manager'];
+            if($manager->workspace_id)return;
+            if(DB::table('workspace_memberships')->where('user_id',$manager->id)->where('user_role','manager')->exists())
+                throw new \RuntimeException('Manager has existing memberships but no selected workspace. Review assignments before importing.');
+            if($manager->created_by_user_id && ((int)$manager->created_by_user_id!==(int)$admin->id || $manager->created_by_user_role!=='admin'))
+                throw new \RuntimeException('Manager creator conflicts with the configured Admin. No ownership changed.');
+            $organization=null;
+            if($admin->workspace_id){
+                if(!in_array((int)$admin->workspace_id,\App\Services\WorkspaceAccess::accountWorkspaceIds($admin),true))
+                    throw new \RuntimeException('Admin workspace membership requires review.');
+                $organization=DB::table('workspaces')->where('id',$admin->workspace_id)->value('organization_id');
+                if(!$organization)throw new \RuntimeException('Admin workspace does not exist.');
+            } elseif(DB::table('workspace_memberships')->where('user_id',$admin->id)->where('user_role','admin')->exists()) {
+                throw new \RuntimeException('Admin has memberships but no selected workspace. Review assignments first.');
+            }
+            if(!$organization)$organization=DB::table('organizations')->insertGetId(['name'=>$admin->name.' Grocery','created_at'=>now(),'updated_at'=>now()]);
+            $workspace=DB::table('workspaces')->insertGetId(['organization_id'=>$organization,'name'=>$manager->name.' Grocery','created_at'=>now(),'updated_at'=>now()]);
+            foreach($accounts as $role=>$user){
+                DB::table('workspace_memberships')->insert(['workspace_id'=>$workspace,'user_id'=>$user->id,'user_role'=>$role,'active'=>true,'can_manage_accounts'=>true,'created_at'=>now(),'updated_at'=>now()]);
+                if(!$user->workspace_id)$user->forceFill(['workspace_id'=>$workspace])->save();
+            }
+            $this->info("Created empty grocery workspace {$workspace} for the configured Admin and Manager. Historical records were not reassigned.");
+        });
     }
 }

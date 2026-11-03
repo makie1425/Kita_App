@@ -8,6 +8,13 @@ Run `php artisan presentation:load-grocery ADMIN_EMAIL MANAGER_EMAIL` for a read
 preview, then add `--apply` to load. Roles, active accounts, unique manager ownership,
 and the administrator's workspace management membership are checked first.
 
+With `--apply`, a Manager with no workspace and no existing memberships can receive
+a new empty workspace for the configured pair. Wrong roles, inactive accounts,
+conflicting creator identity, and ambiguous existing memberships are refused. The
+Admin receives an explicit grant; an existing Admin workspace is preserved. No legacy
+business rows or other users are reassigned. This workspace setup commits separately
+from the data import, so a failed import can leave an empty, valid workspace for retry.
+
 The manager's existing workspace must have no products, transactions, purchase orders,
 suppliers, categories, brands, or subcategories. Existing records are never deleted or
 reassigned. The import is transactional; a failed import rolls back entirely. A workspace
