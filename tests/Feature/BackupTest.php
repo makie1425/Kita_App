@@ -42,13 +42,13 @@ class BackupTest extends TestCase
         }
     }
 
-    public function test_super_admin_cannot_export_database_wide_business_data(): void
+    public function test_super_admin_can_create_list_and_download_encrypted_backup(): void
     {
-        $this->actingAs(User::factory()->create(['role' => 'superadmin']));
-        $this->postJson('/api/backups')->assertForbidden();
-        $this->getJson('/api/backups')->assertForbidden();
-        $this->getJson('/api/backups/invalid/download')->assertForbidden();
-        $this->assertCount(0, app(DatabaseBackup::class)->history());
+        $this->actingAs(User::factory()->create(['role'=>'superadmin']));
+        $id=$this->postJson('/api/backups')->assertCreated()->json('id');
+        $this->getJson('/api/backups')->assertOk()->assertJsonCount(1,'backups');
+        $this->get('/api/backups/'.$id.'/download')->assertOk();
+        $this->getJson('/api/backups/invalid/download')->assertNotFound();
     }
 
     public function test_round_trip_restores_changed_and_deleted_records_and_creates_safety_backup(): void

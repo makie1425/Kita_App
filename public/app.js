@@ -478,7 +478,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
       else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}
     }
   };
-  goScreen=key=>()=>{ this.setState({screen:key,sidebarOpen:false}); if(["mgrRequest","mgrRequestView","mgrPurchaseHistory","mgrPO","mgrSupplier","admSuppliers","admPurchasedOrders","admForwarded","admDisapproved","admReceivingApprovals"].includes(key)&&!this.state.purchaseData&&!this.state.purchaseLoading)this.reloadPurchasing().catch(()=>{}); if(key==="supplierAccounts")this.loadSupplierAccounts(); if(key==="purchaseOrders"&&!this.state.purchaseData&&!this.state.purchaseLoading)this.reloadPurchasing().catch(()=>{}); if(key==="saDashboard")this.reloadSaDashboard(); if(["mgrCashiers","admManagers","saAdmins"].includes(key)&&!this.state.accountsLocal)this.reloadAccounts().catch(error=>this.toast(error.message,"error")); if(key==="shift") this.reloadCatalog().catch(()=>this.toast("Could not refresh shift transactions.","error")); };
+  goScreen=key=>()=>{ this.setState({screen:key,sidebarOpen:false}); if(["mgrRequest","mgrRequestView","mgrPurchaseHistory","mgrPO","mgrSupplier","admSuppliers","admPurchasedOrders","admForwarded","admDisapproved","admReceivingApprovals"].includes(key)&&!this.state.purchaseData&&!this.state.purchaseLoading)this.reloadPurchasing().catch(()=>{}); if(key==="supplierAccounts")this.loadSupplierAccounts(); if(key==="purchaseOrders"&&!this.state.purchaseData&&!this.state.purchaseLoading)this.reloadPurchasing().catch(()=>{}); if(key==="saDashboard")this.reloadSaDashboard(); if(key==="saBackup")this.loadSaRecords("backup"); if(key==="saAudit")this.loadSaRecords("audit"); if(["mgrCashiers","admManagers","saAdmins"].includes(key)&&!this.state.accountsLocal)this.reloadAccounts().catch(error=>this.toast(error.message,"error")); if(key==="shift") this.reloadCatalog().catch(()=>this.toast("Could not refresh shift transactions.","error")); };
 
   simScannerDisconnect=()=>{ this.setState({scannerConnected:false}); this.toast("Scanner disconnected â€” use manual entry.","warn"); };
   simPaymentTimeout=()=>{ if(this.state.paymentState==="processing"||this.state.paymentState==="pending"){ this.setState({paymentState:"timeout"}); this.toast("Payment timed out.","error"); } else this.toast("Start an e-wallet payment first.","warn"); };
@@ -1019,7 +1019,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     const original=(this.state.accountsLocal||[]).find(a=>a.id===f.id&&a.role===f.role);
     if(!creating&&original&&original.status!==f.status&&!this.confirmAccountStatus(f))return;
     this.accountBusy=true;
-    const payload={first_name:f.first_name,last_name:f.last_name,email:f.email,...(this.state.role==="superadmin"?{}:{username:f.username||null}),role:f.role,status:f.status,schedule:f.schedule||null};
+    const payload={first_name:f.first_name,last_name:f.last_name,email:f.email,...(this.state.role==="superadmin"?{}:{username:f.username||null}),role:f.role,status:f.status,...(this.state.role==="superadmin"?{}:{schedule:f.schedule||null})};
 
     this.authPost(creating?"/api/accounts":`/api/accounts/${encodeURIComponent(f.role)}/${f.id}`,payload,creating?"POST":"PATCH")
       .then(res=>{this.setState({acctModalOpen:false,acctError:""});this.toast(res.message);if(this.state.role==="superadmin")this.reloadSaDashboard();return Promise.all([this.reloadAccounts(),this.reloadCatalog()]);})
@@ -3100,7 +3100,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
         h("div",{role:"dialog","aria-modal":true,"aria-label":acctModalMode==="create"?"Create Account":"Edit Account",style:{width:400,maxHeight:"85vh",overflowY:"auto",background:"#fff",borderRadius:14,padding:20}},[
           h("h3",{key:"title"},acctModalMode==="create"?"Create Account":"Edit Account"),input("first_name","First Name"),input("last_name","Last Name"),input("email","Email","email"),this.state.role!=='superadmin'?input("username","Employee ID (optional)"):null,
           h("label",{key:"role"},["Role",h("select",{value:f.role,disabled:acctModalMode==="edit",onChange:this.setAcctField("role"),style:{width:"100%",padding:10,marginBottom:10}},roles.map(role=>h("option",{key:role,value:role},role)))]),
-          h("p",null,"Temporary credentials are emailed to new accounts. Password setup is required on first login."),input("schedule","Schedule (optional)"),
+          h("p",null,"Temporary credentials are emailed to new accounts. Password setup is required on first login."),this.state.role!=="superadmin"?input("schedule","Schedule (optional)"):null,
           h("label",{key:"status"},["Status",h("select",{value:f.status,onChange:this.setAcctField("status"),style:{width:"100%",padding:10,marginBottom:10}},(acctModalMode==="create"?["Active"]:["Active","Inactive"]).map(status=>h("option",{key:status},status)))]),
           this.state.acctError?h("p",{key:"error",role:"alert",style:{color:COLORS.red}},this.state.acctError):null,
           h("div",{key:"buttons",style:{display:"flex",gap:8}},[btn("Cancel",this.closeAcctModal),btn("Save",this.saveAccount,"primary")]),
@@ -3159,7 +3159,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     if(!d)return h('div',{role:'status'},[h('p',null,this.state.saError||'Loading operational monitoring...'),btn('Retry',this.reloadSaDashboard)]);
     const bytes=v=>v==null?'Unavailable':(v/1048576).toFixed(1)+' MB';
     const duration=v=>v==null?'Unavailable':Math.floor(v/3600)+'h '+Math.floor(v%3600/60)+'m '+Math.floor(v%60)+'s';
-    const points=d.rpm||[],latest=points.at(-1)?.requests,max=Math.max(1,...points.map(p=>p.requests??0));
+    const points=d.rpm||[],latest=points.at(-1)?.requests,max=Math.max(4,Math.ceil(Math.max(0,...points.map(p=>p.requests??0))/4)*4);
     const segments=[];let current=[];
     points.forEach((p,i)=>{if(p.requests==null){if(current.length)segments.push(current);current=[];}else current.push([10+i*280/29,90-p.requests/max*80]);});if(current.length)segments.push(current);
     const chart=h('figure',{className:'monitor-chart'},[
@@ -3169,25 +3169,26 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
          ...segments.filter(p=>p.length>1).map((p,i)=>h('polygon',{key:'fill'+i,points:[[p[0][0],90],...p,[p.at(-1)[0],90]].map(v=>v.join(',')).join(' '),fill:'url(#rpm-fill)'})),
          h('path',{d:'M10 10 V90 H290',fill:'none',stroke:'#cbd5e1',vectorEffect:'non-scaling-stroke'}),...segments.map((p,i)=>h('polyline',{key:i,points:p.map(v=>v.join(',')).join(' '),fill:'none',stroke:'#2563eb',strokeWidth:2,vectorEffect:'non-scaling-stroke'})),
          ...segments.flat().map((p,i)=>h('circle',{key:'p'+i,cx:p[0],cy:p[1],r:2,fill:'#1747e8'})),
-         h('text',{x:12,y:10,fontSize:9},String(max)),h('text',{x:10,y:105,fontSize:9},'30 min ago'),h('text',{x:245,y:105,fontSize:9},'Last minute')]),
+         ...[0,1,2,3,4].map(i=>h('text',{key:'y'+i,x:1,y:12+i*20},String(Math.round(max*(4-i)/4)))),...[0,10,20,29].map(i=>h('text',{key:'x'+i,x:10+i*280/29,y:105,textAnchor:i===29?'end':'start'},points[i]?.time?new Date(points[i].time).toLocaleTimeString('en-PH',{timeZone:'Asia/Manila',hour:'2-digit',minute:'2-digit',hour12:false}):String(30-i)+'m ago'))]),
       h('figcaption',{className:'sa-note'},'Laravel requests/minute, including health checks. Missing samples are gaps.')]);
     const metric=(label,value,note,extra)=>h('article',{className:'monitor-summary',key:label},[h('div',null,label),h('strong',{style:label==='System Status'?{color:value==='Operational'?'#059669':value==='Down'?'#b91c1c':'#667085'}:undefined},value),h('p',{className:'sa-note'},note),extra]);
     const resource=(label,data)=>{
+      const displayBytes=v=>label==='Storage Consumption'?(v==null?'Unavailable':(v/1e9).toFixed(2)+' GB'):bytes(v);
       const used=data?.used_bytes,limit=data?.limit_bytes,ratio=used!=null&&limit>0?used/limit*100:null;
       const high=ratio!=null&&ratio>=80;
       return h('article',{className:'monitor-resource'},[
         h('header',null,[h('h2',null,label),h('span',{className:'monitor-badge'+(ratio==null?' is-unknown':high?' is-high':'')},ratio==null?'Unavailable':ratio.toFixed(1)+'% '+(high?'High usage':'Normal usage'))]),
-        h('strong',{className:'monitor-resource-value'},bytes(used)),h('p',{className:'sa-note'},data?.scope||'Measurement unavailable'),
-        h('div',{className:'monitor-meter-labels'},[h('span',null,'Used: '+bytes(used)),h('span',null,'Limit: '+bytes(limit))]),
+        h('strong',{className:'monitor-resource-value'},displayBytes(used)),h('p',{className:'sa-note'},data?.scope||'Measurement unavailable'),
+        h('div',{className:'monitor-meter-labels'},[h('span',null,'Used: '+displayBytes(used)),h('span',null,'Limit: '+displayBytes(limit))]),
         ratio==null?h('p',{className:'sa-note'},'Capacity unavailable'):h('div',{className:'monitor-meter',role:'progressbar','aria-label':label,'aria-valuemin':0,'aria-valuemax':100,'aria-valuenow':Math.min(100,Math.max(0,ratio))},h('span',{style:{width:Math.min(100,Math.max(0,ratio))+'%',background:high?'#f59e0b':'#2563eb'}})),
-        h('footer',{className:'monitor-meter-labels'},[h('span',null,'Available: '+bytes(used!=null&&limit!=null?Math.max(0,limit-used):null)),h('span',null,'High usage threshold: 80%')])]);
+        h('footer',{className:'monitor-meter-labels'},[h('span',null,'Available: '+displayBytes(used!=null&&limit!=null?Math.max(0,limit-used):null)),h('span',null,'High usage threshold: 80%')])]);
     };
     return h('div',{className:'sa-dashboard monitor-dashboard'},[
       h('div',{className:'monitor-toolbar'},h('button',{type:'button',className:'monitor-refresh',onClick:this.reloadSaDashboard},'Refresh')),
       this.state.saError?h('p',{role:'alert'},'Refresh failed. Displayed measurements may be stale.'):null,
       h('div',{className:'monitor-summary-grid'},[
         metric('System Status',d.availability?.status||'Unavailable',d.availability?.source==='Better Stack'?'Better Stack; last check: '+(d.availability.observed_at?new Date(d.availability.observed_at).toLocaleString():'Unavailable'):'External availability monitoring'),
-        metric('System Uptime',d.availability?.source==='Better Stack'?(d.availability.uptime_percentage==null?'Unavailable':d.availability.uptime_percentage.toFixed(4)+'%'):duration(d.availability?.uptime_seconds),d.availability?.window||'Observed available time, last 24 hours'),
+        metric('System Uptime',d.availability?.source==='Better Stack'?(d.availability.uptime_percentage==null?'Unavailable':d.availability.uptime_percentage.toFixed(2)+'%'):duration(d.availability?.uptime_seconds),d.availability?.window||'Observed available time, last 24 hours'),
         metric('System Downtime',duration(d.availability?.downtime_seconds),d.availability?.window||'Observed unavailable time, last 24 hours'),
         metric('Requests Per Minute',latest==null?'Unavailable':latest,'Last completed minute'+(points.some(p=>p.requests!=null)?' (Peak: '+Math.max(...points.map(p=>p.requests??0))+' RPM)':''))]),
       h('div',{className:'monitor-resource-grid'},[resource('Storage Consumption',d.storage),resource('RAM Consumption',d.memory)]),
@@ -3199,25 +3200,40 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
         this.recordTable('monitoring-errors',['Severity','Error Message','Affected Component','Date and Time','Status','Actions'],
           d.errors.map(log=>tr([td(log.severity),td(log.message),td(log.component),td(new Date(log.occurred_at.replace(' ','T')+'Z').toLocaleString()),td(log.status),td(btn('View Details',()=>this.monitoringDetail(log.id)))],log.id))),
         h('footer',{className:'sa-note monitor-log-footer'},'Log buffer: latest 25 entries')]),
-      h('section',{className:'sa-panel'},[h('h2',null,'Monitoring Environment'),h('dl',{className:'monitor-specs'},[
-        ...[['Monitor integration',d.availability?.source||'External probe'],['Application storage',d.storage?.scope||'Unavailable'],['Memory scope',d.memory?.scope||'Unavailable'],['Dashboard refresh','Every 30 seconds while visible']].map(([label,value])=>h('div',{key:label},[h('dt',null,label),h('dd',null,value)]))]),h('p',{className:'monitor-info'},'Availability follows external monitor checks. Dashboard refresh does not change the check frequency.')])]),
-      e?h('section',{className:'sa-panel',role:'region','aria-label':'Error details'},[h('h2',null,'Error #'+e.id),h('p',null,e.message),h('p',null,e.component+' · '+e.severity+' · '+e.occurred_at+' UTC · '+e.status),
+      ]),
+      e?h('dialog',{className:'monitor-error-dialog',ref:node=>{if(node&&!node.open)node.showModal();},onCancel:()=>this.setState({monitoringError:null}),'aria-label':'Error details'},[h('h2',null,'Error #'+e.id),h('p',null,e.message),h('p',null,e.component+' · '+e.severity+' · '+e.occurred_at+' UTC · '+e.status),
         ...['New','Acknowledged','Resolved'].map(status=>btn('Mark '+status,()=>this.monitoringStatus(status))),btn('Close',()=>this.setState({monitoringError:null}))]):null,
       h('p',{className:'sa-note'},'Updated '+new Date(d.measured_at).toLocaleString()+'. Refreshes every 30 seconds while visible. Availability is sampled; unobserved intervals are excluded.'),
     ]);
   }
   buildSaAdmins(){ return this.buildAdmManagers(); }
-  buildSaBackup(){
-    const h=React.createElement;
-    return h('section',{className:'sa-panel'},[
-      h('h2',null,'Database Backup'),
-      h('p',null,'Database-wide backups are managed by the server operator because they contain records from every workspace.'),
-      h('p',{className:'monitor-info',role:'note'},'Creating, downloading, and restoring full database backups is not available from this account. Workspace access restrictions remain enforced.'),
-      h('h3',null,'Create a backup'),
-      h('p',null,'The server operator can run this command in the application environment:'),
-      h('pre',null,h('code',null,'php artisan backup:run')),
-      h('p',{className:'sa-note'},'Backups are encrypted. Scheduled backups require an active Laravel scheduler and persistent private storage. Contact the server operator to confirm the latest backup or arrange recovery.')
-    ]);
+  loadSaRecords=async(kind)=>{
+    this.setState({saRecordsError:'',saRecordsBusy:true});
+    try { const query=kind==='audit'?'?'+new URLSearchParams(this.state.auditFilters||{}):'';
+      const r=await fetch(kind==='audit'?'/api/super-admin/audit'+query:'/api/backups',{credentials:'same-origin',headers:{Accept:'application/json'}});
+      const body=await r.json();this.handleSessionResponse(r,body);if(!r.ok)throw new Error(body.message||'Unable to load records.');
+      this.setState({[kind==='audit'?'saAuditData':'saBackupData']:body});
+    }catch(e){this.setState({saRecordsError:e.message});}finally{this.setState({saRecordsBusy:false});}
+  };
+  createSaBackup=async()=>{
+    if(this.backupBusy)return;this.backupBusy=true;this.setState({saBackupCreating:true,saRecordsError:''});
+    try{await this.authPost('/api/backups',{});await this.loadSaRecords('backup');}
+    catch(e){this.setState({saRecordsError:e.message});}finally{this.backupBusy=false;this.setState({saBackupCreating:false});}
+  };
+  buildSaBackup(){const h=React.createElement,d=this.state.saBackupData;
+    return h('section',{className:'sa-panel'},[h('h2',null,'Database Backup'),
+      h('p',null,'Encrypted full-database snapshots. Download and retain your backup securely. Local files can be lost when this service restarts or redeploys; persistent private storage is required for server retention.'),
+      h('p',null,'Restore requires the matching application version and encryption key, and is performed by the server operator.'),
+      h('button',{className:'kita-button',disabled:this.state.saBackupCreating,onClick:this.createSaBackup},this.state.saBackupCreating?'Creating backup...':'Create backup'),btn('Refresh',()=>this.loadSaRecords('backup')),
+      this.state.saRecordsError?h('p',{role:'alert'},this.state.saRecordsError):null,
+      d?this.recordTable('sa-backups',['Created','Size','Actions'],d.backups.map(b=>tr([td(new Date(b.created_at).toLocaleString()),td((b.bytes/1048576).toFixed(2)+' MB'),td(h('a',{href:'/api/backups/'+encodeURIComponent(b.id)+'/download'},'Download encrypted backup'))],b.id))):h('p',null,'Open or refresh to load backups.')]);
+  }
+  buildSaAudit(){const h=React.createElement,d=this.state.saAuditData,f=this.state.auditFilters||{};
+    return h('section',{className:'sa-panel'},[h('h2',null,'Audit Logs'),h('p',null,'Your administrative actions, recorded from activation of audit logging. Latest 100 matching events; timestamps shown in Asia/Manila.'),
+      h('div',{className:'form-grid'},['from','to','action'].map(key=>h('label',{key},[key,h('input',{type:key==='action'?'search':'date',value:f[key]||'',onChange:e=>this.setState({auditFilters:{...f,[key]:e.target.value}})})]))),
+      h('label',null,['Result',h('select',{value:f.result||'',onChange:e=>this.setState({auditFilters:{...f,result:e.target.value}})},['','success','failure'].map(v=>h('option',{value:v,key:v},v||'All')))]),btn('Apply filters',()=>this.loadSaRecords('audit')),
+      this.state.saRecordsError?h('p',{role:'alert'},this.state.saRecordsError):null,
+      d?this.recordTable('sa-audit',['Date and Time','Actor','Action','Result'],d.events.map(e=>tr([td(new Date(e.occurred_at.replace(' ','T')+'Z').toLocaleString('en-PH',{timeZone:'Asia/Manila'})),td(d.actor),td(e.action),td(e.status<400?'Success':'Failed ('+e.status+')')],e.id))):h('p',null,'Open or refresh to load audit logs.')]);
   }
   buildSaRoles(){ const {rolesMatrix}=this.state; if(!rolesMatrix) return null;
     return React.createElement("div",null,[moduleTitle("Roles & Permissions"),
@@ -3250,7 +3266,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
         {label:"PURCHASING",items:[{key:"admPurchasedOrders",label:"Purchase Orders"},{key:"admForwarded",label:"Forwarded Purchase Requests"},{key:"admDisapproved",label:"Disapproved Purchase Requests"},{key:"admReceivingApprovals",label:"Receiving History"}]},
         {label:"CONTROLS",items:[{key:"mgrCategories",label:"Categories / Brands"},{key:"mgrRegistration",label:"Product Registration"},{key:"mgrInventory",label:"Inventory"},{key:"admInventoryApprovals",label:"Inventory Adjustment Approvals"},{key:"admSuppliers",label:"Supplier Records"},{key:"purchaseOrders",label:"Purchase Orders"},{key:"supplierAccounts",label:"Supplier Accounts"},{key:"admReports",label:"Reports"},{key:"archive",label:"Archive"}]},
         {label:"ADMIN",items:[{key:"admManagers",label:"Manage Accounts"},{key:"admNotifications",label:"Notifications"}]}],
-      superadmin:[{label:null,items:[{key:"saDashboard",label:"Dashboard"},{key:"saAdmins",label:"Account Management"},{key:"saRoles",label:"Role and Permission Management"},{key:"saBackup",label:"Database Backup"}]}],
+      superadmin:[{label:null,items:[{key:"saDashboard",label:"Dashboard"},{key:"saAdmins",label:"Account Management"},{key:"saRoles",label:"Role and Permission Management"},{key:"saBackup",label:"Database Backup"},{key:"saAudit",label:"Audit Logs"}]}],
     };
     const navGroups=(navMap[s.role]||[]).map(g=>({label:g.label,items:g.items.map(it=>({key:it.key,label:it.label,icon:navigationIcon(it.key),go:this.goScreen(it.key),className:s.screen===it.key?"nav-item nav-item--active":"nav-item",current:s.screen===it.key?"page":undefined,
       style:{padding:"9px 12px",borderRadius:8,fontSize:13,fontWeight:600,cursor:"pointer",marginBottom:2,background:s.screen===it.key?"rgba(255,255,255,0.14)":"transparent"}}))}));
@@ -3258,7 +3274,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
       mgrInventory:"Inventory",mgrCategories:"Categories",mgrRegistration:"Barcode/Item Registration",mgrCashiers:"Cashier Accounts",mgrPromotions:"Promotions",mgrSupplier:"Supplier",archive:"Archive",
       admDashboard:"Dashboard/Analytics",admPurchasedOrders:"Purchase Orders",admForwarded:"Forwarded Purchase Requests",admDisapproved:"Disapproved Purchase Requests",
       admReceivingApprovals:"Receiving History",admInventoryApprovals:"Inventory Adjustment Approvals",admSuppliers:"Supplier Records",admReports:"Reports",admManagers:"Manage Accounts",admNotifications:"Notifications",
-      saDashboard:"Dashboard",saAdmins:"Account Management",saRoles:"Roles & Permissions",saBackup:"Database Backup"};
+      saDashboard:"Dashboard",saAdmins:"Account Management",saRoles:"Roles & Permissions",saBackup:"Database Backup",saAudit:"Audit Logs"};
     let activeScreen=null;
     if(data || s.role==="superadmin"){
       const map={pos:()=>this.buildPos(), refunds:()=>this.buildRefunds(), shift:()=>this.buildShift(),
@@ -3267,7 +3283,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
         admDashboard:()=>this.buildAdmDashboard(), admPurchasedOrders:()=>this.buildAdmPurchasedOrders(), admForwarded:()=>this.buildAdmForwarded(), admDisapproved:()=>this.buildAdmDisapproved(),
         admReceivingApprovals:()=>this.buildAdmReceivingApprovals(), admInventoryApprovals:()=>this.buildAdmInventoryApprovals(), admSuppliers:()=>this.buildAdmSuppliers(), admReports:()=>this.buildAdmReports(),
         admManagers:()=>this.buildAdmManagers(), admNotifications:()=>this.buildAdmNotifications(),
-        saDashboard:()=>this.buildSaDashboard(), saAdmins:()=>this.buildSaAdmins(), saRoles:()=>this.buildSaRoles(), saBackup:()=>this.buildSaBackup()};
+        saDashboard:()=>this.buildSaDashboard(), saAdmins:()=>this.buildSaAdmins(), saRoles:()=>this.buildSaRoles(), saBackup:()=>this.buildSaBackup(),saAudit:()=>this.buildSaAudit()};
       activeScreen = map[s.screen] ? map[s.screen]() : null;
     }
 

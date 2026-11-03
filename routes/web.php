@@ -26,6 +26,7 @@ Route::middleware('role:super_admin')->prefix('api/backups')->group(function () 
     Route::post('/', [BackupController::class, 'store'])->middleware('throttle:3,1');
     Route::get('/{id}/download', [BackupController::class, 'download']);
 });
+Route::get('/api/super-admin/audit', [SuperAdminDashboardController::class,'audit'])->middleware('role:super_admin');
 
 Route::get('/api/kita-data', KitaDataController::class)->middleware('role:cashier,manager,admin,super_admin')->name('kita.data');
 Route::get('/api/inventory/availability', \App\Http\Controllers\InventoryAvailabilityController::class)->middleware('role:cashier,manager,admin');

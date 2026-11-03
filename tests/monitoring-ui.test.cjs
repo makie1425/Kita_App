@@ -25,6 +25,11 @@ test('category popup rejects missing name or classification before submission',a
   await app.saveCategory();assert.equal(app.state.categoryError,'Enter a category name and classification.');
  }
 });
+test('monitoring layout formats storage in GB and opens native error dialog',()=>{
+ const {app}=setup();app.state.saDashboard={storage:{used_bytes:1500000000,limit_bytes:3000000000,scope:'Filesystem'},memory:null,rpm:[],availability:null,errors:[],measured_at:'2026-11-03T00:00:00Z'};
+ app.state.monitoringError={id:1,message:'Operation failed',component:'Application',severity:'Error',occurred_at:'2026-11-03 00:00:00',status:'New'};
+ const tree=JSON.stringify(app.buildSaDashboard());assert.ok(tree.includes('1.50 GB'));assert.ok(tree.includes('"tag":"dialog"'));assert.ok(!tree.includes('Monitoring Environment'));
+});
 test('dashboard renders only operational cards, chart gaps and sanitized error details',()=>{
  const {app}=setup();app.state.saDashboard={storage:null,memory:null,rpm:Array.from({length:30},(_,i)=>({requests:i===15?null:i})),availability:null,errors:[],measured_at:'2026-11-03T00:00:00Z'};
  const tree=JSON.stringify(app.buildSaDashboard());
@@ -35,9 +40,9 @@ test('dashboard renders only operational cards, chart gaps and sanitized error d
 test('provider availability uses the reported percentage and period, including unavailable summaries',()=>{
  const {app}=setup();app.state.saDashboard={storage:null,memory:null,rpm:[],errors:[],availability:{source:'Better Stack',uptime_percentage:99.5,downtime_seconds:120,status:'Operational',window:'Better Stack: since monitor creation',observed_at:'2026-11-03T00:00:00Z'}};
  let tree=JSON.stringify(app.buildSaDashboard());
- assert.ok(tree.includes('99.5000%'));assert.ok(tree.includes('since monitor creation'));assert.ok(!tree.includes('last 24 hours'));
+ assert.ok(tree.includes('99.50%'));assert.ok(tree.includes('since monitor creation'));assert.ok(!tree.includes('last 24 hours'));
  app.state.saDashboard.availability.uptime_percentage=null;
- tree=JSON.stringify(app.buildSaDashboard());assert.ok(!tree.includes('0.0000%'));assert.ok(tree.includes('Unavailable'));
+ tree=JSON.stringify(app.buildSaDashboard());assert.ok(!tree.includes('0.00%'));assert.ok(tree.includes('Unavailable'));
 });
 test('authenticated Admin shell renders dashboard without the shared workspace selector',()=>{
  const {app}=setup();
@@ -55,7 +60,7 @@ test('authenticated Admin shell renders dashboard without the shared workspace s
 test('business matrix excludes privileged role and Super Admin account form excludes Employee ID',()=>{
  const {app}=setup();assert.deepEqual(Array.from(app.defaultRolesMatrix().roles),['Admin','Manager','Cashier']);
  app.state.role='superadmin';app.state.accountsLocal=[];app.state.acctModalOpen=true;app.state.acctModalMode='create';app.state.acctForm={role:'admin',status:'Active'};
- const tree=JSON.stringify(app.buildAdmManagers());assert.ok(!tree.includes('Employee ID'));assert.ok(!tree.includes('Email / Username'));
+ const tree=JSON.stringify(app.buildAdmManagers());assert.ok(!tree.includes('Employee ID'));assert.ok(!tree.includes('Schedule (optional)'));assert.ok(!tree.includes('Email / Username'));
 });
 test('refresh is protected from overlap and stops on unmount',async()=>{
  const {app,context}=setup();let calls=0,resolve;context.fetch=()=>{calls++;return new Promise(r=>resolve=r);};app.state.role='superadmin';
