@@ -31,11 +31,18 @@ class LoadGroceryPresentation extends Command
         $clock = Carbon::getTestNow();
         Auth::setUser($manager);
         try {
-            $loaded = DB::transaction(function () use ($workspace, $prefix, $manager) {
-                $this->line('Grocery import: waiting for workspace lock. Records become visible only after commit.');
+            $products = DB::transaction(function () use ($workspace, $prefix, $manager) {
+                $this->line('Grocery import: checking saved progress.');
                 DB::table('workspaces')->where('id',$workspace)->lockForUpdate()->first();
-                if (DB::table('transactions')->where('uuid',$prefix.'-2026-49')->exists()) {
-                    $this->info('This dataset is already loaded. Nothing changed.'); return false;
+                $progress = DB::table('grocery_imports')->where('workspace_id',$workspace)->first();
+                if ($progress) {
+                    if ((int)$progress->manager_id !== (int)$manager->id) throw new \RuntimeException('Import owner does not match this Manager.');
+                    if ($progress->completed) { $this->info('This dataset is already loaded. Nothing changed.'); return null; }
+                    $this->line('Grocery import: resuming after '.$progress->completed_steps.'/150 committed sales.');
+                    return json_decode($progress->products, true, 512, JSON_THROW_ON_ERROR);
+                }
+                if (DB::table('transactions')->where('workspace_id',$workspace)->where('uuid',$prefix.'-2026-49')->exists()) {
+                    $this->info('This dataset is already loaded. Nothing changed.'); return null;
                 }
                 // Refuse to merge synthetic history into an operating catalog.
                 foreach (['products','transactions','purchase_orders','suppliers','categories','brands','subcategories'] as $table) {
@@ -70,9 +77,24 @@ class LoadGroceryPresentation extends Command
                         $products[]=compact('id','name','supplier','cost');
                     }
                 }
-                $this->line('Grocery import: 50 products prepared; writing receipt and sale history. Not committed yet.');
+                DB::table('grocery_imports')->insert(['workspace_id'=>$workspace,'manager_id'=>$manager->id,'products'=>json_encode($products,JSON_THROW_ON_ERROR),'completed_steps'=>0,'completed'=>false,'created_at'=>now(),'updated_at'=>now()]);
+                return $products;
+            });
+            if ($products === null) return self::SUCCESS;
+            $this->line('Grocery import: catalog committed. 50 products are now visible; loading history in resumable transactions.');
+            $insert = fn($table,$row)=>DB::table($table)->insert($row+['workspace_id'=>$workspace]);
                 foreach ([2024,2025,2026] as $year) {
                     foreach ($products as $i=>$p) {
+                        $step=($year-2024)*50+$i+1;
+                        DB::transaction(function () use ($workspace,$prefix,$manager,$insert,$year,$i,$p,$step) {
+                        DB::table('workspaces')->where('id',$workspace)->lockForUpdate()->first();
+                        $progress=DB::table('grocery_imports')->where('workspace_id',$workspace)->lockForUpdate()->first();
+                        if ((int)$progress->completed_steps >= $step) return;
+                        if ((int)$progress->completed_steps !== $step-1) throw new \RuntimeException('Import checkpoint is out of sequence.');
+                        // Follow checkout's lock order before changing stock visible to other sessions.
+                        DB::table('users')->where('id',$manager->id)->lockForUpdate()->first();
+                        $product=WorkspaceRead::table('products')->where('id',$p['id'])->lockForUpdate()->first();
+                        if (!$product) throw new \RuntimeException('An imported product is missing or outside this workspace.');
                         $date=Carbon::create($year,1+intdiv($i,5),2+$i%5,9,15,0,config('app.timezone'));
                         Carbon::setTestNow($date);
                         $po=$prefix.'-PO-'.$year.'-'.$i;$receipt=$prefix.'-RC-'.$year.'-'.$i;
@@ -84,7 +106,7 @@ class LoadGroceryPresentation extends Command
                         $lot='LOT-'.$year.'-'.str_pad((string)$i,3,'0',STR_PAD_LEFT);
                         $expiry=$date->copy()->addYears(2)->toDateString();
                         $insert('receiving_record_lines',['receivingId'=>$receipt,'productId'=>$p['id'],'name'=>$p['name'],'poQty'=>$qty,'deliveredQty'=>$qty,'invoiceQty'=>$qty,'conditionText'=>'Good','unitCost'=>$p['cost'],'batchNumber'=>$lot,'expiryDate'=>$expiry]);
-                        $before=(int)DB::table('products')->where('id',$p['id'])->value('stock');
+                        $before=(int)$product->stock;
                         FifoInventory::receive($p['id'],$qty,$p['cost'],$date->toDateString(),$receipt,$p['supplier'],'purchase_receiving',$lot,$expiry,lot:$lot);
                         DB::table('products')->where('id',$p['id'])->update(['stock'=>$before+$qty]);
                         StockMovement::record($p['id'],$before,$before+$qty,'purchase_receiving',$receipt,$manager);
@@ -93,21 +115,28 @@ class LoadGroceryPresentation extends Command
                         $data=['uuid'=>$prefix.'-'.$year.'-'.$i,'items'=>[['productId'=>$p['id'],'qty'=>2+$i%4]]];
                         $sale=SaleCheckout::prepare($request,$data);
                         SaleCheckout::save($request,$data,$sale,'Unused','Cash',(int)(ceil($sale['total']/10000)*10000),notify:false);
-                        if (($i+1)%10===0) $this->line('Grocery import: '.$year.' history '.($i+1).'/50 prepared. Not committed yet.');
+                        DB::table('grocery_imports')->where('workspace_id',$workspace)->update(['completed_steps'=>$step,'updated_at'=>new \DateTimeImmutable('now',new \DateTimeZone('UTC'))]);
+                        });
+                        $this->line('Grocery import: '.$step.'/150 receipt and sale checkpoints committed.');
                     }
                 }
+            DB::transaction(function () use ($workspace,$prefix,$products,$insert) {
+                DB::table('workspaces')->where('id',$workspace)->lockForUpdate()->first();
+                $progress=DB::table('grocery_imports')->where('workspace_id',$workspace)->lockForUpdate()->first();
+                if ($progress->completed) return;
+                if ((int)$progress->completed_steps !== 150) throw new \RuntimeException('History is not complete.');
                 $insert('purchase_orders',['id'=>$prefix.'-PO-CANCEL','supplierId'=>$products[0]['supplier'],'status'=>'Cancelled','created'=>'2026-10-20','orderedValue'=>650,'cancelledValue'=>650,'deliveredValue'=>0,'invoicedValue'=>0,'paidValue'=>0,'outstandingValue'=>0,'supplierCallback'=>'Supplier could not fulfill requested quantities.']);
                 $insert('purchase_order_lines',['poId'=>$prefix.'-PO-CANCEL','productId'=>$products[0]['id'],'name'=>$products[0]['name'],'orderedQty'=>10,'deliveredQty'=>0,'unitCost'=>65]);
-                return true;
+                DB::table('grocery_imports')->where('workspace_id',$workspace)->update(['completed'=>true,'updated_at'=>new \DateTimeImmutable('now',new \DateTimeZone('UTC'))]);
             });
-            if ($loaded) $this->info('Loaded 50 products, 150 batches, 150 cash sales and 151 purchase orders. Database commit completed. No external messages or payments sent.');
+            $this->info('Loaded 50 products, 150 batches, 150 cash sales and 151 purchase orders. Database commit completed. No external messages or payments sent.');
         } catch (\Throwable $e) {
-            $this->error('Import rolled back: '.$e->getMessage());return self::FAILURE;
+            $this->error('Grocery import stopped: current checkpoint rolled back; previous committed checkpoints are retained. Run the same command to resume. '.$e->getMessage());return self::FAILURE;
         } finally {
             Carbon::setTestNow($clock);
             if($previous)Auth::setUser($previous);else Auth::forgetUser();
         }
-        return self::SUCCESS;
+        return $this->call('presentation:check-accounts', ['admin'=>$this->argument('admin'),'manager'=>$this->argument('manager')]);
     }
 
     private function provisionUnassignedManager(): void

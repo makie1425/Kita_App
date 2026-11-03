@@ -64,6 +64,38 @@ class PresentationAccountCheckTest extends TestCase
         $this->assertDatabaseCount('transactions',0);
     }
 
+    public function test_interrupted_import_keeps_complete_checkpoints_and_resumes_without_duplicates(): void
+    {
+        $manager=User::factory()->create(['role'=>'manager']);
+        $admin=User::factory()->create(['role'=>'admin']);
+        $this->assignWorkspace($manager,$admin);
+        $workspace=$this->fixtureWorkspace;
+        $args=['admin'=>$admin->email,'manager'=>$manager->email,'--apply'=>true];
+        $interrupt=true;
+        DB::listen(function ($query) use (&$interrupt, $workspace) {
+            if ($interrupt && str_starts_with(strtolower($query->sql), 'insert into "transactions"') && in_array('GR'.$workspace.'-2024-1',$query->bindings,true)) {
+                $interrupt=false;
+                throw new \RuntimeException('Simulated interrupted second checkpoint');
+            }
+        });
+        $this->artisan('presentation:load-grocery',$args)->assertFailed();
+        $this->assertFalse($interrupt, 'The test must interrupt a real history checkpoint.');
+        $this->assertDatabaseCount('products',50);
+        $this->assertDatabaseCount('transactions',1);
+        $this->assertDatabaseCount('inventory_batches',1);
+        $this->assertDatabaseCount('purchase_orders',1);
+        $this->assertDatabaseHas('grocery_imports',['workspace_id'=>$workspace,'completed_steps'=>1,'completed'=>false]);
+        $this->actingAs($manager)->getJson('/api/kita-data')->assertOk()->assertJsonCount(50,'PRODUCTS')->assertJsonCount(1,'TRANSACTIONS');
+        $this->artisan('presentation:load-grocery',$args)->assertSuccessful();
+        $this->assertDatabaseCount('products',50);
+        $this->assertDatabaseCount('transactions',150);
+        $this->assertDatabaseCount('inventory_batches',150);
+        $this->assertDatabaseCount('purchase_orders',151);
+        $this->assertDatabaseHas('grocery_imports',['workspace_id'=>$workspace,'completed_steps'=>150,'completed'=>true]);
+        $this->actingAs($manager)->getJson('/api/kita-data')->assertOk()->assertJsonCount(50,'PRODUCTS')->assertJsonCount(150,'TRANSACTIONS');
+        $this->actingAs(User::factory()->create(['role'=>'manager']))->getJson('/api/kita-data')->assertOk()->assertJsonCount(0,'PRODUCTS')->assertJsonCount(0,'TRANSACTIONS');
+    }
+
     public function test_unassigned_accounts_receive_a_new_isolated_workspace(): void
     {
         $admin=User::factory()->create(['role'=>'admin']);

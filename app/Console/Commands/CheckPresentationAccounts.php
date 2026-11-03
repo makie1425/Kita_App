@@ -56,6 +56,17 @@ class CheckPresentationAccounts extends Command
             return self::FAILURE;
         }
         $this->info("Account roles and relationship verified. Manager workspace ID: {$workspace}. No records changed.");
+        foreach (['products', 'inventory_batches', 'transactions', 'purchase_orders'] as $table) {
+            $count = DB::table($table)->where('workspace_id', $workspace)->count();
+            $this->line("Committed workspace records: {$table}={$count}");
+        }
+        $dates = DB::table('transactions')->where('workspace_id', $workspace)
+            ->selectRaw('MIN(date) as first_date, MAX(date) as last_date')->first();
+        $this->line('Transaction date range: '.($dates->first_date ?? 'none').' to '.($dates->last_date ?? 'none'));
+        if (\Illuminate\Support\Facades\Schema::hasTable('grocery_imports')) {
+            $progress = DB::table('grocery_imports')->where('workspace_id', $workspace)->first();
+            if ($progress) $this->line('Grocery import checkpoint: '.$progress->completed_steps.'/150; '.($progress->completed ? 'complete' : 'resumable'));
+        }
         return self::SUCCESS;
     }
 }
