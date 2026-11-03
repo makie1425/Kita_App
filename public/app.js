@@ -3208,13 +3208,25 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     ]);
   }
   buildSaAdmins(){ return this.buildAdmManagers(); }
+  buildSaBackup(){
+    const h=React.createElement;
+    return h('section',{className:'sa-panel'},[
+      h('h2',null,'Database Backup'),
+      h('p',null,'Database-wide backups are managed by the server operator because they contain records from every workspace.'),
+      h('p',{className:'monitor-info',role:'note'},'Creating, downloading, and restoring full database backups is not available from this account. Workspace access restrictions remain enforced.'),
+      h('h3',null,'Create a backup'),
+      h('p',null,'The server operator can run this command in the application environment:'),
+      h('pre',null,h('code',null,'php artisan backup:run')),
+      h('p',{className:'sa-note'},'Backups are encrypted. Scheduled backups require an active Laravel scheduler and persistent private storage. Contact the server operator to confirm the latest backup or arrange recovery.')
+    ]);
+  }
   buildSaRoles(){ const {rolesMatrix}=this.state; if(!rolesMatrix) return null;
     return React.createElement("div",null,[moduleTitle("Roles & Permissions"),
       React.createElement("p",{role:"note"},"Permission planning only: changes to these switches are not saved and do not change account access. Access is enforced by the server's role and workspace rules."),
       stickyTable(React.createElement("div",{className:"table-scroll",tabIndex:0,role:"region","aria-label":"Role permissions",style:{overflowX:"auto",border:"1px solid "+COLORS.border,borderRadius:10}},React.createElement("table",{style:{width:"100%",borderCollapse:"collapse",fontSize:13}},[
         React.createElement("thead",{key:"h"},React.createElement("tr",null,[React.createElement("th",{key:"m",style:{textAlign:"left",padding:"10px 14px",background:"#f8faff",fontSize:11,color:COLORS.textMuted}},"Module"),...rolesMatrix.roles.map(r=>React.createElement("th",{key:r,style:{padding:"10px 14px",background:"#f8faff",fontSize:11,color:COLORS.textMuted}},r))])),
         React.createElement("tbody",{key:"b"},rolesMatrix.grid.map((row,mi)=>tr([td(row.module,{fontWeight:600}),...row.cells.map((c,ri)=>td(React.createElement("div",{onClick:this.toggleRolePerm(mi,ri),style:{width:36,height:20,borderRadius:10,background:c?COLORS.green:"#e3e6ec",position:"relative",cursor:"pointer",margin:"0 auto"}},React.createElement("div",{style:{width:16,height:16,borderRadius:"50%",background:"#fff",position:"absolute",top:2,left:c?18:2}})),{textAlign:"center"}))],mi)))
-      ]))), this.buildSaAdmins()]);
+      ])))]);
   }
 
   renderVals(){
@@ -3238,7 +3250,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
         {label:"PURCHASING",items:[{key:"admPurchasedOrders",label:"Purchase Orders"},{key:"admForwarded",label:"Forwarded Purchase Requests"},{key:"admDisapproved",label:"Disapproved Purchase Requests"},{key:"admReceivingApprovals",label:"Receiving History"}]},
         {label:"CONTROLS",items:[{key:"mgrCategories",label:"Categories / Brands"},{key:"mgrRegistration",label:"Product Registration"},{key:"mgrInventory",label:"Inventory"},{key:"admInventoryApprovals",label:"Inventory Adjustment Approvals"},{key:"admSuppliers",label:"Supplier Records"},{key:"purchaseOrders",label:"Purchase Orders"},{key:"supplierAccounts",label:"Supplier Accounts"},{key:"admReports",label:"Reports"},{key:"archive",label:"Archive"}]},
         {label:"ADMIN",items:[{key:"admManagers",label:"Manage Accounts"},{key:"admNotifications",label:"Notifications"}]}],
-      superadmin:[{label:null,items:[{key:"saDashboard",label:"Dashboard"},{key:"saRoles",label:"Role and Permission Management"}]}],
+      superadmin:[{label:null,items:[{key:"saDashboard",label:"Dashboard"},{key:"saAdmins",label:"Account Management"},{key:"saRoles",label:"Role and Permission Management"},{key:"saBackup",label:"Database Backup"}]}],
     };
     const navGroups=(navMap[s.role]||[]).map(g=>({label:g.label,items:g.items.map(it=>({key:it.key,label:it.label,icon:navigationIcon(it.key),go:this.goScreen(it.key),className:s.screen===it.key?"nav-item nav-item--active":"nav-item",current:s.screen===it.key?"page":undefined,
       style:{padding:"9px 12px",borderRadius:8,fontSize:13,fontWeight:600,cursor:"pointer",marginBottom:2,background:s.screen===it.key?"rgba(255,255,255,0.14)":"transparent"}}))}));
@@ -3246,7 +3258,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
       mgrInventory:"Inventory",mgrCategories:"Categories",mgrRegistration:"Barcode/Item Registration",mgrCashiers:"Cashier Accounts",mgrPromotions:"Promotions",mgrSupplier:"Supplier",archive:"Archive",
       admDashboard:"Dashboard/Analytics",admPurchasedOrders:"Purchase Orders",admForwarded:"Forwarded Purchase Requests",admDisapproved:"Disapproved Purchase Requests",
       admReceivingApprovals:"Receiving History",admInventoryApprovals:"Inventory Adjustment Approvals",admSuppliers:"Supplier Records",admReports:"Reports",admManagers:"Manage Accounts",admNotifications:"Notifications",
-      saDashboard:"Dashboard",saAdmins:"User Management",saRoles:"Roles & Permissions"};
+      saDashboard:"Dashboard",saAdmins:"Account Management",saRoles:"Roles & Permissions",saBackup:"Database Backup"};
     let activeScreen=null;
     if(data || s.role==="superadmin"){
       const map={pos:()=>this.buildPos(), refunds:()=>this.buildRefunds(), shift:()=>this.buildShift(),
@@ -3255,7 +3267,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
         admDashboard:()=>this.buildAdmDashboard(), admPurchasedOrders:()=>this.buildAdmPurchasedOrders(), admForwarded:()=>this.buildAdmForwarded(), admDisapproved:()=>this.buildAdmDisapproved(),
         admReceivingApprovals:()=>this.buildAdmReceivingApprovals(), admInventoryApprovals:()=>this.buildAdmInventoryApprovals(), admSuppliers:()=>this.buildAdmSuppliers(), admReports:()=>this.buildAdmReports(),
         admManagers:()=>this.buildAdmManagers(), admNotifications:()=>this.buildAdmNotifications(),
-        saDashboard:()=>this.buildSaDashboard(), saAdmins:()=>this.buildSaAdmins(), saRoles:()=>this.buildSaRoles()};
+        saDashboard:()=>this.buildSaDashboard(), saAdmins:()=>this.buildSaAdmins(), saRoles:()=>this.buildSaRoles(), saBackup:()=>this.buildSaBackup()};
       activeScreen = map[s.screen] ? map[s.screen]() : null;
       if(s.role==='admin')activeScreen=h('div',null,[h('label',null,['Workspace ',h('select',{'aria-label':'Workspace',value:s.currentWorkspace||'',onChange:this.selectWorkspace},[h('option',{value:'',disabled:true},'Select workspace'),...(s.assignedWorkspaces||[]).map(w=>h('option',{key:w.id,value:w.id},w.name))])]),activeScreen]);
     }
