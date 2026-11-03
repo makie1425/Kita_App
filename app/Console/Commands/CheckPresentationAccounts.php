@@ -32,6 +32,19 @@ class CheckPresentationAccounts extends Command
         }
         $workspace = WorkspaceRead::forUser($accounts['manager']);
         if (!$workspace || !DB::table('workspaces')->where('id', $workspace)->exists()) {
+            $manager = $accounts['manager'];
+            $assigned = $manager->workspace_id;
+            $this->line('Manager assigned workspace: '.($assigned ?: 'none'));
+            if ($assigned) {
+                $exists = DB::table('workspaces')->where('id',$assigned)->exists();
+                $membership = DB::table('workspace_memberships')->where('workspace_id',$assigned)
+                    ->where('user_id',$manager->id)->where('user_role','manager')->first();
+                $this->line('Workspace exists: '.($exists ? 'yes' : 'no'));
+                $this->line('Manager membership: '.(!$membership ? 'missing' : ($membership->active ? 'active' : 'inactive')));
+                $owners = DB::table('users')->where('workspace_id',$assigned)->whereRaw('LOWER(role) = ?', ['manager'])->count();
+                $this->line('Manager accounts assigned to this workspace: '.$owners);
+                $this->line('Unique active Manager owner: '.(WorkspaceRead::managerId((int)$assigned) ?? 'not established'));
+            }
             $this->error('Manager does not have a valid, uniquely owned workspace. No records changed.');
             return self::FAILURE;
         }

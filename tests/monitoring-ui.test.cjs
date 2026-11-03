@@ -23,7 +23,7 @@ test('provider availability uses the reported percentage and period, including u
  app.state.saDashboard.availability.uptime_percentage=null;
  tree=JSON.stringify(app.buildSaDashboard());assert.ok(!tree.includes('0.0000%'));assert.ok(tree.includes('Unavailable'));
 });
-test('authenticated Admin shell renders the workspace selector and dashboard',()=>{
+test('authenticated Admin shell renders dashboard without the shared workspace selector',()=>{
  const {app}=setup();
  Object.assign(app.state,{role:'admin',authStep:'in',screen:'admDashboard',data:{},currentWorkspace:12,assignedWorkspaces:[{id:12,name:'Assigned workspace'}]});
  app.currentUser=()=>({name:'Admin'});
@@ -31,10 +31,10 @@ test('authenticated Admin shell renders the workspace selector and dashboard',()
  const result=app.renderVals();
  assert.equal(result.showApp,true);
  const tree=JSON.stringify(result.activeScreen);
- assert.ok(tree.includes('Assigned workspace'));
+ assert.ok(!tree.includes('Select workspace'));
+ assert.ok(!tree.includes('"aria-label":"Workspace"'));
  assert.ok(tree.includes('Admin dashboard content'));
- function findSelect(node){if(!node||typeof node!=='object')return null;if(node.tag==='select')return node;return (Array.isArray(node)?node:node.children||[]).map(findSelect).find(Boolean);}
- assert.equal(findSelect(result.activeScreen).props.onChange,app.selectWorkspace);
+ assert.equal(app.state.currentWorkspace,12);
 });
 test('business matrix excludes privileged role and Super Admin account form excludes Employee ID',()=>{
  const {app}=setup();assert.deepEqual(Array.from(app.defaultRolesMatrix().roles),['Admin','Manager','Cashier']);

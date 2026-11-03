@@ -47,7 +47,11 @@ if [[ "${SEED_INITIAL_SUPERADMIN:-false}" == 'true' ]]; then
 fi
 artisan config:cache
 if [[ "${LOAD_GROCERY_PRESENTATION:-false}" == 'true' ]]; then
-    artisan presentation:load-grocery "${PRESENTATION_ADMIN_EMAIL:?Set PRESENTATION_ADMIN_EMAIL}" "${PRESENTATION_MANAGER_EMAIL:?Set PRESENTATION_MANAGER_EMAIL}" --apply
+    if [[ -z "${PRESENTATION_ADMIN_EMAIL:-}" || -z "${PRESENTATION_MANAGER_EMAIL:-}" ]]; then
+        echo 'Presentation import skipped: set both PRESENTATION_ADMIN_EMAIL and PRESENTATION_MANAGER_EMAIL. Application startup continues.' >&2
+    elif ! artisan presentation:load-grocery "$PRESENTATION_ADMIN_EMAIL" "$PRESENTATION_MANAGER_EMAIL" --apply; then
+        echo 'Presentation import failed or was refused. It has not completed. Application startup continues; review the account/workspace diagnostics above.' >&2
+    fi
 fi
 if ! artisan route:cache; then
     echo 'Route cache unavailable; continuing with uncached routes.' >&2

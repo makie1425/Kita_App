@@ -3270,7 +3270,6 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
         admManagers:()=>this.buildAdmManagers(), admNotifications:()=>this.buildAdmNotifications(),
         saDashboard:()=>this.buildSaDashboard(), saAdmins:()=>this.buildSaAdmins(), saRoles:()=>this.buildSaRoles(), saBackup:()=>this.buildSaBackup()};
       activeScreen = map[s.screen] ? map[s.screen]() : null;
-      if(s.role==='admin')activeScreen=h('div',null,[h('label',null,['Workspace ',h('select',{'aria-label':'Workspace',value:s.currentWorkspace||'',onChange:this.selectWorkspace},[h('option',{value:'',disabled:true},'Select workspace'),...(s.assignedWorkspaces||[]).map(w=>h('option',{key:w.id,value:w.id},w.name))])]),activeScreen]);
     }
 
     return {

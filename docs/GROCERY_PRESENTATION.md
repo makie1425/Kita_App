@@ -31,8 +31,9 @@ PRESENTATION_MANAGER_EMAIL=lexterevans.1474@gmail.com
 
 Deploy the new code and confirm the success message in startup logs. Then disable
 `LOAD_GROCERY_PRESENTATION`. If validation refuses the workspace, do not clear data to
-bypass it: arrange an empty workspace/account relationship instead. A rejected load stops
-startup so it cannot silently claim success; disable the flag to restore normal startup.
+bypass it: arrange an empty workspace/account relationship instead. A rejected import
+prints diagnostics and does not prevent the web application from starting. A running
+application is not evidence that the import succeeded; check the explicit import result.
 
 Local tests cover role/membership checks, preview without writes, product/batch/sales
 counts, workspace ownership, stock reconciliation, and repeat safety. Production account
