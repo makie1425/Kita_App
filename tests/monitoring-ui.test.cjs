@@ -9,6 +9,22 @@ function setup(){
  const app=new context.App();app.setState=function(value){Object.assign(this.state,typeof value==='function'?value(this.state):value);};
  return {app,context};
 }
+test('category popup accepts a name and classification and advances to subcategory',async()=>{
+ const {app}=setup();app.openCategoryModal();
+ app.state.data={CATEGORIES:[],SUBCATEGORIES:[]};
+ app.setCategoryField('name')({target:{value:'beverages'}});
+ app.setCategoryField('classification')({target:{value:'Non-Perishable'}});
+ let calls=0;app.authPost=async(url,body,method)=>{calls++;assert.equal(url,'/api/categories');assert.equal(method,'POST');assert.equal(body.name,'beverages');return {category:{...body}};};
+ app.toast=()=>{};app.reloadCatalog=async()=>{};
+ await app.saveCategory();assert.equal(calls,1);assert.equal(app.state.categoryStep,'subcategory');assert.equal(app.state.categoryError,'');
+});
+test('category popup rejects missing name or classification before submission',async()=>{
+ for(const form of [{name:' ',classification:'Non-Perishable'},{name:'beverages',classification:''}]){
+  const {app}=setup();app.openCategoryModal();app.state.categoryForm=form;
+  app.authPost=async()=>assert.fail('Invalid category must not be submitted');
+  await app.saveCategory();assert.equal(app.state.categoryError,'Enter a category name and classification.');
+ }
+});
 test('dashboard renders only operational cards, chart gaps and sanitized error details',()=>{
  const {app}=setup();app.state.saDashboard={storage:null,memory:null,rpm:Array.from({length:30},(_,i)=>({requests:i===15?null:i})),availability:null,errors:[],measured_at:'2026-11-03T00:00:00Z'};
  const tree=JSON.stringify(app.buildSaDashboard());

@@ -918,7 +918,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     if(this.categoryBusy)return;
     if(!this.state.categoryEditing&&['subcategory','brand'].includes(this.state.categoryStep))return this.saveCategorySetup();
     const f=this.state.categoryForm;
-    if(!(f.first_name||"").trim()||!(f.last_name||"").trim()||!["Perishable","Non-Perishable"].includes(f.classification)){this.setState({categoryError:"Enter a category name and classification."});return;}
+    if(!(f.name||"").trim()||!["Perishable","Non-Perishable"].includes(f.classification)){this.setState({categoryError:"Enter a category name and classification."});return;}
     this.categoryBusy=true;
     try{
       const original=this.state.categoryEditing?this.state.categoryOriginalName:this.state.categorySetupCategory;
@@ -2363,7 +2363,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
   buildMgrCategories(){
     const categories=(this.state.categoriesLocal||[]).filter(c=>!c.archivedAt);
     return React.createElement("div",null,[
-      moduleTitle("Categories, Subcategories and Brands"),
+      moduleTitle("Categories"),
       React.createElement("div",{key:"actions",style:{display:"flex",gap:8,flexWrap:"wrap",marginBottom:16}},[
         btn("+ Add Category",this.openCategoryModal,"primary"),
         btn("Register New Product",this.goScreen("mgrRegistration")),
@@ -2375,7 +2375,6 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
         td(badge(c.status)),
         td([btn("Edit",this.editCategory(c)),btn(c.status==="Active"?"Deactivate":"Activate",()=>this.authPost("/api/categories/"+encodeURIComponent(c.name),{status:c.status==="Active"?"Inactive":"Active"},"PATCH").then(()=>this.reloadCatalog()).catch(e=>this.toast(e.message,"error")))]),
       ],c.name))),
-      this.buildMasterLists(),
       this.state.categoryModalOpen?this.buildCategoryModal():null,
     ]);
   }
