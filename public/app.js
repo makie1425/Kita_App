@@ -350,6 +350,7 @@ class Component extends DCLogic {
     this.setState({compactNavigation:compact,...(!compact?{sidebarOpen:false}:{})});
   };
   componentDidMount() {
+    this.monitoringTimer=setInterval(()=>{if(!document.hidden&&this.state.role==='superadmin'&&this.state.screen==='saDashboard')this.reloadSaDashboard();},30000);
     if(window.KITA_AUTH?.user?.role==='admin')this.loadWorkspaces();
     this.previousAppState=this.state;
     this.syncNavigationViewport();
@@ -359,7 +360,7 @@ class Component extends DCLogic {
     if(sessionUser) this.enterApp(sessionUser.role,null,sessionUser);
 
   }
-  componentWillUnmount(){ window.removeEventListener("resize",this.syncNavigationViewport); }
+  componentWillUnmount(){ clearInterval(this.monitoringTimer); window.removeEventListener("resize",this.syncNavigationViewport); }
   trackLoad=async work=>{
     this.setState(s=>({pendingLoads:(s.pendingLoads||0)+1}));
     try{return await work();}finally{this.setState(s=>({pendingLoads:Math.max(0,(s.pendingLoads||1)-1)}));}
@@ -387,10 +388,10 @@ class Component extends DCLogic {
       this.setState({accountsLocal:body.accounts}); if(this.state.role==='admin')this.loadWorkspaces(); return body.accounts;
   }));
   defaultRolesMatrix(){
-    const modules=["Checkout","Refunds","Item Requests","Purchase Orders","Receiving","Inventory Adjustments","Promotions","Analytics","Approvals","Manager Accounts","Admin Accounts","Roles & Permissions","Backup Configuration","Audit Logs"];
-    const roles=["Cashier","Manager","Admin","Super Admin"];
-    const d={Checkout:[1,1,1,1],Refunds:[1,1,1,1],"Item Requests":[0,1,1,1],"Purchase Orders":[0,0,1,1],Receiving:[0,1,1,1],"Inventory Adjustments":[0,1,1,1],Promotions:[0,1,1,1],Analytics:[0,0,1,1],Approvals:[0,0,1,1],"Manager Accounts":[0,0,1,1],"Admin Accounts":[0,0,0,1],"Roles & Permissions":[0,0,0,1],"Backup Configuration":[0,0,0,1],"Audit Logs":[0,0,0,1]};
-    return {modules,roles,grid:modules.map(m=>({module:m,cells:d[m].slice()}))};
+    const roles=['Admin','Manager','Cashier'];
+    const permissions={'Checkout':[0,1,1],'Refunds':[0,1,1],'Item Requests':[1,1,0],'Purchase Orders':[1,1,0],'Receiving':[0,1,0],'Inventory Adjustments':[1,1,0],'Promotions':[0,1,0],'Analytics':[1,1,0],'Approvals':[1,0,0],'Manager Accounts':[1,0,0],'Cashier Accounts':[1,1,0]};
+    const modules=Object.keys(permissions);
+    return {modules,roles,grid:modules.map(module=>({module,cells:permissions[module]}))};
   }
   toast=(message,tone)=>{ const id=Date.now()+Math.random(); const c=tone==="error"?{bg:"#fdeaea",fg:"#dc2626",bd:"#f5c6c6"}:tone==="warn"?{bg:"#fdf3dc",fg:"#92620a",bd:"#f3e0ac"}:{bg:"#e8f8ee",fg:"#16a34a",bd:"#bfe8d3"};
     if(this.state.screen==='mgrRegistration'){this.setState({registrationNotice:{message,tone:tone||'success'}},()=>{if(!this.state.categoryModalOpen&&typeof document!=='undefined')document.getElementById('registration-feedback')?.scrollIntoView({block:'nearest',behavior:'smooth'});});return;}
@@ -477,7 +478,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
       else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}
     }
   };
-  goScreen=key=>()=>{ this.setState({screen:key,sidebarOpen:false}); if(["mgrRequest","mgrRequestView","mgrPurchaseHistory","mgrPO","mgrSupplier","admSuppliers","admPurchasedOrders","admForwarded","admDisapproved","admReceivingApprovals"].includes(key)&&!this.state.purchaseData&&!this.state.purchaseLoading)this.reloadPurchasing().catch(()=>{}); if(key==="supplierAccounts")this.loadSupplierAccounts(); if(key==="purchaseOrders"&&!this.state.purchaseData&&!this.state.purchaseLoading)this.reloadPurchasing().catch(()=>{}); if(key==="saDashboard")this.reloadSaDashboard(); if(key==="saBackup")this.reloadBackups(); if(["mgrCashiers","admManagers","saAdmins"].includes(key)&&!this.state.accountsLocal)this.reloadAccounts().catch(error=>this.toast(error.message,"error")); if(key==="shift") this.reloadCatalog().catch(()=>this.toast("Could not refresh shift transactions.","error")); };
+  goScreen=key=>()=>{ this.setState({screen:key,sidebarOpen:false}); if(["mgrRequest","mgrRequestView","mgrPurchaseHistory","mgrPO","mgrSupplier","admSuppliers","admPurchasedOrders","admForwarded","admDisapproved","admReceivingApprovals"].includes(key)&&!this.state.purchaseData&&!this.state.purchaseLoading)this.reloadPurchasing().catch(()=>{}); if(key==="supplierAccounts")this.loadSupplierAccounts(); if(key==="purchaseOrders"&&!this.state.purchaseData&&!this.state.purchaseLoading)this.reloadPurchasing().catch(()=>{}); if(key==="saDashboard")this.reloadSaDashboard(); if(["mgrCashiers","admManagers","saAdmins"].includes(key)&&!this.state.accountsLocal)this.reloadAccounts().catch(error=>this.toast(error.message,"error")); if(key==="shift") this.reloadCatalog().catch(()=>this.toast("Could not refresh shift transactions.","error")); };
 
   simScannerDisconnect=()=>{ this.setState({scannerConnected:false}); this.toast("Scanner disconnected â€” use manual entry.","warn"); };
   simPaymentTimeout=()=>{ if(this.state.paymentState==="processing"||this.state.paymentState==="pending"){ this.setState({paymentState:"timeout"}); this.toast("Payment timed out.","error"); } else this.toast("Start an e-wallet payment first.","warn"); };
@@ -853,7 +854,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
         this.goScreen(n.screen)();
         if(['mgrRequestView','admPurchasedOrders'].includes(n.screen))this.setState({purchaseRequestDetail:n.recordId});
         if(n.screen==='mgrInventory'){const expiry=['Expired stock','Stock expiring soon'].includes(n.type);this.setState({invTab:expiry?'expiry':'adjustments'});if(expiry)await this.loadInventoryWorkflows();}
-        if(['mgrInventory','admInventoryApprovals','saAudit'].includes(n.screen))await this.reloadCatalog();
+        if(['mgrInventory','admInventoryApprovals'].includes(n.screen))await this.reloadCatalog();
       }
       await this.reloadNotifications();
     }catch(error){this.setState({notificationError:error.message});}
@@ -1018,7 +1019,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     const original=(this.state.accountsLocal||[]).find(a=>a.id===f.id&&a.role===f.role);
     if(!creating&&original&&original.status!==f.status&&!this.confirmAccountStatus(f))return;
     this.accountBusy=true;
-    const payload={first_name:f.first_name,last_name:f.last_name,email:f.email,username:f.username||null,role:f.role,status:f.status,schedule:f.schedule||null};
+    const payload={first_name:f.first_name,last_name:f.last_name,email:f.email,...(this.state.role==="superadmin"?{}:{username:f.username||null}),role:f.role,status:f.status,schedule:f.schedule||null};
 
     this.authPost(creating?"/api/accounts":`/api/accounts/${encodeURIComponent(f.role)}/${f.id}`,payload,creating?"POST":"PATCH")
       .then(res=>{this.setState({acctModalOpen:false,acctError:""});this.toast(res.message);if(this.state.role==="superadmin")this.reloadSaDashboard();return Promise.all([this.reloadAccounts(),this.reloadCatalog()]);})
@@ -1161,24 +1162,6 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     ]);
   }
   toggleRolePerm=(mi,ri)=>()=>this.setState(s=>{ const grid=s.rolesMatrix.grid.map((row,i)=>i===mi?{...row,cells:row.cells.map((c,j)=>j===ri?(c?0:1):c)}:row); return {rolesMatrix:{...s.rolesMatrix,grid}}; });
-  reloadBackups=async()=>{
-    this.setState({backupLoading:true,backupError:""});
-    try {
-      const response=await fetch('/api/backups',{headers:{Accept:'application/json'},credentials:'same-origin',cache:'no-store'});
-      const body=await response.json(); this.handleSessionResponse(response,body);
-      if(!response.ok)throw new Error(body.message||'Unable to load backups.');
-      this.setState({backupData:body});
-    }catch(error){this.setState({backupError:error.message});}
-    finally{this.setState({backupLoading:false});}
-  };
-  runBackupNow=async()=>{
-    if(this.backupBusy)return;
-    this.backupBusy=true;this.setState({backupBusy:true});
-    try{await this.authPost('/api/backups',{});this.toast('Backup completed.');await this.reloadBackups();}
-    catch(error){this.toast(error.message,'error');}
-    finally{this.backupBusy=false;this.setState({backupBusy:false});}
-  };
-  restoreBackup=id=>()=>this.setState({backupRestoreId:id});
 
   // ===================== SCREEN BUILDERS =====================
   buildPos(){
@@ -3113,10 +3096,10 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
         h("label",null,["Role ",h("select",{value:this.state.acctRoleFilter,onChange:e=>{this.setState({acctRoleFilter:e.target.value});this.setTableView("accounts",{page:1});}},[h("option",{value:""},"All roles"),...roles.map(r=>h("option",{value:r,key:r},r))])]),
         h("label",null,["Status ",h("select",{value:this.state.acctStatusFilter,onChange:e=>{this.setState({acctStatusFilter:e.target.value});this.setTableView("accounts",{page:1});}},[h("option",{value:""},"All statuses"),...['Active','Inactive'].map(v=>h("option",{value:v,key:v},v))])])
       ]),
-      this.recordTable("accounts",["Name","Email / Username","Role","Status","Password Setup","Created","Last OTP login","Actions"],(accountsLocal||[]).filter(a=>(!this.state.acctRoleFilter||a.role===this.state.acctRoleFilter)&&(!this.state.acctStatusFilter||a.status===this.state.acctStatusFilter)).map(a=>tr([td(a.name),td([h("div",null,a.email),h("small",null,a.username||"")]),td(a.role),td(h("span",{className:"sa-status "+(a.status==="Active"?"sa-status--healthy":"sa-status--inactive")},a.status.toUpperCase())),td(a.must_change_password?"Password Change Required":"Password Set"),td(a.dateCreated||"Not recorded"),td(a.lastOtpLogin||"Not recorded"),td([btn("Edit",this.openAcctModal("edit",a)),a.must_change_password?btn("Resend Setup Credentials",()=>this.authPost(`/api/accounts/${encodeURIComponent(a.role)}/${a.id}/resend-setup`,{}).then(r=>this.toast(r.message)).catch(e=>this.toast(e.message,"error"))):btn("Send Password Reset",()=>this.authPost(`/api/accounts/${encodeURIComponent(a.role)}/${a.id}/send-reset`,{}).then(r=>this.toast(r.message)).catch(e=>this.toast(e.message,"error"))),btn(a.status==="Active"?"Deactivate":"Activate",()=>this.changeAccountStatus(a))])],a.role+"-"+a.id))),
+      this.recordTable("accounts",["Name",this.state.role==="superadmin"?"Email":"Email / Username","Role","Status","Password Setup","Created","Last OTP login","Actions"],(accountsLocal||[]).filter(a=>(!this.state.acctRoleFilter||a.role===this.state.acctRoleFilter)&&(!this.state.acctStatusFilter||a.status===this.state.acctStatusFilter)).map(a=>tr([td(a.name),td([h("div",null,a.email),this.state.role!=="superadmin"?h("small",null,a.username||""):null]),td(a.role),td(h("span",{className:"sa-status "+(a.status==="Active"?"sa-status--healthy":"sa-status--inactive")},a.status.toUpperCase())),td(a.must_change_password?"Password Change Required":"Password Set"),td(a.dateCreated||"Not recorded"),td(a.lastOtpLogin||"Not recorded"),td([btn("Edit",this.openAcctModal("edit",a)),a.must_change_password?btn("Resend Setup Credentials",()=>this.authPost(`/api/accounts/${encodeURIComponent(a.role)}/${a.id}/resend-setup`,{}).then(r=>this.toast(r.message)).catch(e=>this.toast(e.message,"error"))):btn("Send Password Reset",()=>this.authPost(`/api/accounts/${encodeURIComponent(a.role)}/${a.id}/send-reset`,{}).then(r=>this.toast(r.message)).catch(e=>this.toast(e.message,"error"))),btn(a.status==="Active"?"Deactivate":"Activate",()=>this.changeAccountStatus(a))])],a.role+"-"+a.id))),
       acctModalOpen?h("div",{key:"modal",style:{position:"fixed",inset:0,background:"rgba(15,31,74,0.38)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:50,padding:16}},
         h("div",{role:"dialog","aria-modal":true,"aria-label":acctModalMode==="create"?"Create Account":"Edit Account",style:{width:400,maxHeight:"85vh",overflowY:"auto",background:"#fff",borderRadius:14,padding:20}},[
-          h("h3",{key:"title"},acctModalMode==="create"?"Create Account":"Edit Account"),input("first_name","First Name"),input("last_name","Last Name"),input("email","Email","email"),input("username","Employee ID (optional)"),
+          h("h3",{key:"title"},acctModalMode==="create"?"Create Account":"Edit Account"),input("first_name","First Name"),input("last_name","Last Name"),input("email","Email","email"),this.state.role!=='superadmin'?input("username","Employee ID (optional)"):null,
           h("label",{key:"role"},["Role",h("select",{value:f.role,disabled:acctModalMode==="edit",onChange:this.setAcctField("role"),style:{width:"100%",padding:10,marginBottom:10}},roles.map(role=>h("option",{key:role,value:role},role)))]),
           h("p",null,"Temporary credentials are emailed to new accounts. Password setup is required on first login."),input("schedule","Schedule (optional)"),
           h("label",{key:"status"},["Status",h("select",{value:f.status,onChange:this.setAcctField("status"),style:{width:"100%",padding:10,marginBottom:10}},(acctModalMode==="create"?["Active"]:["Active","Inactive"]).map(status=>h("option",{key:status},status)))]),
@@ -3150,33 +3133,61 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
       .catch(error=>this.toast(error.message,"error")).finally(()=>{this.accountBusy=false;});
   };
   reloadSaDashboard=async()=>{
+    if(this.monitoringBusy)return;
+    this.monitoringBusy=true;
     this.setState({saLoading:true,saError:""});
     try{
       const response=await fetch("/api/super-admin/dashboard",{headers:{Accept:"application/json"},credentials:"same-origin"});
       const body=await response.json();this.handleSessionResponse(response,body);
       if(!response.ok)throw new Error(body.message||"Unable to retrieve system performance information.");
       if(this.state.role==="superadmin")this.setState({saDashboard:body});
-    }catch(error){this.setState({saError:"Unable to retrieve system performance information.",saDashboard:null});}
-    finally{this.setState({saLoading:false});}
+      }catch(error){this.setState({saError:"Unable to retrieve operational monitoring."});}
+      finally{this.monitoringBusy=false;this.setState({saLoading:false});}
+  };
+  monitoringDetail=async id=>{
+    try{const r=await fetch('/api/super-admin/errors/'+id,{credentials:'same-origin',headers:{Accept:'application/json'}});
+      const body=await r.json();this.handleSessionResponse(r,body);if(!r.ok)throw new Error(body.message||'Unable to load error.');
+      this.setState({monitoringError:body.error});
+    }catch(e){this.toast(e.message,'error');}
+  };
+  monitoringStatus=async(status)=>{
+    try{await this.authPost('/api/super-admin/errors/'+this.state.monitoringError.id,{status},'PATCH');
+      this.setState({monitoringError:null});this.reloadSaDashboard();
+    }catch(e){this.toast(e.message,'error');}
   };
   buildSaDashboard(){
-    const h=React.createElement,d=this.state.saDashboard;
-    if(this.state.saLoading)return h("div",{className:"sa-skeleton",role:"status","aria-busy":true},loadingStatus("Loading system performance and user activity..."));
-    if(this.state.saError)return h("div",{className:"sa-error",role:"alert"},[h("p",null,this.state.saError),btn("Retry",this.reloadSaDashboard,"primary")]);
-    if(!d)return h("p",{role:"status"},"System information has not been loaded yet.");
-    const ms=value=>value<0.01?"< 0.01 ms":value.toFixed(2)+" ms";
-    const metrics=[["Total Users",d.total_users],["Active Users",d.active_users],["Inactive Users",d.inactive_users],["Average audit events / day",d.average_daily_events]];
-    const max=Math.max(1,...d.activity_days.map(day=>day.events));
-    return h("div",{className:"sa-dashboard"},[
-      moduleTitle("System Overview"),
-      h("div",{className:"sa-kpis"},metrics.map(([label,value])=>h("article",{className:"sa-kpi",key:label},[h("div",null,label),h("strong",null,value)]))),
-      h("div",{className:"sa-panels"},[
-        h("section",{className:"sa-panel"},[h("h2",null,"System Performance"),...[["Application",d.application_status],["Database",d.database_status],["Database query",ms(d.database_response_ms)],["Dashboard calculation",ms(d.generation_ms)]].map(([label,value],i)=>h("div",{className:"sa-performance-row",key:label},[h("span",null,label),h("strong",{className:i<2?"sa-status sa-status--healthy":""},value)])),h("p",{className:"sa-note"},"Measured for this request: SELECT 1 database round trip and dashboard calculation time. These do not measure browser latency or server uptime."),btn("Refresh measurements",this.reloadSaDashboard)]),
-        h("section",{className:"sa-panel"},[h("h2",null,"Recorded User Activity"),h("p",{className:"sa-note"},"Audit events per day across the last 7 completed calendar days (application timezone). Average = total recorded events / 7, including days with no events. This is not a login count."),
-          d.activity_days.some(day=>day.events)?h("div",{className:"sa-chart"},d.activity_days.map(day=>h("div",{className:"sa-chart-row",key:day.date},[h("span",null,day.date),h("div",{className:"sa-chart-track"},h("div",{className:"sa-chart-bar",style:{width:(day.events/max*100)+"%"}})),h("strong",null,day.events)]))):h("p",{className:"record-empty"},"No user activity data is available yet.")])
-      ]),
-      h("section",{className:"sa-panel"},[h("h2",null,"Recent System Activity"),d.recent_activity.length?this.recordTable("sa-recent",["Time","User","Action","Record"],d.recent_activity.map((event,i)=>tr([td(event.ts),td(event.user),td(badge(event.action)),td(event.record)],i))):h("p",null,"No user activity data is available yet.")]),
-      h("p",{className:"sa-note"},"Measured at "+new Date(d.measured_at).toLocaleString()+". Login history and reliable current-session counts are not recorded by this dashboard.")
+    const h=React.createElement,d=this.state.saDashboard,e=this.state.monitoringError;
+    if(!d)return h('div',{role:'status'},[h('p',null,this.state.saError||'Loading operational monitoring...'),btn('Retry',this.reloadSaDashboard)]);
+    const bytes=v=>v==null?'Unavailable':(v/1048576).toFixed(1)+' MB';
+    const duration=v=>v==null?'Unavailable':Math.floor(v/3600)+'h '+Math.floor(v%3600/60)+'m '+Math.floor(v%60)+'s';
+    const points=d.rpm||[],latest=points.at(-1)?.requests,max=Math.max(1,...points.map(p=>p.requests??0));
+    const segments=[];let current=[];
+    points.forEach((p,i)=>{if(p.requests==null){if(current.length)segments.push(current);current=[];}else current.push([10+i*280/29,90-p.requests/max*80]);});if(current.length)segments.push(current);
+    const chart=h('figure',{style:{margin:'12px 0 0'}},[
+      h('svg',{viewBox:'0 0 300 110',role:'img','aria-label':'Requests per minute during the last 30 completed minutes. Gaps indicate unavailable measurements.',style:{width:'100%',height:110}},
+        [h('path',{d:'M10 10 V90 H290',fill:'none',stroke:'#cbd5e1'}),...segments.map((p,i)=>h('polyline',{key:i,points:p.map(v=>v.join(',')).join(' '),fill:'none',stroke:'#1747e8',strokeWidth:2})),
+         ...segments.flat().map((p,i)=>h('circle',{key:'p'+i,cx:p[0],cy:p[1],r:2,fill:'#1747e8'})),
+         h('text',{x:12,y:10,fontSize:9},String(max)),h('text',{x:10,y:105,fontSize:9},'30 min ago'),h('text',{x:245,y:105,fontSize:9},'Last minute')]),
+      h('figcaption',{className:'sa-note'},'Laravel requests/minute, including health checks. Missing samples are gaps.')]);
+    const metric=(label,value,note,extra)=>h('article',{className:'sa-kpi',key:label},[h('div',null,label),h('strong',{style:label==='System Status'?{color:value==='Operational'?'#16803d':value==='Down'?'#b91c1c':'#667085'}:undefined},value),h('p',{className:'sa-note'},note),extra]);
+    return h('div',{className:'sa-dashboard'},[
+      this.state.saError?h('p',{role:'alert'},'Refresh failed. Displayed measurements may be stale.'):null,
+      h('div',{className:'sa-kpis sa-operational-grid'},[
+        metric('Storage Consumption',bytes(d.storage?.used_bytes),d.storage?d.storage.scope+'; capacity '+bytes(d.storage.limit_bytes):'Filesystem measurements cannot be retrieved'),
+        metric('RAM Consumption',bytes(d.memory?.used_bytes),d.memory?d.memory.scope+'; limit '+bytes(d.memory.limit_bytes):'Container memory measurements cannot be retrieved'),
+        metric('Requests Per Minute',latest==null?'Unavailable':latest,'Last completed minute',chart),
+        metric('System Uptime',duration(d.availability?.uptime_seconds),'Observed available time, last 24 hours'),
+        metric('System Downtime',duration(d.availability?.downtime_seconds),'Observed unavailable time, last 24 hours'),
+        metric('System Status',d.availability?.status||'Unavailable',d.availability?'Unobserved time: '+duration(d.availability.unknown_seconds):'External availability monitor not reporting')]),
+      h('section',{className:'sa-panel'},[h('h2',null,'Recent Error Logs'),
+        d.errors===null?h('p',null,'Unavailable'):!d.errors.length?h('p',null,'No recorded errors.'):
+        this.recordTable('monitoring-errors',['Severity','Error Message','Affected Component','Date and Time','Status','Actions'],
+          d.errors.map(log=>tr([td(log.severity),td(log.message),td(log.component),td(new Date(log.occurred_at.replace(' ','T')+'Z').toLocaleString()),td(log.status),td(btn('View Details',()=>this.monitoringDetail(log.id)))],log.id))),
+        h('p',{className:'sa-note'},'Latest 25 application errors. Messages are sanitized; server logs retain diagnostic details.')]),
+      e?h('section',{className:'sa-panel',role:'region','aria-label':'Error details'},[h('h2',null,'Error #'+e.id),h('p',null,e.message),h('p',null,e.component+' · '+e.severity+' · '+e.occurred_at+' UTC · '+e.status),
+        ...['New','Acknowledged','Resolved'].map(status=>btn('Mark '+status,()=>this.monitoringStatus(status))),btn('Close',()=>this.setState({monitoringError:null}))]):null,
+      h('p',{className:'sa-note'},'Updated '+new Date(d.measured_at).toLocaleString()+'. Refreshes every 30 seconds while visible. Availability is sampled; unobserved intervals are excluded.'),
+      btn('Refresh',this.reloadSaDashboard)
     ]);
   }
   buildSaAdmins(){ return this.buildAdmManagers(); }
@@ -3186,38 +3197,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
       stickyTable(React.createElement("div",{className:"table-scroll",tabIndex:0,role:"region","aria-label":"Role permissions",style:{overflowX:"auto",border:"1px solid "+COLORS.border,borderRadius:10}},React.createElement("table",{style:{width:"100%",borderCollapse:"collapse",fontSize:13}},[
         React.createElement("thead",{key:"h"},React.createElement("tr",null,[React.createElement("th",{key:"m",style:{textAlign:"left",padding:"10px 14px",background:"#f8faff",fontSize:11,color:COLORS.textMuted}},"Module"),...rolesMatrix.roles.map(r=>React.createElement("th",{key:r,style:{padding:"10px 14px",background:"#f8faff",fontSize:11,color:COLORS.textMuted}},r))])),
         React.createElement("tbody",{key:"b"},rolesMatrix.grid.map((row,mi)=>tr([td(row.module,{fontWeight:600}),...row.cells.map((c,ri)=>td(React.createElement("div",{onClick:this.toggleRolePerm(mi,ri),style:{width:36,height:20,borderRadius:10,background:c?COLORS.green:"#e3e6ec",position:"relative",cursor:"pointer",margin:"0 auto"}},React.createElement("div",{style:{width:16,height:16,borderRadius:"50%",background:"#fff",position:"absolute",top:2,left:c?18:2}})),{textAlign:"center"}))],mi)))
-      ])))]);
-  }
-  buildSaBackup(){
-    const h=React.createElement,d=this.state.backupData,items=d?.backups||[],id=this.state.backupRestoreId;
-    return h("div",null,[moduleTitle("Backup Configuration"),
-      this.state.backupError&&h("p",{role:"alert",style:{color:COLORS.red}},this.state.backupError),
-      card([
-        h("p",null,d?`Daily schedule: ${d.schedule} (${d.timezone}). Retention: ${d.retention_days} days.`:"Loading backup configuration..."),
-        h("p",null,"Automatic backups require the server scheduler to be running. Download copies to separate storage to protect against server loss. Includes database records; uploaded files require a separate backup."),
-        h("p",null,`Last completed backup: ${items[0]?new Date(items[0].created_at).toLocaleString():"No backups recorded"}`),
-        h("div",{style:{display:"flex",gap:10}},[
-          h("button",{style:{padding:"9px 16px",borderRadius:8,border:"none",background:COLORS.brand,color:"#fff",fontWeight:700,cursor:this.state.backupBusy?"wait":"pointer",opacity:this.state.backupBusy?0.6:1},disabled:!!this.state.backupBusy,"aria-busy":!!this.state.backupBusy,onClick:this.runBackupNow},this.state.backupBusy?"Creating backup...":"Run Backup Now"),
-          btn(this.state.backupLoading?"Loading...":"Refresh",this.reloadBackups)
-        ])
-      ]),
-      this.recordTable("backups",["Created","Size","Actions"],items.map(item=>tr([
-        td(new Date(item.created_at).toLocaleString()),td(`${(item.bytes/1024).toFixed(1)} KB`),
-        td(h("div",{style:{display:"flex",gap:12}},[h("a",{className:"kita-button",href:`/api/backups/${encodeURIComponent(item.id)}/download`},"Download"),btn("Restore instructions",this.restoreBackup(item.id))]) )
-      ],item.id))),
-      id&&card([h("strong",null,"Restore replaces current database records"),
-        h("p",null,"Ask your server administrator to stop queue workers and other writers, enable maintenance mode, and run these commands. A safety backup is created first. Keep the original application encryption key to decrypt backups."),
-        h("pre",{style:{whiteSpace:"pre-wrap",overflowWrap:"anywhere"}},`php artisan down\nphp artisan backup:restore ${id} --confirm=${id}`),
-        h("p",null,"Verify restored data, reconcile payments made since the snapshot, then run php artisan up and restart workers. See docs/BACKUPS.md for recovery instructions."),btn("Close",()=>this.setState({backupRestoreId:null}))])
-    ]);
-  }
-  buildSaAudit(){ const {data}=this.state; if(!data) return null;
-    return React.createElement("div",null,[moduleTitle("Audit Logs & Activity"),
-      this.recordTable("audit",["Timestamp","User","Action","Record","Changes"],data.AUDIT_LOGS.map((a,i)=>tr([td(a.ts,{fontFamily:"'JetBrains Mono',monospace",fontSize:12}),td(a.user),td(badge(a.action)),td(a.record),td(auditChanges(a.before,a.after,data.PRODUCTS))],i))),
-      React.createElement("div",{style:{height:14}}),
-      card([React.createElement("div",{key:"t",style:{fontWeight:800,marginBottom:10}},"Field Version History"),
-        this.recordTable("field-history",["Field","Record","Old Value","New Value","User","Timestamp","Reason"],data.FIELD_VERSION_HISTORY.map((f,i)=>tr([td(f.field),td(f.record),td(f.oldValue),td(f.newValue),td(f.user),td(f.ts,{fontSize:12}),td(f.reason)],i)))]),
-      React.createElement("div",{style:{marginTop:12,display:"flex",gap:10}},[btn("Export")])]);
+      ]))), this.buildSaAdmins()]);
   }
 
   renderVals(){
@@ -3241,7 +3221,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
         {label:"PURCHASING",items:[{key:"admPurchasedOrders",label:"Purchase Orders"},{key:"admForwarded",label:"Forwarded Purchase Requests"},{key:"admDisapproved",label:"Disapproved Purchase Requests"},{key:"admReceivingApprovals",label:"Receiving History"}]},
         {label:"CONTROLS",items:[{key:"mgrCategories",label:"Categories / Brands"},{key:"mgrRegistration",label:"Product Registration"},{key:"mgrInventory",label:"Inventory"},{key:"admInventoryApprovals",label:"Inventory Adjustment Approvals"},{key:"admSuppliers",label:"Supplier Records"},{key:"purchaseOrders",label:"Purchase Orders"},{key:"supplierAccounts",label:"Supplier Accounts"},{key:"admReports",label:"Reports"},{key:"archive",label:"Archive"}]},
         {label:"ADMIN",items:[{key:"admManagers",label:"Manage Accounts"},{key:"admNotifications",label:"Notifications"}]}],
-      superadmin:[{label:null,items:[{key:"saDashboard",label:"Dashboard"},{key:"saAdmins",label:"User Management"},{key:"saRoles",label:"Roles & Permissions"}]}],
+      superadmin:[{label:null,items:[{key:"saDashboard",label:"Dashboard"},{key:"saRoles",label:"Role and Permission Management"}]}],
     };
     const navGroups=(navMap[s.role]||[]).map(g=>({label:g.label,items:g.items.map(it=>({key:it.key,label:it.label,icon:navigationIcon(it.key),go:this.goScreen(it.key),className:s.screen===it.key?"nav-item nav-item--active":"nav-item",current:s.screen===it.key?"page":undefined,
       style:{padding:"9px 12px",borderRadius:8,fontSize:13,fontWeight:600,cursor:"pointer",marginBottom:2,background:s.screen===it.key?"rgba(255,255,255,0.14)":"transparent"}}))}));
@@ -3249,7 +3229,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
       mgrInventory:"Inventory",mgrCategories:"Categories",mgrRegistration:"Barcode/Item Registration",mgrCashiers:"Cashier Accounts",mgrPromotions:"Promotions",mgrSupplier:"Supplier",archive:"Archive",
       admDashboard:"Dashboard/Analytics",admPurchasedOrders:"Purchase Orders",admForwarded:"Forwarded Purchase Requests",admDisapproved:"Disapproved Purchase Requests",
       admReceivingApprovals:"Receiving History",admInventoryApprovals:"Inventory Adjustment Approvals",admSuppliers:"Supplier Records",admReports:"Reports",admManagers:"Manage Accounts",admNotifications:"Notifications",
-      saDashboard:"Dashboard",saAdmins:"User Management",saRoles:"Roles & Permissions",saBackup:"Backup Configuration",saAudit:"Audit Logs & Activity"};
+      saDashboard:"Dashboard",saAdmins:"User Management",saRoles:"Roles & Permissions"};
     let activeScreen=null;
     if(data || s.role==="superadmin"){
       const map={pos:()=>this.buildPos(), refunds:()=>this.buildRefunds(), shift:()=>this.buildShift(),
@@ -3258,15 +3238,15 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
         admDashboard:()=>this.buildAdmDashboard(), admPurchasedOrders:()=>this.buildAdmPurchasedOrders(), admForwarded:()=>this.buildAdmForwarded(), admDisapproved:()=>this.buildAdmDisapproved(),
         admReceivingApprovals:()=>this.buildAdmReceivingApprovals(), admInventoryApprovals:()=>this.buildAdmInventoryApprovals(), admSuppliers:()=>this.buildAdmSuppliers(), admReports:()=>this.buildAdmReports(),
         admManagers:()=>this.buildAdmManagers(), admNotifications:()=>this.buildAdmNotifications(),
-        saDashboard:()=>this.buildSaDashboard(), saAdmins:()=>this.buildSaAdmins(), saRoles:()=>this.buildSaRoles(), saBackup:()=>this.buildSaBackup(), saAudit:()=>this.buildSaAudit()};
+        saDashboard:()=>this.buildSaDashboard(), saAdmins:()=>this.buildSaAdmins(), saRoles:()=>this.buildSaRoles()};
       activeScreen = map[s.screen] ? map[s.screen]() : null;
       if(s.role==='admin')activeScreen=h('div',null,[h('label',null,['Workspace ',h('select',{'aria-label':'Workspace',value:s.currentWorkspace||'',onChange:this.selectWorkspace},[h('option',{value:'',disabled:true},'Select workspace'),...(s.assignedWorkspaces||[]).map(w=>h('option',{key:w.id,value:w.id},w.name))])]),activeScreen]);
     }
 
     return {
       sidebarClass:s.sidebarOpen?"sidebar sidebar--open":"sidebar",sidebarOpen:s.sidebarOpen,toggleSidebar:this.toggleSidebar,closeSidebar:this.closeSidebar,onShellKeyDown:this.onShellKeyDown,
-      dataLoading:(s.pendingLoads||0)>0||(!!s.purchaseLoading&&["purchaseOrders","mgrRequest","mgrRequestView","mgrPurchaseHistory","mgrPO","mgrSupplier","admSuppliers","admPurchasedOrders","admForwarded","admDisapproved","admReceivingApprovals"].includes(s.screen))||!!s.backupLoading||!!s.backupBusy||!!s.supplierAccountsLoading||!!s.workflowLoading||!!s.inventoryHistoryLoading||!!s.reportLoading||!!s.saLoading||!!s.loginPending||!!s.registrationSaving||s.paymentState==="processing"||(!!s.mgrNotifOpen&&!!s.notificationLoading),
-      dataLoadingLabel:s.backupBusy?"Creating your backup...":s.backupLoading?"Loading backups...":s.purchaseLoading?"Loading purchase records...":"Loading your workspace data...",dataError:s.dataError,activePortalColor:activePortal.fg,activePortalBg:activePortal.bg,activePortalIcon:activePortal.icon,activePortalLabel:activePortal.label,activePortalDesc:activePortal.desc,backToPortalSelect:this.backToPortalSelect,
+      dataLoading:(s.pendingLoads||0)>0||(!!s.purchaseLoading&&["purchaseOrders","mgrRequest","mgrRequestView","mgrPurchaseHistory","mgrPO","mgrSupplier","admSuppliers","admPurchasedOrders","admForwarded","admDisapproved","admReceivingApprovals"].includes(s.screen))||!!s.supplierAccountsLoading||!!s.workflowLoading||!!s.inventoryHistoryLoading||!!s.reportLoading||!!s.loginPending||!!s.registrationSaving||s.paymentState==="processing"||(!!s.mgrNotifOpen&&!!s.notificationLoading),
+      dataLoadingLabel:s.purchaseLoading?"Loading purchase records...":"Loading your workspace data...",dataError:s.dataError,activePortalColor:activePortal.fg,activePortalBg:activePortal.bg,activePortalIcon:activePortal.icon,activePortalLabel:activePortal.label,activePortalDesc:activePortal.desc,backToPortalSelect:this.backToPortalSelect,
       showLogin,showOtp,showApp,loginUsername:s.loginUsername,onUsernameChange:this.onUsernameChange,loginPassword:s.loginPassword,onPasswordChange:this.onPasswordChange,
       otpEmail:s.otpEmail,otpCode:s.otpCode,onOtpChange:this.onOtpChange,verifyOtp:this.verifyOtp,backToPassword:this.backToPassword,
       loginIdentifierLabel:"Email",loginIdentifierPlaceholder:"name@example.com",showPasswordInput:true,

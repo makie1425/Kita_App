@@ -12,6 +12,7 @@ use Tests\TestCase;
 class PasswordSetupTest extends TestCase
 {
     use RefreshDatabase;
+    use \Tests\Concerns\UsesWorkspaceFixtures;
 
     public function test_setup_blocks_business_access_and_requires_a_new_password(): void
     {
@@ -53,6 +54,7 @@ class PasswordSetupTest extends TestCase
     {
         Mail::fake();
         $manager = User::factory()->create(['role' => 'manager']);
+        $this->assignWorkspace($manager);
         $this->actingAs($manager)->postJson('/api/accounts', ['first_name' => 'New', 'last_name' => 'Cashier', 'email' => 'new@example.com', 'role' => 'cashier'])->assertCreated()->assertJsonPath('account.must_change_password', true);
         $u = User::where('email', 'new@example.com')->firstOrFail();
         $this->assertSame('New Cashier', $u->name);

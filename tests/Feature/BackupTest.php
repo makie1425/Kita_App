@@ -42,14 +42,13 @@ class BackupTest extends TestCase
         }
     }
 
-    public function test_super_admin_can_create_list_and_download_encrypted_backup(): void
+    public function test_super_admin_cannot_export_database_wide_business_data(): void
     {
         $this->actingAs(User::factory()->create(['role' => 'superadmin']));
-        $id = $this->postJson('/api/backups')->assertCreated()->json('id');
-        $this->getJson('/api/backups')->assertOk()->assertJsonPath('backups.0.id', $id);
-        $this->get('/api/backups/'.$id.'/download')->assertDownload($id);
-        $this->assertStringNotContainsString('tables', File::get(app(DatabaseBackup::class)->path($id)));
-        $this->getJson('/api/backups/invalid/download')->assertNotFound();
+        $this->postJson('/api/backups')->assertForbidden();
+        $this->getJson('/api/backups')->assertForbidden();
+        $this->getJson('/api/backups/invalid/download')->assertForbidden();
+        $this->assertCount(0, app(DatabaseBackup::class)->history());
     }
 
     public function test_round_trip_restores_changed_and_deleted_records_and_creates_safety_backup(): void
@@ -154,7 +153,12 @@ class BackupTest extends TestCase
         $handle = fopen($backups->directory().'/.lock', 'c');
         flock($handle, LOCK_EX);
         try {
-            $this->postJson('/api/backups')->assertStatus(503);
+            try {
+                $backups->create();
+                $this->fail('Concurrent server backup was accepted.');
+            } catch (\RuntimeException $exception) {
+                $this->assertNotSame('', $exception->getMessage());
+            }
             $this->assertCount(0, $backups->history());
         } finally {
             flock($handle, LOCK_UN);

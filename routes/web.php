@@ -78,6 +78,8 @@ Route::post('/logout', [OtpLoginController::class, 'logout'])->middleware('auth'
 Route::post('/manager/approval-pin', [ManagerPinController::class, 'store'])->middleware(['role:manager', 'throttle:5,1']);
 
 Route::get('/api/super-admin/dashboard', SuperAdminDashboardController::class)->middleware('role:super_admin');
+Route::get('/api/super-admin/errors/{id}', [SuperAdminDashboardController::class, 'detail'])->whereNumber('id')->middleware('role:super_admin');
+Route::patch('/api/super-admin/errors/{id}', [SuperAdminDashboardController::class, 'update'])->whereNumber('id')->middleware(['role:super_admin','throttle:30,1']);
 
 Route::middleware('role:manager,admin')->group(function () {
     Route::get('/api/purchasing', [PurchasingController::class, 'index']);

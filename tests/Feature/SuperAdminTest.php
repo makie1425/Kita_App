@@ -11,6 +11,7 @@ use Tests\TestCase;
 class SuperAdminTest extends TestCase
 {
     use RefreshDatabase;
+    use \Tests\Concerns\UsesWorkspaceFixtures;
 
     public function test_inactive_credentials_have_exact_message_without_disclosing_status_for_wrong_password(): void
     {
@@ -44,18 +45,19 @@ class SuperAdminTest extends TestCase
     public function test_super_admin_can_change_status_but_cannot_delete_accounts_or_deactivate_self(): void
     {
         $super = User::factory()->create(['role' => 'superadmin']);
-        $user = User::factory()->create(['role' => 'cashier', 'password' => 'secret123']);
-        $url = '/api/accounts/cashier/'.$user->id;
+        $user = User::factory()->create(['role' => 'admin', 'password' => 'secret123']);
+        $this->assignWorkspace(User::factory()->create(['role'=>'manager']), $super, $user);
+        $url = '/api/accounts/admin/'.$user->id;
         $this->actingAs($super)->patchJson($url, ['status' => 'Inactive'])->assertOk()->assertJsonPath('account.status', 'Inactive');
         $this->assertDatabaseHas('users', ['id' => $user->id, 'status' => 'Inactive']);
         $this->deleteJson($url)->assertStatus(405);
         $this->deleteJson('/api/accounts/superadmin/'.$super->id)->assertStatus(405);
-        $this->patchJson('/api/accounts/superadmin/'.$super->id, ['status' => 'Inactive'])->assertUnprocessable();
+        $this->patchJson('/api/accounts/superadmin/'.$super->id, ['status' => 'Inactive'])->assertForbidden();
         $this->patchJson($url, ['status' => 'invalid'])->assertUnprocessable();
         $this->patchJson($url, ['status' => 'Active'])->assertOk()->assertJsonPath('account.status', 'Active');
         $this->postJson('/logout')->assertOk();
         $this->postJson('/login', ['email' => $user->email, 'password' => 'secret123'])->assertOk();
-        $this->assertAuthenticatedAs($user);
+        $this->assertGuest(); // Password authentication still requires the email OTP.
     }
 
     public function test_revoked_session_is_logged_out_for_api_and_page_requests(): void
@@ -69,49 +71,30 @@ class SuperAdminTest extends TestCase
         $this->assertGuest();
     }
 
-    public function test_dashboard_counts_database_records_and_averages_seven_complete_days(): void
-    {
-        $this->travelTo(now()->setDate(2026, 9, 24)->setTime(12, 0));
-        $super = User::factory()->create(['role' => 'superadmin']);
-        User::factory()->create(['status' => 'Inactive']);
-        foreach ([now()->subDay(), now()->subDays(7), now(), now()->subDays(8)] as $date) {
-            DB::table('audit_logs')->insert(['ts' => $date, 'user' => 'Recorded actor', 'action' => 'Updated account', 'record' => 'Account']);
-        }
-        $response = $this->actingAs($super)->getJson('/api/super-admin/dashboard')->assertOk()
-            ->assertJsonPath('total_users', 2)->assertJsonPath('active_users', 1)->assertJsonPath('inactive_users', 1)
-            ->assertJsonPath('average_daily_events', 0.29)->assertJsonCount(7, 'activity_days')->assertJsonCount(4, 'recent_activity');
-        $this->assertGreaterThan(0, $response->json('database_response_ms'));
-        $this->assertGreaterThan(0, $response->json('generation_ms'));
-        $this->assertSame(2, array_sum(array_column($response->json('activity_days'), 'events')));
-    }
-
-    public function test_dashboard_is_restricted_and_empty_activity_is_real_zero(): void
+    public function test_dashboard_exposes_operations_only_and_requires_privileged_role(): void
     {
         $this->getJson('/api/super-admin/dashboard')->assertUnauthorized();
         foreach (['cashier', 'manager', 'admin'] as $role) {
             $this->actingAs(User::factory()->create(['role' => $role]))->getJson('/api/super-admin/dashboard')->assertForbidden();
         }
-        $this->actingAs(User::factory()->create(['role' => 'superadmin']))->getJson('/api/super-admin/dashboard')
-            ->assertOk()->assertJsonPath('average_daily_events', 0)->assertJsonCount(0, 'recent_activity');
+        $response = $this->actingAs(User::factory()->create(['role' => 'superadmin']))->getJson('/api/super-admin/dashboard')->assertOk();
+        foreach (['total_users','average_daily_events','activity_days','recent_activity','database_response_ms','generation_ms'] as $removed) {
+            $this->assertArrayNotHasKey($removed, $response->json());
+        }
+        $response->assertJsonPath('availability', null)->assertJsonCount(0, 'errors');
     }
 
     public function test_accounts_show_retained_otp_login_time_without_exposing_otp_secrets(): void
     {
-        $user = User::factory()->create(['role' => 'superadmin', 'password' => 'secret123']);
+        $user = User::factory()->create(['role' => 'admin', 'password' => 'secret123']);
+        $super = User::factory()->create(['role' => 'superadmin']);
+        $this->assignWorkspace(User::factory()->create(['role'=>'manager']), $super, $user);
         $otp = $this->postJson('/login', ['email' => $user->email, 'password' => 'secret123'])->assertOk()->json('test_otp');
         $this->postJson('/otp/verify', ['email' => $user->email, 'otp' => $otp])->assertOk();
-        $response = $this->getJson('/api/accounts')->assertOk();
+        $response = $this->actingAs($super)->getJson('/api/accounts')->assertOk();
         $this->assertNotNull($response->json('accounts.0.lastOtpLogin'));
         $this->assertArrayNotHasKey('password', $response->json('accounts.0'));
         $this->assertArrayNotHasKey('otp_hash', $response->json('accounts.0'));
     }
 
-    public function test_dashboard_query_failure_returns_unavailable_not_fake_metrics(): void
-    {
-        $this->actingAs(User::factory()->create(['role' => 'superadmin']));
-        DB::shouldReceive('select')->once()->with('SELECT 1')->andThrow(new \RuntimeException('Probe failed'));
-        $response = $this->getJson('/api/super-admin/dashboard')->assertStatus(503)
-            ->assertJsonPath('message', 'Unable to retrieve system performance information.');
-        $this->assertArrayNotHasKey('database_response_ms', $response->json());
-    }
 }

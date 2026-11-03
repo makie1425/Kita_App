@@ -11,11 +11,15 @@ use Tests\TestCase;
 class RetailSubcategoriesTest extends TestCase
 {
     use RefreshDatabase;
+    use \Tests\Concerns\UsesWorkspaceFixtures;
+
+    protected function setUp(): void {
+        parent::setUp();$manager=User::factory()->create(['role'=>'manager']);$this->assignWorkspace($manager);$this->actingAs($manager);
+    }
 
     public function test_manager_can_populate_from_the_screen_without_duplicates(): void
     {
-        DB::table('categories')->insert(['name' => 'Beverages', 'status' => 'Active']);
-        $this->actingAs(User::factory()->create(['role' => 'manager', 'status' => 'Active']));
+        $this->insertFixture('categories', ['name' => 'Beverages', 'status' => 'Active']);
         $catalog = require database_path('seeders/data/subcategories.php');
         $this->postJson('/api/product-master/subcategories/populate')->assertOk()->assertJsonPath('added', count($catalog['Beverages']));
         $this->postJson('/api/product-master/subcategories/populate')->assertOk()->assertJsonPath('added', 0);
@@ -32,10 +36,10 @@ class RetailSubcategoriesTest extends TestCase
     {
         $catalog = require database_path('seeders/data/subcategories.php');
         foreach (array_keys($catalog) as $category) {
-            DB::table('categories')->insert(['name' => $category, 'status' => 'Active']);
+            $this->insertFixture('categories', ['name' => $category, 'status' => 'Active']);
         }
-        $id = DB::table('subcategories')->insertGetId(['category' => 'Beverages', 'name' => 'juice', 'status' => 'Inactive']);
-        DB::table('subcategories')->insert(['category' => 'Appliances', 'name' => 'Custom Equipment', 'status' => 'Active']);
+        $id = DB::table('subcategories')->insertGetId(['category' => 'Beverages', 'name' => 'juice', 'status' => 'Inactive', 'workspace_id'=>$this->fixtureWorkspace]);
+        $this->insertFixture('subcategories', ['category' => 'Appliances', 'name' => 'Custom Equipment', 'status' => 'Active']);
         $this->seed(RetailSubcategorySeeder::class);
         $this->seed(RetailSubcategorySeeder::class);
         foreach ($catalog as $category => $names) {
@@ -47,7 +51,7 @@ class RetailSubcategoriesTest extends TestCase
 
     public function test_only_existing_categories_are_populated_using_their_actual_names(): void
     {
-        DB::table('categories')->insert(['name' => ' beverages ', 'status' => 'Active']);
+        $this->insertFixture('categories', ['name' => ' beverages ', 'status' => 'Active']);
         $this->seed(RetailSubcategorySeeder::class);
         $this->assertDatabaseCount('categories', 1);
         $this->assertDatabaseHas('subcategories', ['category' => ' beverages ', 'name' => 'Juice']);

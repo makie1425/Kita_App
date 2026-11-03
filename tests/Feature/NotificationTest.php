@@ -11,11 +11,13 @@ use Tests\TestCase;
 class NotificationTest extends TestCase
 {
     use RefreshDatabase;
+    use \Tests\Concerns\UsesWorkspaceFixtures;
 
     public function test_notifications_and_read_state_are_private_and_persistent(): void
     {
         $manager = User::factory()->create(['role' => 'manager']);
-        $other = User::factory()->create(['role' => 'manager']);
+        $other = User::factory()->create(['role' => 'admin']);
+        $this->assignWorkspace($manager, $other);
         WorkflowNotifications::send([$manager, $manager], $other, 'Approved', 'PO 1 approved.', 'purchase', '1');
         $this->assertDatabaseCount('notifications', 1);
         $id = DB::table('notifications')->value('id');
@@ -32,6 +34,7 @@ class NotificationTest extends TestCase
     public function test_failed_transaction_does_not_send_notifications_and_unassigned_legacy_rows_are_private(): void
     {
         $user = User::factory()->create(['role' => 'manager']);
+        $this->assignWorkspace($user);
         try {
             DB::transaction(function () use ($user) {
                 WorkflowNotifications::send([$user], $user, 'Saved', 'Should roll back', 'activity');
@@ -49,6 +52,7 @@ class NotificationTest extends TestCase
     {
         $user = User::factory()->create(['role' => 'admin']);
         $other = User::factory()->create(['role' => 'manager']);
+        $this->assignWorkspace($other, $user);
         for ($i = 0; $i < 52; $i++) {
             WorkflowNotifications::send([$user], $other, 'Action', 'Saved '.$i, 'activity');
         }

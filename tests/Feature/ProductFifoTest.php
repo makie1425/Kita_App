@@ -13,6 +13,7 @@ use Tests\TestCase;
 class ProductFifoTest extends TestCase
 {
     use RefreshDatabase;
+    use \Tests\Concerns\UsesWorkspaceFixtures;
 
     private User $manager;
 
@@ -27,6 +28,7 @@ class ProductFifoTest extends TestCase
         parent::setUp();
         $this->manager = User::factory()->create(['role' => 'manager']);
         $this->admin = User::factory()->create(['role' => 'admin']);
+        $this->assignWorkspace($this->manager, $this->admin);
         $this->actingAs($this->manager);
         $this->postJson('/api/categories', ['name' => 'Beverages', 'classification' => 'Non-Perishable'])->assertCreated();
         $brand = $this->postJson('/api/product-master/brands', ['name' => 'Coca-Cola', 'status' => 'Active'])->assertOk()->json('record.id');
@@ -83,7 +85,7 @@ class ProductFifoTest extends TestCase
     public function test_inventory_ledger_exposes_its_limit_instead_of_silently_truncating(): void
     {
         $rows = array_fill(0, 501, ['productId'=>$this->product, 'quantityChange'=>0, 'quantityBefore'=>0, 'quantityAfter'=>0, 'referenceType'=>'recall', 'referenceId'=>'TEST-RECALL', 'created_at'=>now()]);
-        DB::table('stock_movements')->insert($rows);
+        $this->insertFixture('stock_movements', $rows);
         $this->getJson('/api/inventory-history')->assertOk()->assertJsonPath('movementCount', 501)->assertJsonPath('movementLimit', 500)->assertJsonCount(500, 'movements');
     }
 
@@ -131,6 +133,7 @@ class ProductFifoTest extends TestCase
         $this->assertSame([30, 40, 20, 10], DB::table('inventory_allocations')->orderBy('id')->pluck('unitCost')->map(fn ($cost) => (int) $cost)->all());
         $this->assertDatabaseHas('inventory_batches', ['batchNumber' => 'Undated oldest', 'quantityRemaining' => 1]);
         $this->assertDatabaseHas('inventory_batches', ['batchNumber' => 'Undated newest', 'quantityRemaining' => 3]);
+        $this->insertFixture('transactions', ['uuid' => 'FEFO-SALE', 'status' => 'Unused']);
         DB::transaction(fn () => FifoInventory::returnStock($this->product, 4, 'FEFO-SALE'));
         $this->assertDatabaseHas('inventory_batches', ['batchNumber' => 'First expiry older', 'quantityRemaining' => 3]);
         $this->assertDatabaseHas('inventory_batches', ['batchNumber' => 'First expiry newer', 'quantityRemaining' => 1]);
@@ -163,15 +166,12 @@ class ProductFifoTest extends TestCase
         $this->assertDatabaseHas('products', ['id' => $this->product, 'stock' => 2, 'unitPrice' => 55]);
         $payload['lines'][0]['sellingPrice'] = 85;
         $this->postJson('/api/purchase-orders/'.$id.'/receive', $payload)->assertUnprocessable();
-        $this->postJson('/api/purchase-orders/'.$id.'/budget-requests', ['requestKey'=>(string)Str::uuid(),'version'=>0,'amount'=>15,'reason'=>'Supplier price increased from 55 to 60'])->assertCreated();
-        $approval=DB::table('purchase_budget_requests')->where('poId',$id)->value('id');
-        $this->actingAs($this->admin)->patchJson('/api/purchase-budget-requests/'.$approval,['action'=>'Approved'])->assertOk();
-        $this->actingAs($this->manager);
-        $payload['version']=1;
+        $this->postJson('/api/purchase-orders/'.$id.'/budget-requests', ['requestKey'=>(string)Str::uuid(),'version'=>0,'amount'=>15,'reason'=>'Supplier price increased from 55 to 60'])->assertUnprocessable();
+        $payload['lines'][0]['unitCost']=50;
         $this->postJson('/api/purchase-orders/'.$id.'/receive', $payload)->assertCreated();
-        $this->assertDatabaseHas('products', ['id' => $this->product, 'stock' => 5, 'unitPrice' => 60, 'price' => 85]);
+        $this->assertDatabaseHas('products', ['id' => $this->product, 'stock' => 5, 'unitPrice' => 50, 'price' => 85]);
         $this->assertDatabaseHas('inventory_batches', ['productId' => $this->product, 'unitCost' => 55, 'quantityRemaining' => 2]);
-        $this->assertDatabaseHas('inventory_batches', ['productId' => $this->product, 'unitCost' => 60, 'quantityRemaining' => 3]);
+        $this->assertDatabaseHas('inventory_batches', ['productId' => $this->product, 'unitCost' => 50, 'quantityRemaining' => 3]);
         $this->assertDatabaseHas('audit_logs', ['action' => 'Prices set on receipt', 'record' => (string) $this->product]);
         DB::table('products')->where('id', $this->product)->update(['price' => 90]);
         $this->postJson('/api/purchase-orders/'.$id.'/receive', $payload)->assertOk();
@@ -197,6 +197,7 @@ class ProductFifoTest extends TestCase
 
     public function test_reservation_release_restores_original_costs_and_order(): void
     {
+        $this->insertFixture('transactions', ['uuid' => 'RESERVE', 'status' => 'Pending Payment']);
         $this->receive(20, 55);
         $this->receive(10, 60);
         DB::transaction(function () {
@@ -219,6 +220,7 @@ class ProductFifoTest extends TestCase
 
     public function test_unrestocked_refund_does_not_restore_wrong_cost_on_next_return(): void
     {
+        $this->insertFixture('transactions', ['uuid' => 'RETURN', 'status' => 'Unused']);
         $this->receive(2, 55);
         $this->receive(2, 60);
         DB::transaction(function () {

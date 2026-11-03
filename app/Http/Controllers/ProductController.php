@@ -53,6 +53,11 @@ class ProductController extends Controller
     {
         InventoryRules::authorize($request);
         abort_unless(ctype_digit($id), 404, 'Product not found.');
+        $current = \App\Services\WorkspaceRead::table('products')->where('id', $id)->first();
+        abort_unless($current, 404, 'Product not found.');
+        foreach (['manufacturer', 'brandId', 'subcategoryId', 'size', 'sizeUnit', 'minStock'] as $field) {
+            if (! $request->exists($field)) $request->merge([$field => $current->{$field}]);
+        }
         $validated = $this->validateProduct($request, (int) $id);
         try {
             $product = DB::transaction(function () use ($validated, $id, $request): object {

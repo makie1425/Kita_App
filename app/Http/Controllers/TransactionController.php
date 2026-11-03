@@ -80,7 +80,8 @@ class TransactionController extends Controller
         ]);
         $manager = ManagerApproval::verify($request, $data['manager_id'], $data['manager_pin']);
         if (config('workspaces.enabled')) {
-            abort_unless(WorkspaceRead::table('users')->where('id', $manager->id)->where('role', $manager->role)->exists(), 403);
+            // Approval eligibility is an ownership relationship, not visibility in the cashier's user list.
+            abort_unless(WorkspaceRead::forUser($manager) === WorkspaceRead::id(), 403);
         }
 
         return DB::transaction(function () use ($data, $uuid, $manager, $request) {

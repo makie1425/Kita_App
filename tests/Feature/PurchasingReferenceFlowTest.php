@@ -11,6 +11,7 @@ use Tests\TestCase;
 class PurchasingReferenceFlowTest extends TestCase
 {
     use RefreshDatabase;
+    use \Tests\Concerns\UsesWorkspaceFixtures;
 
     private User $manager;
     private User $admin;
@@ -23,10 +24,11 @@ class PurchasingReferenceFlowTest extends TestCase
         parent::setUp();
         $this->manager=User::factory()->create(['role'=>'manager','name'=>'Receiving Manager']);
         $this->admin=User::factory()->create(['role'=>'admin','name'=>'Admin']);
+        $this->assignWorkspace($this->manager, $this->admin);
         $this->actingAs($this->manager);
         $this->supplier=$this->postJson('/api/suppliers',['name'=>'Water Supplier'])->assertCreated()->json('supplier.id');
         $this->postJson('/api/categories',['name'=>'Supplies','classification'=>'Non-Perishable'])->assertCreated();
-        $this->product=$this->postJson('/api/products',['name'=>'Water','category'=>'Supplies','barcode'=>'WATER','stock'=>0,'unitPrice'=>20,'price'=>30,'purchaseUnit'=>'Piece','stockUnit'=>'Piece','conversionFactor'=>1,'supplierId'=>$this->supplier])->assertCreated()->json('product.id');
+        $this->product=$this->postJson('/api/products',['name'=>'Water','category'=>'Supplies','barcode'=>'WATER','stock'=>0,'unitPrice'=>20,'price'=>30,'purchaseUnit'=>'Piece','stockUnit'=>'Piece','conversionFactor'=>1,'supplierId'=>$this->supplier]+$this->catalogFields('Supplies'))->assertCreated()->json('product.id');
         $this->po=$this->postJson('/api/purchase-requests',['category'=>'Supplies','expectedDeliveryDate'=>now()->addDay()->toDateString(),'lines'=>[['productId'=>$this->product,'supplierId'=>$this->supplier,'qty'=>100]]])->assertCreated()->json('id');
         $this->actingAs($this->admin)->patchJson('/api/purchase-requests/'.$this->po,['action'=>'approved'])->assertOk();
     }

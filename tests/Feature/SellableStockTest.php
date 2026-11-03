@@ -15,6 +15,7 @@ use Tests\TestCase;
 class SellableStockTest extends TestCase
 {
     use RefreshDatabase;
+    use \Tests\Concerns\UsesWorkspaceFixtures;
 
     private User $manager;
 
@@ -26,9 +27,10 @@ class SellableStockTest extends TestCase
         $this->travelTo(Carbon::parse('2026-10-13 12:00:00'));
         $this->manager = User::factory()->create(['role' => 'manager', 'approval_pin' => Hash::make('1234')]);
         $this->cashier = User::factory()->create(['role' => 'cashier']);
+        $this->assignWorkspace($this->manager, $this->cashier);
         $this->actingAs($this->manager);
-        DB::table('categories')->insert(['name' => 'Food', 'status' => 'Active']);
-        DB::table('products')->insert(['id' => 1, 'name' => 'Milk', 'category' => 'Food', 'status' => 'Active', 'stock' => 0, 'price' => 20, 'unitPrice' => 10]);
+        $this->insertFixture('categories', ['name' => 'Food', 'status' => 'Active']);
+        $this->insertFixture('products', ['id' => 1, 'name' => 'Milk', 'category' => 'Food', 'status' => 'Active', 'stock' => 0, 'price' => 20, 'unitPrice' => 10]);
         Http::preventStrayRequests();
     }
 

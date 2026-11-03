@@ -156,6 +156,8 @@ class PurchasingController extends Controller
                     $actualCost = $line['unitCost'] ?? $product->unitPrice;
                     if ($product->id == $ordered->productId || empty($line['substitutionReason'])
                         || $line['qty'] > ReceivingCarryover::remaining($ordered)
+                        || (int) round((float) $actualCost * 100) > $limit
+                        || (int) round((float) $product->unitPrice * 100) > $limit
 ) {
                         throw ValidationException::withMessages(['lines' => 'Select an equal-or-lower-cost replacement, provide its missing/damaged reason, and receive only the outstanding quantity.']);
                     }

@@ -12,6 +12,7 @@ use Tests\TestCase;
 class CheckoutStockTest extends TestCase
 {
     use RefreshDatabase;
+    use \Tests\Concerns\UsesWorkspaceFixtures;
 
     protected User $cashier;
 
@@ -22,8 +23,9 @@ class CheckoutStockTest extends TestCase
         parent::setUp();
         $this->cashier = User::factory()->create(['role' => 'cashier']);
         $this->manager = User::factory()->create(['role' => 'manager', 'approval_pin' => Hash::make('1234')]);
-        DB::table('categories')->insert(['name' => 'Medical', 'status' => 'Active']);
-        DB::table('products')->insert(['id' => 1, 'name' => 'Mask', 'stock' => 5, 'status' => 'Active', 'price' => 10, 'unitPrice' => 5, 'cost' => 25, 'category' => 'Medical', 'vatClass' => 'VATable']);
+        $this->assignWorkspace($this->manager, $this->cashier);
+        $this->insertFixture('categories', ['name' => 'Medical', 'status' => 'Active']);
+        $this->insertFixture('products', ['id' => 1, 'name' => 'Mask', 'stock' => 5, 'status' => 'Active', 'price' => 10, 'unitPrice' => 5, 'cost' => 25, 'category' => 'Medical', 'vatClass' => 'VATable']);
         $this->actingAs($this->cashier);
         Http::preventStrayRequests();
     }
@@ -71,7 +73,7 @@ class CheckoutStockTest extends TestCase
 
     public function test_cart_failure_rolls_back_all_items_and_insufficient_tender_fails(): void
     {
-        DB::table('products')->insert(['id' => 2, 'name' => 'Gloves', 'stock' => 1, 'status' => 'Active', 'price' => 20, 'category' => 'Medical']);
+        $this->insertFixture('products', ['id' => 2, 'name' => 'Gloves', 'stock' => 1, 'status' => 'Active', 'price' => 20, 'category' => 'Medical']);
         $body = $this->sale(2);
         $body['items'][] = ['productId' => 2, 'qty' => 2];
         $this->postJson('/api/transactions', $body)->assertUnprocessable();
@@ -119,8 +121,8 @@ class CheckoutStockTest extends TestCase
     public function test_exchange_rejects_unavailable_replacement_and_preserves_original_sale(): void
     {
         $this->postJson('/api/transactions', $this->sale())->assertCreated();
-        DB::table('categories')->insert(['name' => 'Replacement category', 'status' => 'Inactive']);
-        DB::table('products')->insert(['id' => 2, 'name' => 'Replacement', 'stock' => 3, 'status' => 'Active', 'price' => 10, 'category' => 'Replacement category']);
+        $this->insertFixture('categories', ['name' => 'Replacement category', 'status' => 'Inactive']);
+        $this->insertFixture('products', ['id' => 2, 'name' => 'Replacement', 'stock' => 3, 'status' => 'Active', 'price' => 10, 'category' => 'Replacement category']);
         $body = $this->approval('exchange') + ['replacement_product_id' => 2];
         $this->patchJson('/api/transactions/TXN-test', $body)->assertUnprocessable()->assertJsonValidationErrors('replacement_product_id');
         DB::table('categories')->where('name', 'Replacement category')->update(['status' => 'Active', 'archivedAt' => now()->toDateString()]);
@@ -148,9 +150,9 @@ class CheckoutStockTest extends TestCase
         $this->postJson('/api/transactions', $this->sale())->assertCreated();
         DB::table('transactions')->where('uuid', 'TXN-test')->update(['status' => 'Pending Payment', 'paymentMode' => 'GCash', 'checkoutUrl' => 'https://checkout.paymongo.com/session']);
         $this->getJson('/api/transactions/TXN-test')->assertOk()->assertJsonPath('checkoutUrl', 'https://checkout.paymongo.com/session');
-        $other = User::factory()->create(['role' => 'cashier']);
-        $this->actingAs($other)->getJson('/api/transactions/TXN-test')->assertForbidden();
-        $this->actingAs($other)->postJson('/api/payments/paymongo/TXN-test/cancel')->assertForbidden();
+        $other = $this->assignMember(User::factory()->create(['role' => 'cashier']));
+        $this->actingAs($other)->getJson('/api/transactions/TXN-test')->assertNotFound();
+        $this->actingAs($other)->postJson('/api/payments/paymongo/TXN-test/cancel')->assertNotFound();
         DB::table('transactions')->where('uuid', 'TXN-test')->update(['status' => 'Paid']);
         $this->actingAs($this->cashier)->getJson('/api/transactions/TXN-test')->assertOk()->assertJsonPath('checkoutUrl', null);
     }
@@ -204,6 +206,7 @@ class CheckoutStockTest extends TestCase
 
     public function test_pin_is_rate_limited_and_cashier_cannot_approve(): void
     {
+        $this->postJson('/api/transactions', $this->sale())->assertCreated();
         $body = $this->approval();
         $body['manager_id'] = $this->cashier->id;
         for ($i = 0; $i < 5; $i++) {
@@ -295,7 +298,7 @@ class CheckoutStockTest extends TestCase
 
     public function test_legacy_transaction_without_lines_cannot_invent_a_refund(): void
     {
-        DB::table('transactions')->insert(['uuid' => 'TXN-legacy', 'status' => 'Unused', 'paymentMode' => 'Cash', 'total' => 100, 'paid' => 100]);
+        $this->insertFixture('transactions', ['uuid' => 'TXN-legacy', 'status' => 'Unused', 'paymentMode' => 'Cash', 'total' => 100, 'paid' => 100, 'cashierId' => $this->cashier->id, 'cashierRole' => 'cashier']);
         $this->patchJson('/api/transactions/TXN-legacy', $this->approval())->assertUnprocessable();
         $this->assertDatabaseCount('transaction_approvals', 0);
         $this->assertDatabaseHas('products', ['id' => 1, 'stock' => 5]);

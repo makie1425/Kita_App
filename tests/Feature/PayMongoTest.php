@@ -12,15 +12,18 @@ use Tests\TestCase;
 class PayMongoTest extends TestCase
 {
     use RefreshDatabase;
+    use \Tests\Concerns\UsesWorkspaceFixtures;
 
     protected function setUp(): void
     {
         parent::setUp();
         config(['services.paymongo.secret' => 'sk_test_example', 'services.paymongo.webhook_secret' => 'signing-secret']);
         Http::preventStrayRequests();
-        $this->actingAs(User::factory()->create(['role' => 'cashier']));
-        DB::table('categories')->insert(['name' => 'Medical', 'status' => 'Active']);
-        DB::table('products')->insert(['id' => 1, 'name' => 'Mask', 'stock' => 5, 'status' => 'Active', 'price' => 100, 'category' => 'Medical']);
+        $cashier = User::factory()->create(['role' => 'cashier']);
+        $this->assignWorkspace(User::factory()->create(['role' => 'manager']), $cashier);
+        $this->actingAs($cashier);
+        $this->insertFixture('categories', ['name' => 'Medical', 'status' => 'Active']);
+        $this->insertFixture('products', ['id' => 1, 'name' => 'Mask', 'stock' => 5, 'status' => 'Active', 'price' => 100, 'category' => 'Medical']);
     }
 
     public function test_removed_wallets_are_rejected_without_reserving_stock(): void

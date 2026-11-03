@@ -17,6 +17,7 @@ class EvaluationWorkflowTest extends TestCase
 
     private User $manager;
     private User $cashier;
+    private int $workspace;
 
     protected function setUp(): void
     {
@@ -24,8 +25,15 @@ class EvaluationWorkflowTest extends TestCase
         $this->travelTo(\Carbon\Carbon::parse('2026-10-12 10:00:00'));
         $this->manager = User::factory()->create(['role' => 'manager', 'approval_pin' => Hash::make('1234')]);
         $this->cashier = User::factory()->create(['role' => 'cashier']);
-        DB::table('categories')->insert(['name' => 'Food', 'status' => 'Active']);
-        DB::table('products')->insert(['id' => 1, 'name' => 'Milk', 'stock' => 0, 'status' => 'Active', 'category' => 'Food', 'price' => 10, 'unitPrice' => 5]);
+        $organization = DB::table('organizations')->insertGetId(['name' => 'Workflow test']);
+        $this->workspace = DB::table('workspaces')->insertGetId(['organization_id' => $organization, 'name' => 'Manager workspace']);
+        foreach ([$this->manager, $this->cashier] as $user) {
+            $user->forceFill(['workspace_id' => $this->workspace])->save();
+            DB::table('workspace_memberships')->insert(['workspace_id' => $this->workspace, 'user_id' => $user->id, 'user_role' => $user->role, 'active' => true, 'can_manage_accounts' => $user->role === 'manager']);
+        }
+        $this->cashier->forceFill(['assigned_manager_id' => $this->manager->id, 'assigned_manager_role' => 'manager'])->save();
+        DB::table('categories')->insert(['name' => 'Food', 'status' => 'Active', 'workspace_id' => $this->workspace]);
+        DB::table('products')->insert(['id' => 1, 'name' => 'Milk', 'stock' => 0, 'status' => 'Active', 'category' => 'Food', 'price' => 10, 'unitPrice' => 5, 'workspace_id' => $this->workspace]);
         $this->actingAs($this->cashier);
     }
 
@@ -80,6 +88,7 @@ class EvaluationWorkflowTest extends TestCase
         $this->travelBack();
         $this->travelTo(\Carbon\Carbon::parse('2026-10-12 10:00:00'));
         DB::transaction(function () {
+            DB::table('transactions')->insert(['uuid' => 'RESERVED', 'status' => 'Pending Payment', 'workspace_id' => $this->workspace, 'cashierId' => $this->cashier->id, 'cashierRole' => 'cashier']);
             DB::table('products')->where('id', 1)->update(['stock' => 0]);
             StockMovement::record(1, 1, 0, 'payment_reservation', 'RESERVED', $this->cashier);
         });
@@ -110,7 +119,7 @@ class EvaluationWorkflowTest extends TestCase
     public function test_higher_value_exchange_collects_difference_and_creates_a_refundable_replacement_sale(): void
     {
         $this->batch(2, null);
-        DB::table('products')->insert(['id' => 2, 'name' => 'Replacement', 'stock' => 2, 'status' => 'Active', 'category' => 'Food', 'price' => 15, 'unitPrice' => 8]);
+        DB::table('products')->insert(['id' => 2, 'name' => 'Replacement', 'stock' => 2, 'status' => 'Active', 'category' => 'Food', 'price' => 15, 'unitPrice' => 8, 'workspace_id' => $this->workspace]);
         $this->postJson('/api/transactions', $this->sale())->assertCreated();
         $body = $this->approval('exchange') + ['replacement_product_id' => 2, 'exchange_tendered' => 4];
         $this->patchJson('/api/transactions/SALE', $body)->assertUnprocessable()->assertJsonValidationErrors('exchange_tendered');
@@ -131,7 +140,7 @@ class EvaluationWorkflowTest extends TestCase
     public function test_exchange_rejects_lower_value_wallet_and_expired_replacements_atomically(): void
     {
         $this->batch(1, null);
-        DB::table('products')->insert(['id' => 2, 'name' => 'Replacement', 'stock' => 2, 'status' => 'Active', 'category' => 'Food', 'price' => 9, 'unitPrice' => 8, 'expiry' => '2026-10-11']);
+        DB::table('products')->insert(['id' => 2, 'name' => 'Replacement', 'stock' => 2, 'status' => 'Active', 'category' => 'Food', 'price' => 9, 'unitPrice' => 8, 'expiry' => '2026-10-11', 'workspace_id' => $this->workspace]);
         $this->postJson('/api/transactions', $this->sale())->assertCreated();
         $body = $this->approval('exchange') + ['replacement_product_id' => 2];
         $this->patchJson('/api/transactions/SALE', $body)->assertUnprocessable();

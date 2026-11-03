@@ -10,12 +10,16 @@ use Tests\TestCase;
 class RetailBrandsTest extends TestCase
 {
     use RefreshDatabase;
+    use \Tests\Concerns\UsesWorkspaceFixtures;
+
+    protected function setUp(): void {
+        parent::setUp();$manager=User::factory()->create(['role'=>'manager']);$this->assignWorkspace($manager);$this->actingAs($manager);
+    }
 
     public function test_import_populates_brands_and_preserves_existing_entries(): void
     {
-        $id = DB::table('brands')->insertGetId(['name' => ' myphone ', 'status' => 'Inactive']);
-        DB::table('brands')->insert(['name' => 'Local Store Brand', 'status' => 'Active']);
-        $this->actingAs(User::factory()->create(['role' => 'manager', 'status' => 'Active']));
+        $id = DB::table('brands')->insertGetId(['name' => ' myphone ', 'status' => 'Inactive', 'workspace_id'=>$this->fixtureWorkspace]);
+        $this->insertFixture('brands', ['name' => 'Local Store Brand', 'status' => 'Active']);
         $names = require database_path('seeders/data/brands.php');
         $this->postJson('/api/product-master/brands/populate')->assertOk()->assertJsonPath('added', count(array_unique($names)) - 1);
         $this->postJson('/api/product-master/brands/populate')->assertOk()->assertJsonPath('added', 0);
@@ -34,7 +38,7 @@ class RetailBrandsTest extends TestCase
 
     public function test_upgrade_populates_existing_store_without_duplicate_brands(): void
     {
-        DB::table('categories')->insert(['name' => 'Beverages', 'status' => 'Active']);
+        $this->insertFixture('categories', ['name' => 'Beverages', 'status' => 'Active']);
         $migration = require database_path('migrations/2026_10_06_000003_add_retail_brands.php');
         $migration->up();
         $count = DB::table('brands')->count();

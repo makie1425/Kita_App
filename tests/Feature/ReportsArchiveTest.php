@@ -8,19 +8,20 @@ use Tests\TestCase;
 class ReportsArchiveTest extends TestCase
 {
  use RefreshDatabase;
+ use \Tests\Concerns\UsesWorkspaceFixtures;
  protected function setUp(): void {
-  parent::setUp();$this->actingAs(User::factory()->create(['role'=>'manager']));
-  DB::table('categories')->insert(['name'=>'Drinks','status'=>'Active']);
-  DB::table('suppliers')->insert(['id'=>1,'name'=>'Supplier','status'=>'Active']);
-  DB::table('brands')->insert(['id'=>1,'name'=>'Brand']);
-  DB::table('subcategories')->insert(['id'=>1,'name'=>'Soda','category'=>'Drinks']);
-  DB::table('products')->insert(['id'=>1,'name'=>'Coke','category'=>'Drinks','brandId'=>1,'subcategoryId'=>1,'supplierId'=>1,'stock'=>0,'status'=>'Active']);
-  DB::table('item_requests')->insert(['id'=>'REQ1','requestedBy'=>'Manager']);
-  DB::table('purchase_orders')->insert(['id'=>'PO1','itemRequestId'=>'REQ1','supplierId'=>1,'supplierName'=>'Supplier','created'=>'2026-10-27','status'=>'Partially Received']);
-  DB::table('purchase_order_lines')->insert(['poId'=>'PO1','productId'=>1,'category'=>'Drinks','name'=>'Coke','orderedQty'=>10,'deliveredQty'=>4,'unitCost'=>5]);
+  parent::setUp();$manager=User::factory()->create(['role'=>'manager']);$this->assignWorkspace($manager);$this->actingAs($manager);
+  $this->insertFixture('categories', ['name'=>'Drinks','status'=>'Active']);
+  $this->insertFixture('suppliers', ['id'=>1,'name'=>'Supplier','status'=>'Active']);
+  $this->insertFixture('brands', ['id'=>1,'name'=>'Brand']);
+  $this->insertFixture('subcategories', ['id'=>1,'name'=>'Soda','category'=>'Drinks']);
+  $this->insertFixture('products', ['id'=>1,'name'=>'Coke','category'=>'Drinks','brandId'=>1,'subcategoryId'=>1,'supplierId'=>1,'stock'=>0,'status'=>'Active']);
+  $this->insertFixture('item_requests', ['id'=>'REQ1','requestedBy'=>'Manager']);
+  $this->insertFixture('purchase_orders', ['id'=>'PO1','itemRequestId'=>'REQ1','supplierId'=>1,'supplierName'=>'Supplier','created'=>'2026-10-27','status'=>'Partially Received']);
+  $this->insertFixture('purchase_order_lines', ['poId'=>'PO1','productId'=>1,'category'=>'Drinks','name'=>'Coke','orderedQty'=>10,'deliveredQty'=>4,'unitCost'=>5]);
  }
  public function test_all_report_types_respond_and_batch_exports_filter():void {
-  DB::table('inventory_batches')->insert(['productId'=>1,'supplierId'=>1,'batchNumber'=>'BATCH1','quantityReceived'=>4,'quantityRemaining'=>4,'unitCost'=>5,'receivedDate'=>'2026-10-27','source'=>'receiving','created_at'=>now()]);
+  $this->insertFixture('inventory_batches', ['productId'=>1,'supplierId'=>1,'batchNumber'=>'BATCH1','quantityReceived'=>4,'quantityRemaining'=>4,'unitCost'=>5,'receivedDate'=>'2026-10-27','source'=>'receiving','created_at'=>now()]);
   foreach(['sales','inventory','receipts','batches','movements','expiry','receiving','purchase_orders','outstanding_orders','purchases','supplier_book','payables'] as $type){
    $this->getJson('/reports/data?type='.$type)->assertOk()->assertJsonStructure(['rows','columns']);
   }
@@ -35,17 +36,17 @@ class ReportsArchiveTest extends TestCase
   $this->getJson($url.'&productId=1')->assertOk()->assertJsonCount(1,'rows');
   $this->getJson('/reports/data?type=outstanding_orders&manager=Nobody')->assertOk()->assertJsonCount(0,'rows');
   $read=function(){DB::enableQueryLog();DB::flushQueryLog();$this->getJson('/reports/data?type=outstanding_orders')->assertOk();$n=count(DB::getQueryLog());DB::disableQueryLog();return $n;};
-  $before=$read();for($i=0;$i<30;$i++)DB::table('purchase_order_lines')->insert(['poId'=>'PO1','productId'=>1,'orderedQty'=>10,'deliveredQty'=>4]);
+  $before=$read();for($i=0;$i<30;$i++)$this->insertFixture('purchase_order_lines', ['poId'=>'PO1','productId'=>1,'orderedQty'=>10,'deliveredQty'=>4]);
   $this->assertSame($before,$read());
   $line=DB::table('purchase_order_lines')->min('id');
-  DB::table('receiving_carryovers')->insert(['requestKey'=>'carry-test','sourcePo'=>'OLD','sourceLine'=>999,'targetPo'=>'PO1','targetLine'=>$line,'quantity'=>5,'receivedQty'=>1,'releasedQty'=>1,'actorId'=>1,'created_at'=>now()]);
+  $this->insertFixture('receiving_carryovers', ['requestKey'=>'carry-test','sourcePo'=>'OLD','sourceLine'=>999,'targetPo'=>'PO1','targetLine'=>$line,'quantity'=>5,'receivedQty'=>1,'releasedQty'=>1,'actorId'=>1,'created_at'=>now()]);
   $rows=$this->getJson('/reports/data?type=outstanding_orders')->assertOk()->json('rows');
   $row=collect($rows)->firstWhere('id',$line);$this->assertEquals(3,$row['outstandingQty']);
  }
  public function test_purchase_order_receipt_arrangement_and_filters():void {
   foreach ([1,2] as $i) {
-   DB::table('receiving_records')->insert(['id'=>'RCV'.$i,'poId'=>'PO1','date'=>'2026-10-2'.$i,'receivedBy'=>'Receiver','supplierName'=>'Supplier','deliveryBatch'=>'BATCH'.$i]);
-   DB::table('receiving_record_lines')->insert(['receivingId'=>'RCV'.$i,'productId'=>1,'category'=>'Drinks','name'=>'Coke','unit'=>'Piece','deliveredQty'=>$i,'unitCost'=>55,'internalBatch'=>'OLD'.$i]);
+   $this->insertFixture('receiving_records', ['id'=>'RCV'.$i,'poId'=>'PO1','date'=>'2026-10-2'.$i,'receivedBy'=>'Receiver','supplierName'=>'Supplier','deliveryBatch'=>'BATCH'.$i]);
+   $this->insertFixture('receiving_record_lines', ['receivingId'=>'RCV'.$i,'productId'=>1,'category'=>'Drinks','name'=>'Coke','unit'=>'Piece','deliveredQty'=>$i,'unitCost'=>55,'internalBatch'=>'OLD'.$i]);
   }
   $url='/reports/data?type=purchase_orders';
   $data=$this->getJson($url)->assertOk()->assertJsonCount(2,'rows')->assertJsonPath('rows.0.batch','BATCH2')->assertJsonPath('rows.0.receivingId','RCV2')->json();
@@ -67,10 +68,10 @@ class ReportsArchiveTest extends TestCase
    $this->postJson($url,['kind'=>$kind,'ids'=>$ids,'action'=>'restore'])->assertOk();
    $this->assertDatabaseHas($kind,[$kind==='categories'?'name':'id'=>$ids[0],'status'=>'Active','archivedAt'=>null]);
   }
-  DB::table('suppliers')->insert(['id'=>2,'name'=>'Unused','status'=>'Inactive']);
+  $this->insertFixture('suppliers', ['id'=>2,'name'=>'Unused','status'=>'Inactive']);
   $this->postJson($url,['kind'=>'suppliers','ids'=>['2'],'action'=>'delete'])->assertOk();$this->assertDatabaseMissing('suppliers',['id'=>2]);
-  DB::table('products')->insert(['id'=>2,'name'=>'Unused item','stock'=>0,'status'=>'Inactive']);
-  DB::table('categories')->insert(['name'=>'Unused category','status'=>'Inactive']);
+  $this->insertFixture('products', ['id'=>2,'name'=>'Unused item','stock'=>0,'status'=>'Inactive']);
+  $this->insertFixture('categories', ['name'=>'Unused category','status'=>'Inactive']);
   $this->postJson($url,['kind'=>'products','ids'=>['2'],'action'=>'delete'])->assertOk();$this->assertDatabaseMissing('products',['id'=>2]);
   $this->postJson($url,['kind'=>'categories','ids'=>['Unused category'],'action'=>'delete'])->assertOk();$this->assertDatabaseMissing('categories',['name'=>'Unused category']);
   $this->actingAs(User::factory()->create(['role'=>'cashier']));

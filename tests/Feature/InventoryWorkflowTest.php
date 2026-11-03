@@ -12,15 +12,18 @@ use Tests\TestCase;
 class InventoryWorkflowTest extends TestCase
 {
     use RefreshDatabase;
+    use \Tests\Concerns\UsesWorkspaceFixtures;
 
     private int $batch;
 
     protected function setUp(): void
     {
         parent::setUp();
-        $this->actingAs(User::factory()->create(['role' => 'manager']));
-        DB::table('categories')->insert(['name' => 'Test', 'status' => 'Active']);
-        DB::table('products')->insert(['id' => 1, 'name' => 'Test item', 'category' => 'Test', 'status' => 'Active', 'stock' => 10, 'unitPrice' => 5, 'price' => 10, 'stockUnit' => 'Piece']);
+        $manager = User::factory()->create(['role' => 'manager']);
+        $this->assignWorkspace($manager);
+        $this->actingAs($manager);
+        $this->insertFixture('categories', ['name' => 'Test', 'status' => 'Active']);
+        $this->insertFixture('products', ['id' => 1, 'name' => 'Test item', 'category' => 'Test', 'status' => 'Active', 'stock' => 10, 'unitPrice' => 5, 'price' => 10, 'stockUnit' => 'Piece']);
         FifoInventory::receive(1, 10, 5, now()->toDateString(), batch: 'B1', expiry: now()->addDays(5)->toDateString());
         $this->batch = DB::table('inventory_batches')->value('id');
     }
@@ -72,6 +75,7 @@ class InventoryWorkflowTest extends TestCase
 
     public function test_recalled_return_stays_in_quarantine_without_becoming_sellable(): void
     {
+        $this->insertFixture('transactions', ['uuid' => 'SALE-1', 'status' => 'Unused', 'cashierId' => $this->fixtureManager->id, 'cashierRole' => 'manager']);
         DB::transaction(function () {
             FifoInventory::consume(1, 2, 'checkout', 'SALE-1');
             DB::table('products')->where('id', 1)->update(['stock' => 8]);
@@ -98,7 +102,7 @@ class InventoryWorkflowTest extends TestCase
     {
         $this->postJson('/api/inventory/workflows/archive', ['kind' => 'products', 'ids' => ['1']])->assertOk();
         $this->assertDatabaseHas('products', ['id' => 1, 'status' => 'Inactive', 'archivedAt' => now()->toDateString()]);
-        $this->actingAs(User::factory()->create(['role' => 'cashier']));
+        $this->actingAs($this->assignMember(User::factory()->create(['role' => 'cashier'])));
         $this->getJson('/api/inventory/workflows')->assertForbidden();
         $this->postJson('/api/inventory/workflows/events',$this->event())->assertForbidden();
         $this->postJson('/api/inventory/workflows/counts',['mode' => 'Full'])->assertForbidden();

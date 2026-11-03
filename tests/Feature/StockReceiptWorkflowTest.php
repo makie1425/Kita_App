@@ -7,14 +7,16 @@ use Illuminate\Support\Str;
 use Tests\TestCase;
 class StockReceiptWorkflowTest extends TestCase {
  use RefreshDatabase;
+ use \Tests\Concerns\UsesWorkspaceFixtures;
  private $manager; private $admin; private $product; private $supplier;
  protected function setUp():void {
   parent::setUp();
   $this->manager=User::factory()->create(['role'=>'manager']);$this->admin=User::factory()->create(['role'=>'admin']);
+  $this->assignWorkspace($this->manager, $this->admin);
   $this->actingAs($this->manager);
   $this->supplier=$this->postJson('/api/suppliers',['name'=>'Supplier','email'=>'supplier@example.com'])->assertCreated()->json('supplier.id');
   $this->postJson('/api/categories',['name'=>'Supplies','classification'=>'Non-Perishable'])->assertCreated();
-  $this->product=$this->postJson('/api/products',['name'=>'Coke','category'=>'Supplies','barcode'=>'COKE','stock'=>0,'unitPrice'=>100,'price'=>150,'purchaseUnit'=>'Piece','stockUnit'=>'Piece','conversionFactor'=>1,'supplierId'=>$this->supplier])->assertCreated()->json('product.id');
+  $this->product=$this->postJson('/api/products',['name'=>'Coke','category'=>'Supplies','barcode'=>'COKE','stock'=>0,'unitPrice'=>100,'price'=>150,'purchaseUnit'=>'Piece','stockUnit'=>'Piece','conversionFactor'=>1,'supplierId'=>$this->supplier]+$this->catalogFields('Supplies'))->assertCreated()->json('product.id');
  }
  private function order($qty) {
   $id=$this->actingAs($this->manager)->postJson('/api/purchase-requests',['category'=>'Supplies','lines'=>[['productId'=>$this->product,'qty'=>$qty,'supplierId'=>$this->supplier]]])->assertCreated()->json('id');
@@ -96,7 +98,7 @@ class StockReceiptWorkflowTest extends TestCase {
  public function test_missing_substitution_posts_only_replacement_and_cannot_raise_budget():void {
   $po=$this->order(10);
   $this->postJson('/api/stock-receipts',$this->body($po,[$this->entry($po,5)]))->assertCreated();
-  $replacement=$this->postJson('/api/products',['name'=>'Sprite','category'=>'Supplies','barcode'=>'SPRITE','stock'=>0,'unitPrice'=>90,'price'=>140,'purchaseUnit'=>'Piece','stockUnit'=>'Piece','conversionFactor'=>1,'supplierId'=>$this->supplier])->assertCreated()->json('product.id');
+  $replacement=$this->postJson('/api/products',['name'=>'Sprite','category'=>'Supplies','barcode'=>'SPRITE','stock'=>0,'unitPrice'=>90,'price'=>140,'purchaseUnit'=>'Piece','stockUnit'=>'Piece','conversionFactor'=>1,'supplierId'=>$this->supplier]+$this->catalogFields('Supplies'))->assertCreated()->json('product.id');
   $e=$this->entry($po,5,0,1,'missing');$e['substituteProductId']=$replacement;$e['substitutionReason']='Supplier replacement';$e['unitCost']=90;
   $body=$this->body($po,[$e]);$body['notes']='Equal or lower value replacement';
   $id=$this->postJson('/api/stock-receipts',$body)->assertCreated()->json('id');
@@ -146,7 +148,7 @@ class StockReceiptWorkflowTest extends TestCase {
   $this->assertDatabaseCount('inventory_batches',0);
  }
  public function test_one_confirmation_groups_multiple_products_and_requires_explicit_zero_lines():void {
-  $other=$this->postJson('/api/products',['name'=>'Second item','category'=>'Supplies','barcode'=>'SECOND','stock'=>0,'unitPrice'=>100,'price'=>150,'purchaseUnit'=>'Piece','conversionFactor'=>1,'stockUnit'=>'Piece','supplierId'=>$this->supplier])->assertCreated()->json('product.id');
+  $other=$this->postJson('/api/products',['name'=>'Second item','category'=>'Supplies','barcode'=>'SECOND','stock'=>0,'unitPrice'=>100,'price'=>150,'purchaseUnit'=>'Piece','conversionFactor'=>1,'stockUnit'=>'Piece','supplierId'=>$this->supplier]+$this->catalogFields('Supplies'))->assertCreated()->json('product.id');
   $po=$this->postJson('/api/purchase-requests',['category'=>'Supplies','lines'=>[['productId'=>$this->product,'qty'=>10,'supplierId'=>$this->supplier],['productId'=>$other,'qty'=>10,'supplierId'=>$this->supplier]]])->assertCreated()->json('id');
   $this->actingAs($this->admin)->patchJson('/api/purchase-requests/'.$po,['action'=>'approved','revision'=>0])->assertOk();$this->actingAs($this->manager);
   $first=$this->entry($po,5);$second=$this->entry($po,0);$second['productId']=$other;

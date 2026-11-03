@@ -11,24 +11,27 @@ use Tests\TestCase;
 class ReportsTest extends TestCase
 {
     use RefreshDatabase;
+    use \Tests\Concerns\UsesWorkspaceFixtures;
 
     protected function setUp(): void
     {
         parent::setUp();
-        $this->actingAs(User::factory()->create(['role' => 'manager', 'status' => 'Active']));
-        DB::table('brands')->insert(['id' => 1, 'name' => 'Example']);
-        DB::table('subcategories')->insert(['id' => 1, 'name' => 'Juice', 'category' => 'Beverages']);
-        DB::table('suppliers')->insert(['id' => 1, 'name' => 'Supplier']);
-        DB::table('products')->insert([
+        $manager = User::factory()->create(['role' => 'manager', 'status' => 'Active']);
+        $this->assignWorkspace($manager);
+        $this->actingAs($manager);
+        $this->insertFixture('brands', ['id' => 1, 'name' => 'Example']);
+        $this->insertFixture('subcategories', ['id' => 1, 'name' => 'Juice', 'category' => 'Beverages']);
+        $this->insertFixture('suppliers', ['id' => 1, 'name' => 'Supplier']);
+        $this->insertFixture('products', [
             ['id' => 1, 'name' => '=Danger,<script>', 'category' => 'Beverages', 'brandId' => 1, 'subcategoryId' => 1, 'supplierId' => 1, 'stock' => 2, 'minStock' => 5],
             ['id' => 2, 'name' => 'Other', 'category' => 'Snacks', 'brandId' => null, 'subcategoryId' => null, 'supplierId' => null, 'stock' => 20, 'minStock' => 5],
         ]);
         foreach (['2026-10-01', '2026-10-06', '2026-10-07'] as $index => $date) {
-            DB::table('stock_movements')->insert(['productId' => 1, 'quantityChange' => 1, 'quantityBefore' => 1, 'quantityAfter' => 2, 'referenceType' => 'receiving', 'referenceId' => (string) $index, 'created_at' => $date.' 12:00:00']);
-            DB::table('transactions')->insert(['uuid' => 'sale-'.$index, 'date' => $date, 'status' => 'Completed']);
+            $this->insertFixture('stock_movements', ['productId' => 1, 'quantityChange' => 1, 'quantityBefore' => 1, 'quantityAfter' => 2, 'referenceType' => 'receiving', 'referenceId' => (string) $index, 'created_at' => $date.' 12:00:00']);
+            $this->insertFixture('transactions', ['uuid' => 'sale-'.$index, 'date' => $date, 'status' => 'Completed']);
             TransactionNumber::assign('sale-'.$index, $date);
-            DB::table('transaction_lines')->insert(['transaction_uuid' => 'sale-'.$index, 'productId' => 1, 'name' => '=Danger,<script>', 'qty' => 1, 'unitPrice' => 10, 'lineTotal' => 10]);
-            DB::table('inventory_batches')->insert(['productId' => 1, 'supplierId' => 1, 'quantityReceived' => 2, 'quantityRemaining' => 2, 'unitCost' => 10, 'receivedDate' => $date, 'source' => 'receiving', 'created_at' => $date]);
+            $this->insertFixture('transaction_lines', ['transaction_uuid' => 'sale-'.$index, 'productId' => 1, 'name' => '=Danger,<script>', 'qty' => 1, 'unitPrice' => 10, 'lineTotal' => 10]);
+            $this->insertFixture('inventory_batches', ['productId' => 1, 'supplierId' => 1, 'quantityReceived' => 2, 'quantityRemaining' => 2, 'unitCost' => 10, 'receivedDate' => $date, 'source' => 'receiving', 'created_at' => $date]);
         }
     }
 
@@ -46,8 +49,8 @@ class ReportsTest extends TestCase
 
     public function test_current_inventory_filter_and_admin_access(): void
     {
-        $this->actingAs(User::factory()->create(['role' => 'admin', 'status' => 'Active']));
-        DB::table('categories')->insert(['name' => 'Beverages', 'status' => 'Active']);
+        $this->actingAs($this->assignMember(User::factory()->create(['role' => 'admin', 'status' => 'Active'])));
+        $this->insertFixture('categories', ['name' => 'Beverages', 'status' => 'Active']);
         // Keep the book balance consistent with the three two-unit batches.
         DB::table('products')->where('id', 1)->update(['stock' => 6, 'minStock' => 7]);
         $this->getJson('/reports/data?type=inventory&lowStock=1&brandId=1')->assertOk()->assertJsonCount(1, 'rows')->assertJsonPath('rows.0.id', 1);
@@ -56,10 +59,10 @@ class ReportsTest extends TestCase
 
     public function test_receiving_audit_filters_and_exports(): void
     {
-        DB::table('purchase_orders')->insert(['id' => 'PO-AUDIT', 'supplierId' => 1]);
+        $this->insertFixture('purchase_orders', ['id' => 'PO-AUDIT', 'supplierId' => 1]);
         foreach (['Missing items', 'Damaged stock', null] as $i => $type) {
-            DB::table('receiving_records')->insert(['id' => 'R-'.$i, 'poId' => 'PO-AUDIT', 'date' => '2026-10-22', 'deliveryStatus' => $type ? 'Partially Received' : 'Fully Received', 'discrepancy' => (bool) $type, 'discrepancyType' => $type]);
-            DB::table('receiving_record_lines')->insert(['receivingId' => 'R-'.$i, 'productId' => 1, 'deliveredQty' => 2, 'conditionText' => $i === 1 ? 'Damaged' : 'Accepted']);
+            $this->insertFixture('receiving_records', ['id' => 'R-'.$i, 'poId' => 'PO-AUDIT', 'date' => '2026-10-22', 'deliveryStatus' => $type ? 'Partially Received' : 'Fully Received', 'discrepancy' => (bool) $type, 'discrepancyType' => $type]);
+            $this->insertFixture('receiving_record_lines', ['receivingId' => 'R-'.$i, 'productId' => 1, 'deliveredQty' => 2, 'conditionText' => $i === 1 ? 'Damaged' : 'Accepted']);
         }
         foreach (['missing', 'damaged', 'none'] as $audit) {
             $this->getJson('/reports/data?type=receiving&audit='.$audit)->assertOk()->assertJsonCount(1, 'rows')->assertJsonPath('rows.0.reportPo', 'PO-AUDIT');
@@ -75,7 +78,7 @@ class ReportsTest extends TestCase
         $this->travelTo(\Carbon\Carbon::parse('2026-10-22 12:00:00', 'Asia/Manila'));
         DB::table('inventory_batches')->delete();
         foreach ([0, 7, 30, 31] as $days) {
-            DB::table('inventory_batches')->insert(['productId' => 1, 'supplierId' => 1, 'quantityReceived' => 2, 'quantityRemaining' => 2, 'unitCost' => 10, 'receivedDate' => '2026-10-01', 'source' => 'receiving', 'created_at' => now(), 'expiryDate' => now()->addDays($days)->toDateString()]);
+            $this->insertFixture('inventory_batches', ['productId' => 1, 'supplierId' => 1, 'quantityReceived' => 2, 'quantityRemaining' => 2, 'unitCost' => 10, 'receivedDate' => '2026-10-01', 'source' => 'receiving', 'created_at' => now(), 'expiryDate' => now()->addDays($days)->toDateString()]);
         }
         $this->getJson('/reports/data?type=expiry')->assertOk()->assertJsonCount(4, 'rows')
             ->assertJsonPath('rows.0.status', 'Critical')->assertJsonPath('rows.1.status', 'Warning')
@@ -102,7 +105,7 @@ class ReportsTest extends TestCase
     {
         config(['app.timezone' => 'UTC']);
         DB::table('transaction_lines')->where('transaction_uuid', 'sale-1')->update(['created_at' => '2026-10-06 04:59:00']);
-        DB::table('transaction_lines')->insert(['transaction_uuid' => 'sale-1', 'productId' => 2, 'name' => 'Other', 'qty' => 1, 'unitPrice' => 10, 'lineTotal' => 10, 'created_at' => '2026-10-06 05:00:00']);
+        $this->insertFixture('transaction_lines', ['transaction_uuid' => 'sale-1', 'productId' => 2, 'name' => 'Other', 'qty' => 1, 'unitPrice' => 10, 'lineTotal' => 10, 'created_at' => '2026-10-06 05:00:00']);
         $this->getJson('/reports/data?type=sales&from=2026-10-06&to=2026-10-06')
             ->assertOk()->assertJsonPath('rows.0.time', '12:59')->assertJsonPath('rows.1.time', '12:59');
     }
@@ -117,7 +120,7 @@ class ReportsTest extends TestCase
         $this->getJson($query)->assertJsonPath('rows.0.reference', $number)->assertJsonPath('summary.Transactions', '1')->assertJsonPath('summary.Recorded line totals (PHP)', '10.00');
         $this->get($query.'&format=print')->assertOk()->assertSee($number)->assertSee('PREPARED BY')->assertSee('10.00');
         $this->assertStringContainsString($number, $this->get($query.'&format=csv')->streamedContent());
-        DB::table('stock_movements')->insert(['productId' => 1, 'quantityChange' => -1, 'quantityBefore' => 2, 'quantityAfter' => 1, 'referenceType' => 'checkout', 'referenceId' => 'sale-1', 'created_at' => '2026-10-08 12:00:00']);
+        $this->insertFixture('stock_movements', ['productId' => 1, 'quantityChange' => -1, 'quantityBefore' => 2, 'quantityAfter' => 1, 'referenceType' => 'checkout', 'referenceId' => 'sale-1', 'created_at' => '2026-10-08 12:00:00']);
         $this->getJson('/reports/data?type=movements&from=2026-10-08')->assertOk()->assertJsonPath('rows.0.reference', $number);
     }
 

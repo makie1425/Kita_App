@@ -11,6 +11,8 @@ use Tests\TestCase;
 class ManagementWorkflowTest extends TestCase
 {
     use RefreshDatabase;
+    use \Tests\Concerns\UsesWorkspaceFixtures;
+    private array $catalog;
 
     protected User $manager;
 
@@ -21,14 +23,16 @@ class ManagementWorkflowTest extends TestCase
         parent::setUp();
         $this->manager = User::factory()->create(['role' => 'manager']);
         $this->admin = User::factory()->create(['role' => 'admin']);
-        DB::table('categories')->insert(['name' => 'Medical', 'status' => 'Active', 'classification' => 'Non-Perishable']);
-        DB::table('suppliers')->insert(['id' => 1, 'name' => 'Supplier', 'status' => 'Active']);
+        $this->assignWorkspace($this->manager, $this->admin);
+        $this->insertFixture('categories', ['name' => 'Medical', 'status' => 'Active', 'classification' => 'Non-Perishable']);
+        $this->insertFixture('suppliers', ['id' => 1, 'name' => 'Supplier', 'status' => 'Active']);
         $this->actingAs($this->manager);
+        $this->catalog = $this->catalogFields('Medical');
     }
 
     private function item(array $replace = []): array
     {
-        return array_replace(['name' => 'Mask', 'category' => 'Medical', 'vatClass' => 'VATable', 'price' => '12.50', 'unitPrice' => '3.25', 'stock' => 0, 'barcode' => 'MASK001', 'supplierId' => 1, 'purchaseUnit' => 'Piece', 'stockUnit' => 'Piece', 'conversionFactor' => 1, 'status' => 'Active'], $replace);
+        return array_replace(['name' => 'Mask', 'category' => 'Medical', 'vatClass' => 'VATable', 'price' => '12.50', 'unitPrice' => '3.25', 'stock' => 0, 'barcode' => 'MASK001', 'supplierId' => 1, 'purchaseUnit' => 'Piece', 'stockUnit' => 'Piece', 'conversionFactor' => 1, 'status' => 'Active'] + $this->catalog, $replace);
     }
 
     private function createItem(): int
@@ -59,6 +63,7 @@ class ManagementWorkflowTest extends TestCase
     public function test_manager_can_request_a_new_product_in_a_new_category_without_stock(): void
     {
         $this->postJson('/api/categories', ['name' => 'New Supplies', 'classification' => 'Non-Perishable'])->assertCreated();
+        $this->catalog = $this->catalogFields('New Supplies');
         $id = $this->postJson('/api/products', $this->item(['category' => 'New Supplies', 'stock' => 0]))
             ->assertCreated()->json('product.id');
         $this->assertDatabaseHas('products', ['id' => $id, 'stock' => 0, 'cost' => 0, 'registrationQuantity' => 0]);
@@ -143,8 +148,8 @@ class ManagementWorkflowTest extends TestCase
         $this->assertSame($request, $po);
         $this->actingAs($this->manager)->postJson('/api/purchase-orders/'.$po.'/items', ['lines' => [['productId' => $id, 'qty' => 2]]])->assertConflict();
         // Legacy draft editing remains available; newly approved POs are immutable.
-        DB::table('purchase_orders')->insert(['id' => 'LEGACY-DRAFT', 'supplierId' => 1, 'status' => 'Draft', 'orderedValue' => 13, 'outstandingValue' => 13]);
-        DB::table('purchase_order_lines')->insert(['poId' => 'LEGACY-DRAFT', 'productId' => $id, 'name' => 'Mask', 'orderedQty' => 4, 'unitCost' => 3.25, 'lineTotal' => 13, 'deliveredQty' => 0]);
+        $this->insertFixture('purchase_orders', ['id' => 'LEGACY-DRAFT', 'supplierId' => 1, 'status' => 'Draft', 'orderedValue' => 13, 'outstandingValue' => 13]);
+        $this->insertFixture('purchase_order_lines', ['poId' => 'LEGACY-DRAFT', 'productId' => $id, 'name' => 'Mask', 'orderedQty' => 4, 'unitCost' => 3.25, 'lineTotal' => 13, 'deliveredQty' => 0]);
         $po = 'LEGACY-DRAFT';
         $this->actingAs($this->manager)->postJson('/api/purchase-orders/'.$po.'/items', ['lines' => [['productId' => $id, 'qty' => 2, 'unitCost' => 3.25]], 'orderedValue' => 1])->assertOk()->assertJsonPath('orderedValue', 19.5);
         $this->assertDatabaseCount('purchase_order_lines', 2);
@@ -172,8 +177,8 @@ class ManagementWorkflowTest extends TestCase
 
     public function test_ongoing_transaction_blocks_account_deactivation(): void
     {
-        $cashier = User::factory()->create(['role' => 'cashier']);
-        DB::table('transactions')->insert(['uuid' => 'TXN-pending', 'status' => 'Pending Payment', 'cashierId' => $cashier->id, 'cashierRole' => $cashier->role, 'cashier' => $cashier->name, 'cashierEmail' => $cashier->email]);
+        $cashier = $this->assignMember(User::factory()->create(['role' => 'cashier']));
+        $this->insertFixture('transactions', ['uuid' => 'TXN-pending', 'status' => 'Pending Payment', 'cashierId' => $cashier->id, 'cashierRole' => $cashier->role, 'cashier' => $cashier->name, 'cashierEmail' => $cashier->email]);
         $this->patchJson('/api/accounts/cashier/'.$cashier->id, ['status' => 'Inactive'])->assertUnprocessable()->assertJsonValidationErrors('status');
         $this->assertDatabaseHas('users', ['email' => $cashier->email, 'status' => 'Active']);
         DB::table('transactions')->where('uuid', 'TXN-pending')->update(['status' => 'Unused']);
@@ -189,7 +194,7 @@ class ManagementWorkflowTest extends TestCase
 
     public function test_cashier_cannot_call_manager_or_admin_apis(): void
     {
-        $this->actingAs(User::factory()->create(['role' => 'cashier']));
+        $this->actingAs($this->assignMember(User::factory()->create(['role' => 'cashier'])));
         foreach (['/api/accounts', '/api/categories', '/api/products', '/api/purchase-requests', '/api/inventory/adjustments'] as $url) {
             $this->postJson($url, [])->assertForbidden();
         }
@@ -197,11 +202,11 @@ class ManagementWorkflowTest extends TestCase
 
     public function test_super_admin_can_create_admins_but_admin_cannot_escalate(): void
     {
-        $super = User::factory()->create(['role' => 'superadmin']);
+        $super = $this->assignMember(User::factory()->create(['role' => 'superadmin']));
         $body = ['first_name' => 'New', 'last_name' => 'admin', 'email' => 'newadmin@example.com', 'role' => 'admin'];
         $this->actingAs($super)->postJson('/api/accounts', $body)->assertCreated();
         $this->actingAs($this->admin)->patchJson('/api/accounts/superadmin/'.$super->id, ['status' => 'Inactive'])->assertForbidden();
-        $this->actingAs($super)->patchJson('/api/accounts/superadmin/'.$super->id, ['status' => 'Inactive'])->assertUnprocessable();
+        $this->actingAs($super)->patchJson('/api/accounts/superadmin/'.$super->id, ['status' => 'Inactive'])->assertForbidden();
     }
 
     public function test_catalog_returns_classification_unit_price_and_saved_receipt_lines(): void

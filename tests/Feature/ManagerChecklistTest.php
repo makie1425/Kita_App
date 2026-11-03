@@ -14,6 +14,7 @@ use Tests\TestCase;
 class ManagerChecklistTest extends TestCase
 {
     use RefreshDatabase;
+    use \Tests\Concerns\UsesWorkspaceFixtures;
 
     private User $manager;
 
@@ -22,10 +23,11 @@ class ManagerChecklistTest extends TestCase
         parent::setUp();
         $this->travelTo(now()->setDate(2026, 10, 13)->startOfDay());
         $this->manager = User::factory()->create(['role' => 'manager', 'approval_pin' => Hash::make('1234')]);
+        $this->assignWorkspace($this->manager);
         $this->actingAs($this->manager);
-        DB::table('categories')->insert(['name' => 'Food', 'status' => 'Active']);
-        DB::table('suppliers')->insert(['id' => 1, 'name' => 'Original supplier', 'status' => 'Active']);
-        DB::table('products')->insert(['id' => 1, 'name' => 'Milk', 'category' => 'Food', 'status' => 'Active', 'stock' => 10,
+        $this->insertFixture('categories', ['name' => 'Food', 'status' => 'Active']);
+        $this->insertFixture('suppliers', ['id' => 1, 'name' => 'Original supplier', 'status' => 'Active']);
+        $this->insertFixture('products', ['id' => 1, 'name' => 'Milk', 'category' => 'Food', 'status' => 'Active', 'stock' => 10,
             'price' => 20, 'unitPrice' => 5, 'barcode' => 'MILK', 'stockUnit' => 'Piece', 'purchaseUnit' => 'Box', 'conversionFactor' => 12]);
         FifoInventory::receive(1, 10, 5, '2026-10-10', supplier: 1, batch: 'B1', expiry: '2026-10-23', lot: 'LOT1');
     }
@@ -80,7 +82,7 @@ class ManagerChecklistTest extends TestCase
         $this->get('/api/inventory/adjustments/'.$id.'/evidence')->assertOk()->assertHeader('Content-Type', 'image/png')->assertContent(base64_decode($image));
         $fake = $this->postJson('/api/inventory/adjustments', $body + ['photo' => true])->assertCreated()->json('id');
         $this->assertDatabaseHas('adjustments', ['id' => $fake, 'photo' => false]);
-        $this->actingAs(User::factory()->create(['role' => 'cashier']));
+        $this->actingAs($this->assignMember(User::factory()->create(['role' => 'cashier'])));
         $this->getJson('/api/inventory/adjustments/'.$id.'/evidence')->assertForbidden();
     }
 
@@ -109,8 +111,8 @@ class ManagerChecklistTest extends TestCase
 
     public function test_supplier_contact_history_is_persistent_idempotent_and_dated_after_receipt(): void
     {
-        DB::table('purchase_orders')->insert(['id' => 'PO1', 'supplierId' => 1]);
-        DB::table('receiving_records')->insert(['id' => 'R1', 'poId' => 'PO1', 'date' => '2026-10-12', 'discrepancy' => true]);
+        $this->insertFixture('purchase_orders', ['id' => 'PO1', 'supplierId' => 1]);
+        $this->insertFixture('receiving_records', ['id' => 'R1', 'poId' => 'PO1', 'date' => '2026-10-12', 'discrepancy' => true]);
         $body = ['requestKey' => (string) Str::uuid(), 'contactDate' => '2026-10-13', 'person' => 'Supplier agent', 'channel' => 'Phone', 'notes' => 'Two units missing', 'outcome' => 'Replacement tomorrow'];
         $this->postJson('/api/receipts/R1/supplier-contacts', $body)->assertCreated();
         $this->postJson('/api/receipts/R1/supplier-contacts', $body)->assertOk();
@@ -122,7 +124,7 @@ class ManagerChecklistTest extends TestCase
 
     public function test_override_decline_requires_pin_records_reason_and_does_not_create_sale(): void
     {
-        $this->actingAs(User::factory()->create(['role' => 'cashier']));
+        $this->actingAs($this->assignMember(User::factory()->create(['role' => 'cashier'])));
         $body = ['requestKey' => (string) Str::uuid(), 'manager_id' => $this->manager->id, 'manager_pin' => '0000',
             'reason' => 'Price is correct', 'items' => [['productId' => 1, 'qty' => 2]]];
         $this->postJson('/api/price-overrides/decline', $body)->assertUnprocessable();
@@ -138,7 +140,7 @@ class ManagerChecklistTest extends TestCase
     public function test_variants_have_separate_barcodes_and_prevent_duplicates_and_cycles(): void
     {
         $body = ['name' => 'Milk', 'category' => 'Food', 'barcode' => 'MILK-VANILLA', 'unitPrice' => 5, 'price' => 20,
-            'purchaseUnit' => 'Box', 'stockUnit' => 'Piece', 'conversionFactor' => 12, 'parentId' => 1, 'variantLabel' => 'Vanilla'];
+            'purchaseUnit' => 'Box', 'stockUnit' => 'Piece', 'conversionFactor' => 12, 'parentId' => 1, 'variantLabel' => 'Vanilla', 'supplierId' => 1] + $this->catalogFields('Food');
         $id = $this->postJson('/api/products', $body)->assertCreated()->json('product.id');
         $this->assertDatabaseHas('products', ['id' => $id, 'parentId' => 1, 'variantLabel' => 'Vanilla', 'stock' => 0]);
         $this->postJson('/api/products', array_replace($body, ['barcode' => 'OTHER', 'variantLabel' => ' vanilla ']))->assertUnprocessable();
@@ -149,7 +151,7 @@ class ManagerChecklistTest extends TestCase
 
     public function test_cashier_cannot_modify_manager_workflows(): void
     {
-        $this->actingAs(User::factory()->create(['role' => 'cashier']));
+        $this->actingAs($this->assignMember(User::factory()->create(['role' => 'cashier'])));
         $this->postJson('/api/promotions', $this->promo())->assertForbidden();
         $this->patchJson('/api/inventory/expiry-settings', ['days' => 10])->assertForbidden();
         $this->getJson('/api/inventory/recall-trace?search=LOT1')->assertForbidden();
