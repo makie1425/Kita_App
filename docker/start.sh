@@ -46,6 +46,9 @@ if [[ "${SEED_INITIAL_SUPERADMIN:-false}" == 'true' ]]; then
     artisan accounts:seed-initial-superadmin
 fi
 artisan config:cache
+if [[ "${LOAD_GROCERY_PRESENTATION:-false}" == 'true' ]]; then
+    artisan presentation:load-grocery "${PRESENTATION_ADMIN_EMAIL:?Set PRESENTATION_ADMIN_EMAIL}" "${PRESENTATION_MANAGER_EMAIL:?Set PRESENTATION_MANAGER_EMAIL}" --apply
+fi
 if ! artisan route:cache; then
     echo 'Route cache unavailable; continuing with uncached routes.' >&2
     artisan route:clear
