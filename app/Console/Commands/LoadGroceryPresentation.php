@@ -31,10 +31,11 @@ class LoadGroceryPresentation extends Command
         $clock = Carbon::getTestNow();
         Auth::setUser($manager);
         try {
-            DB::transaction(function () use ($workspace, $prefix, $manager) {
+            $loaded = DB::transaction(function () use ($workspace, $prefix, $manager) {
+                $this->line('Grocery import: waiting for workspace lock. Records become visible only after commit.');
                 DB::table('workspaces')->where('id',$workspace)->lockForUpdate()->first();
                 if (DB::table('transactions')->where('uuid',$prefix.'-2026-49')->exists()) {
-                    $this->info('This dataset is already loaded. Nothing changed.'); return;
+                    $this->info('This dataset is already loaded. Nothing changed.'); return false;
                 }
                 // Refuse to merge synthetic history into an operating catalog.
                 foreach (['products','transactions','purchase_orders','suppliers','categories','brands','subcategories'] as $table) {
@@ -54,6 +55,7 @@ class LoadGroceryPresentation extends Command
                     ['Baking Supplies','Ingredients','All Purpose Flour|Bread Flour|White Sugar|Brown Sugar|Corn Starch',500,'Gram',48],
                 ];
                 $products=[];
+                $this->line('Grocery import: creating catalog.');
                 foreach ($groups as $g=>$group) {
                     [$category,$sub,$names,$size,$unit,$price]=$group;
                     $insert('categories',['name'=>$category,'status'=>'Active','classification'=>'Non-Perishable']);
@@ -68,6 +70,7 @@ class LoadGroceryPresentation extends Command
                         $products[]=compact('id','name','supplier','cost');
                     }
                 }
+                $this->line('Grocery import: 50 products prepared; writing receipt and sale history. Not committed yet.');
                 foreach ([2024,2025,2026] as $year) {
                     foreach ($products as $i=>$p) {
                         $date=Carbon::create($year,1+intdiv($i,5),2+$i%5,9,15,0,config('app.timezone'));
@@ -89,13 +92,15 @@ class LoadGroceryPresentation extends Command
                         $request=Request::create('/','POST');$request->setUserResolver(fn()=>$manager);
                         $data=['uuid'=>$prefix.'-'.$year.'-'.$i,'items'=>[['productId'=>$p['id'],'qty'=>2+$i%4]]];
                         $sale=SaleCheckout::prepare($request,$data);
-                        SaleCheckout::save($request,$data,$sale,'Unused','Cash',(int)(ceil($sale['total']/10000)*10000));
+                        SaleCheckout::save($request,$data,$sale,'Unused','Cash',(int)(ceil($sale['total']/10000)*10000),notify:false);
+                        if (($i+1)%10===0) $this->line('Grocery import: '.$year.' history '.($i+1).'/50 prepared. Not committed yet.');
                     }
                 }
                 $insert('purchase_orders',['id'=>$prefix.'-PO-CANCEL','supplierId'=>$products[0]['supplier'],'status'=>'Cancelled','created'=>'2026-10-20','orderedValue'=>650,'cancelledValue'=>650,'deliveredValue'=>0,'invoicedValue'=>0,'paidValue'=>0,'outstandingValue'=>0,'supplierCallback'=>'Supplier could not fulfill requested quantities.']);
                 $insert('purchase_order_lines',['poId'=>$prefix.'-PO-CANCEL','productId'=>$products[0]['id'],'name'=>$products[0]['name'],'orderedQty'=>10,'deliveredQty'=>0,'unitCost'=>65]);
-                $this->info('Loaded 50 products, 150 batches, 150 cash sales and 151 purchase orders. No external messages or payments sent.');
+                return true;
             });
+            if ($loaded) $this->info('Loaded 50 products, 150 batches, 150 cash sales and 151 purchase orders. Database commit completed. No external messages or payments sent.');
         } catch (\Throwable $e) {
             $this->error('Import rolled back: '.$e->getMessage());return self::FAILURE;
         } finally {

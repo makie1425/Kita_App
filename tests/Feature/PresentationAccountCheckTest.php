@@ -43,6 +43,7 @@ class PresentationAccountCheckTest extends TestCase
         $this->assertDatabaseCount('products',50);
         $this->assertDatabaseCount('transactions',150);
         $this->assertDatabaseCount('inventory_batches',150);
+        $this->assertDatabaseCount('notifications',0);
         foreach(DB::table('products')->get() as $product){
             $this->assertEquals($this->fixtureWorkspace,$product->workspace_id);
             $this->assertEquals($product->stock,DB::table('inventory_batches')->where('productId',$product->id)->sum('quantityRemaining'));

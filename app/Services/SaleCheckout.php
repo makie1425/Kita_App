@@ -88,7 +88,7 @@ class SaleCheckout
             'discount' => $subtotal - $total, 'discountType' => $discountType, 'approval' => $approval];
     }
 
-    public static function save(Request $request, array $data, array $sale, string $status, string $paymentMode, int $tendered = 0, ?string $exchangeOriginal = null, int $exchangeCredit = 0): array
+    public static function save(Request $request, array $data, array $sale, string $status, string $paymentMode, int $tendered = 0, ?string $exchangeOriginal = null, int $exchangeCredit = 0, bool $notify = true): array
     {
         $paid = $status === 'Unused' ? $sale['total'] : 0;
         WorkspaceWrite::requireId();
@@ -118,7 +118,7 @@ class SaleCheckout
         if ($status === 'Unused') {
             self::recordSales($data['uuid']);
         }
-        self::audit($request->user()->name, $status === 'Unused' ? 'Checkout' : 'Payment reserved', $data['uuid'], null, $status);
+        self::audit($request->user()->name, $status === 'Unused' ? 'Checkout' : 'Payment reserved', $data['uuid'], null, $status, $notify);
 
         return $record + ['change' => $record['changeAmount'], 'lines' => $sale['lines']];
     }
@@ -141,7 +141,7 @@ class SaleCheckout
         }
     }
 
-    public static function audit(string $user, string $action, string $record, ?string $before, string $after): void
+    public static function audit(string $user, string $action, string $record, ?string $before, string $after, bool $notify = true): void
     {
         $transaction = DB::table('transactions')->where('uuid', $record)->first();
         $values = ['ts' => now(), 'user' => $user, 'action' => $action, 'record' => $record,
@@ -151,7 +151,7 @@ class SaleCheckout
             $values['workspace_id'] = $transaction->workspace_id;
         }
         DB::table('audit_logs')->insert($values);
-        if (in_array($action, ['Checkout', 'Payment reserved', 'Payment confirmed', 'Payment reservation released'], true)) {
+        if ($notify && in_array($action, ['Checkout', 'Payment reserved', 'Payment confirmed', 'Payment reservation released'], true)) {
             $owner = $transaction ? WorkflowNotifications::owner($transaction->cashierId, $transaction->cashierRole) : null;
             if ($owner) {
                 WorkflowNotifications::send([$owner], auth()->user() ?? $owner, $action, 'Transaction '.$record.': '.$after.'.', 'activity', $record);

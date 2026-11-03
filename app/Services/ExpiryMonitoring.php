@@ -41,7 +41,13 @@ class ExpiryMonitoring
         }
         // The shared sequence lock serializes both polling and scheduled delivery.
         return DB::transaction(function () use ($users) {
-            $sequence = DB::table('inventory_sequences')->where('name', 'notifications')->lockForUpdate()->first();
+            $sequenceQuery = DB::table('inventory_sequences')->where('name', 'notifications');
+            // A busy notification allocator must not stall every browser poll.
+            // The next poll/scheduled run will retry skipped expiry notifications.
+            $sequence = DB::getDriverName() === 'mysql'
+                ? $sequenceQuery->lock('FOR UPDATE SKIP LOCKED')->first()
+                : $sequenceQuery->lockForUpdate()->first();
+            if (!$sequence) return 0;
             $id = max((int) $sequence->lastValue, (int) DB::table('notifications')->max('id'));
             $count = 0;
             $groups = config('workspaces.enabled')
