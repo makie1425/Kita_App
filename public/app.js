@@ -3184,6 +3184,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
         h('footer',{className:'monitor-meter-labels'},[h('span',null,'Available: '+bytes(used!=null&&limit!=null?Math.max(0,limit-used):null)),h('span',null,'High usage threshold: 80%')])]);
     };
     return h('div',{className:'sa-dashboard monitor-dashboard'},[
+      h('div',{className:'monitor-toolbar'},h('button',{type:'button',className:'monitor-refresh',onClick:this.reloadSaDashboard},'Refresh')),
       this.state.saError?h('p',{role:'alert'},'Refresh failed. Displayed measurements may be stale.'):null,
       h('div',{className:'monitor-summary-grid'},[
         metric('System Status',d.availability?.status||'Unavailable',d.availability?.source==='Better Stack'?'Better Stack; last check: '+(d.availability.observed_at?new Date(d.availability.observed_at).toLocaleString():'Unavailable'):'External availability monitoring'),
@@ -3204,7 +3205,6 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
       e?h('section',{className:'sa-panel',role:'region','aria-label':'Error details'},[h('h2',null,'Error #'+e.id),h('p',null,e.message),h('p',null,e.component+' · '+e.severity+' · '+e.occurred_at+' UTC · '+e.status),
         ...['New','Acknowledged','Resolved'].map(status=>btn('Mark '+status,()=>this.monitoringStatus(status))),btn('Close',()=>this.setState({monitoringError:null}))]):null,
       h('p',{className:'sa-note'},'Updated '+new Date(d.measured_at).toLocaleString()+'. Refreshes every 30 seconds while visible. Availability is sampled; unobserved intervals are excluded.'),
-      btn('Refresh',this.reloadSaDashboard)
     ]);
   }
   buildSaAdmins(){ return this.buildAdmManagers(); }
@@ -3230,6 +3230,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
   }
 
   renderVals(){
+    const h=React.createElement;
     const s=this.state; const data=s.data;
     const showPortalSelect=s.authStep==="portal", showLogin=s.authStep==="login", showOtp=s.authStep==="otp", showApp=s.authStep==="in";
     const portalMeta={
