@@ -35,7 +35,8 @@ class AccountController extends Controller
     public function store(Request $request): JsonResponse
     {
         $roles = $this->manageableRoles($request);
-        $workspaceId = config('workspaces.enabled') ? \App\Services\WorkspaceAccess::requireAccountWorkspace($request->user()) : null;
+        $workspaceId = config('workspaces.enabled') && $request->user()->normalizedRole() !== 'super_admin'
+            ? \App\Services\WorkspaceAccess::requireAccountWorkspace($request->user()) : null;
         $this->normalizeInput($request);
         $data = $request->validate($this->rules(true));
         $data['name'] = $data['first_name'].' '.$data['last_name'];

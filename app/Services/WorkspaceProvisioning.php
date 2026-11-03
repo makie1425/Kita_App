@@ -10,6 +10,21 @@ class WorkspaceProvisioning
     public static function createdAccount(User $actor, User $account): void
     {
         if (!config('workspaces.enabled')) return;
+        if ($account->normalizedRole() === 'admin') {
+            abort_unless($actor->normalizedRole() === 'super_admin', 403);
+            $organization = DB::table('organizations')->insertGetId([
+                'name' => $account->name.' organization', 'created_at' => now(), 'updated_at' => now(),
+            ]);
+            $workspace = DB::table('workspaces')->insertGetId([
+                'organization_id' => $organization, 'name' => $account->name.' workspace',
+                'created_at' => now(), 'updated_at' => now(),
+            ]);
+            $account->forceFill(['workspace_id' => $workspace])->save();
+            self::grant($account, $workspace, true);
+            // Account-management permission preserves the creator's access to this Admin.
+            self::grant($actor, $workspace, true);
+            return;
+        }
         $parent = WorkspaceAccess::requireAccountWorkspace($actor);
         $workspace = $parent;
         if ($account->normalizedRole() === 'manager') {
