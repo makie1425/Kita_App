@@ -1449,10 +1449,18 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     const least=ranked.filter(p=>!topIds.has(p.id)).sort((a,b)=>a.qty-b.qty||a.name.localeCompare(b.name)).slice(0,3);
     return card([
       h('div',{className:'dashboard-panel-heading'},[h('div',null,[h('h2',{className:'panel-title'},'Product Comparison'),null]),h('div',{className:'comparison-legend'},[h('span',{className:'comparison-top'},'Top selling'),h('span',{className:'comparison-least'},'Least selling')])]),
-      h('div',{className:'product-comparison-bars'},top.length?top.map((a,i)=>{const b=least[i],share=a.qty/(a.qty+(b?.qty||0))*100;return h('div',{key:a.id,className:'comparison-pair'},[
-        h('div',{className:'comparison-labels'},[h('span',null,a.name+' ('+a.qty+')'),h('span',null,b?b.name+' ('+b.qty+')':'No comparison product')]),
-        h('div',{className:'comparison-track',role:'img','aria-label':a.name+': '+a.qty+' units'+(b?'; '+b.name+': '+b.qty+' units':'' )},[h('span',{className:'comparison-top-bar',style:{width:share+'%'}},Math.round(share)+'%'),b?h('span',{className:'comparison-least-bar',style:{width:(100-share)+'%'}}):null])
-      ]);}):h('p',{className:'record-empty'},'No sales recorded for this period.')),
+      top.length?h('figure',{className:'product-comparison-chart','aria-label':'Top and least selling products by units sold'},[
+        h('div',{className:'comparison-axis-title'},'Units sold'),
+        h('div',{className:'comparison-chart-scroll'},h('div',{className:'comparison-chart-body'},[
+          h('div',{className:'comparison-y-axis'},[4,3,2,1,0].map(i=>h('span',{key:i},String(i*Math.max(1,Math.ceil(top[0].qty/4)))))),
+          h('div',{className:'comparison-plot'},top.map((a,i)=>h('div',{key:a.id,className:'comparison-group'},
+            [a,least[i]].map((product,j)=>h('div',{key:j,className:'comparison-column'},[
+              h('div',{className:'comparison-bar-space'},product?h('div',{className:'comparison-vertical-bar '+(j?'is-least':'is-top'),style:{height:(product.qty/(Math.max(1,Math.ceil(top[0].qty/4))*4)*100)+'%'},title:product.name+': '+product.qty+' units'},h('span',null,String(product.qty))):null),
+              h('div',{className:'comparison-product-name'},product?product.name:'No comparison product')
+            ])))))
+        ])),
+        h('figcaption',null,'Products ? Least selling includes products with recorded sales.')
+      ]):h('p',{className:'record-empty'},'No sales recorded for this period.'),
       h('div',{className:'comparison-footer'},[h('span',null,'Units sold in selected period'),h('span',null,least.length+' pairs compared')])
     ]);
   }

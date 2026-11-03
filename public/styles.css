@@ -1547,14 +1547,23 @@ body:has(.receiving-dialog[open]) { overflow:hidden; }
 .dashboard-chart-grid details { color:#1747e8; }
 .comparison-legend { display:flex; gap:8px; flex-wrap:wrap; font-size:10px; }
 .comparison-legend span:before { content:''; display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:4px; background:#245ff0; }
-.comparison-legend .comparison-least:before { background:#a8c9ff; }
-.product-comparison-bars { display:flex; flex-direction:column; justify-content:center; gap:18px; flex:1; padding:20px 0; }
-.comparison-labels { display:flex; justify-content:space-between; gap:14px; margin-bottom:5px; font-size:10px; color:#2455a6; }
-.comparison-labels span { flex:1; overflow-wrap:anywhere; }
-.comparison-labels span:last-child { text-align:right; }
-.comparison-track { display:flex; height:14px; border-radius:8px; overflow:hidden; background:#edf3ff; }
-.comparison-top-bar { background:#245ff0; color:white; font-size:9px; text-align:center; }
-.comparison-least-bar { background:#a8c9ff; }
+.comparison-legend .comparison-least:before { background:#f28b32; }
+.product-comparison-chart { margin:20px 0; flex:1; min-width:0; }
+.comparison-axis-title { font-size:12px; color:#637a9b; margin-bottom:20px; }
+.comparison-chart-scroll { overflow-x:auto; padding-top:12px; }
+.comparison-chart-body { display:flex; min-width:520px; padding-right:8px; }
+.comparison-y-axis { flex:0 0 38px; height:220px; display:flex; flex-direction:column; justify-content:space-between; font-size:11px; color:#637a9b; text-align:right; padding-right:8px; }
+.comparison-plot { flex:1; display:flex; gap:18px; position:relative; }
+.comparison-plot:before { content:''; position:absolute; top:0; left:0; right:0; height:220px; border-left:1px solid #cbd5e1; border-bottom:1px solid #cbd5e1; background:repeating-linear-gradient(to top,#e9eef5 0,#e9eef5 1px,transparent 1px,transparent 25%); pointer-events:none; }
+.comparison-group { display:flex; flex:1; gap:6px; min-width:0; position:relative; }
+.comparison-column { flex:1; min-width:0; }
+.comparison-bar-space { height:220px; display:flex; align-items:flex-end; justify-content:center; }
+.comparison-vertical-bar { width:80%; max-width:48px; position:relative; border-radius:3px 3px 0 0; }
+.comparison-vertical-bar.is-top { background:#245ff0; }
+.comparison-vertical-bar.is-least { background:#f28b32; }
+.comparison-vertical-bar span { position:absolute; top:-19px; width:100%; text-align:center; color:#334155; font-size:11px; font-weight:600; }
+.comparison-product-name { padding:10px 2px 0; text-align:center; font-size:11px; line-height:1.4; overflow-wrap:anywhere; color:#334155; }
+.product-comparison-chart figcaption { font-size:11px; color:#637a9b; margin-top:14px; }
 .comparison-footer { border-top:1px solid #edf2fa; padding-top:12px; display:flex; justify-content:space-between; gap:10px; font-size:10px; color:#637a9b; }
 .operations-dashboard .dashboard-operations-manager { grid-template-columns:repeat(3,minmax(0,1fr)); }
 .dashboard-operations-grid>.kita-card,.dashboard-pin-panel { margin-bottom:0!important; min-height:300px; }

@@ -68,3 +68,12 @@ test('refresh is protected from overlap and stops on unmount',async()=>{
  resolve({ok:true,status:200,json:async()=>({errors:[]})});await first;assert.equal(app.monitoringBusy,false);
  let cleared=false;context.clearInterval=()=>cleared=true;context.window.removeEventListener=()=>{};app.componentWillUnmount();assert.ok(cleared);
 });
+
+test('product comparison uses paired unit bars and handles empty sales',()=>{
+ const {app}=setup();app.state.data={PRODUCTS:[{id:1,name:'Rice'},{id:2,name:'Milk'}]};
+ const tree=JSON.stringify(app.buildProductComparison({rows:[{productId:1,qty:8},{productId:1,qty:2},{productId:2,qty:3}]}));
+ assert.ok(tree.includes('Rice: 10 units'));assert.ok(tree.includes('Milk: 3 units'));
+ assert.ok(tree.includes('comparison-vertical-bar is-top'));assert.ok(tree.includes('comparison-vertical-bar is-least'));
+ assert.ok(!tree.includes('comparison-track'));
+ assert.ok(JSON.stringify(app.buildProductComparison({rows:[]})).includes('No sales recorded for this period.'));
+});
