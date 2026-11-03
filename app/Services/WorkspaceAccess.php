@@ -18,6 +18,9 @@ class WorkspaceAccess
  {
   $role=$actor->normalizedRole();
   $query=User::query();
+  // Super Admin manages Admin identities across workspaces, not their business records.
+  if($role==='super_admin')return $actor->isActive()
+   ? $query->whereRaw('LOWER(role) = ?', ['admin']) : $query->whereRaw('1 = 0');
   if(config('workspaces.enabled'))$query->whereIn('workspace_id',self::accountWorkspaceIds($actor));
   else if($role!=='manager')$query->where('created_by_user_id',$actor->id)->where('created_by_user_role',$role);
   if($role==='super_admin')$query->whereRaw('LOWER(role) = ?', ['admin']);

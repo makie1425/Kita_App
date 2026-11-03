@@ -41,7 +41,10 @@ class WorkflowNotifications
         $recipients = collect($recipients)->filter()->unique(fn (User $user) => $user->role.':'.$user->id);
         $workspaceId = WorkspaceRead::forUser($actor);
         if ($area === 'account' && $accountWorkspaceId !== null) {
-            abort_unless(in_array($accountWorkspaceId, WorkspaceAccess::accountWorkspaceIds($actor), true), 403);
+            $adminAccountAction = $actor->isActive() && $actor->normalizedRole() === 'super_admin'
+                && $recipients->every(fn (User $recipient) => $recipient->normalizedRole() === 'admin'
+                    || ($recipient->id === $actor->id && $recipient->normalizedRole() === 'super_admin'));
+            abort_unless($adminAccountAction || in_array($accountWorkspaceId, WorkspaceAccess::accountWorkspaceIds($actor), true), 403);
             $workspaceId = $accountWorkspaceId;
         }
         $recipients = $recipients->filter(function (User $recipient) use ($workspaceId, $area) {
