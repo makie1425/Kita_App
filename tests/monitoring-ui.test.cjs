@@ -16,6 +16,13 @@ test('dashboard renders only operational cards, chart gaps and sanitized error d
  for(const label of ['Total Users','Audit Events','Recorded User Activity','Database query','Dashboard calculation'])assert.ok(!tree.includes(label),label);
  assert.equal((tree.match(/"tag":"polyline"/g)||[]).length,2);
 });
+test('provider availability uses the reported percentage and period, including unavailable summaries',()=>{
+ const {app}=setup();app.state.saDashboard={storage:null,memory:null,rpm:[],errors:[],availability:{source:'Better Stack',uptime_percentage:99.5,downtime_seconds:120,status:'Operational',window:'Better Stack: since monitor creation',observed_at:'2026-11-03T00:00:00Z'}};
+ let tree=JSON.stringify(app.buildSaDashboard());
+ assert.ok(tree.includes('99.5000%'));assert.ok(tree.includes('since monitor creation'));assert.ok(!tree.includes('last 24 hours'));
+ app.state.saDashboard.availability.uptime_percentage=null;
+ tree=JSON.stringify(app.buildSaDashboard());assert.ok(!tree.includes('0.0000%'));assert.ok(tree.includes('Unavailable'));
+});
 test('business matrix excludes privileged role and Super Admin account form excludes Employee ID',()=>{
  const {app}=setup();assert.deepEqual(Array.from(app.defaultRolesMatrix().roles),['Admin','Manager','Cashier']);
  app.state.role='superadmin';app.state.accountsLocal=[];app.state.acctModalOpen=true;app.state.acctModalMode='create';app.state.acctForm={role:'admin',status:'Active'};

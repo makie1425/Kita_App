@@ -36,6 +36,8 @@ class OperationalMonitoring
    $last=$checks->last();
    if($last)$availability=['uptime_seconds'=>$up,'downtime_seconds'=>$down,'unknown_seconds'=>max(0,86400-$up-$down),'status'=>($now->timestamp-strtotime($last->observed_at.' UTC')>90)?'Unavailable':($last->available?'Operational':'Down'),'observed_at'=>$last->observed_at.'Z','window'=>'Last 24 hours; sampled intervals, gaps excluded'];
   }catch(Throwable){}
+  $external=app(BetterStackMonitoring::class);
+  if($external->configured())$availability=$external->snapshot();
   try{$errors=DB::table('monitoring_errors')->orderByDesc('id')->limit(25)->get();}catch(Throwable){}
   return ['storage'=>$this->storage(),'memory'=>$this->memory(),'rpm'=>$rpm,'availability'=>$availability,'errors'=>$errors,'measured_at'=>$now->toIso8601String()];
  }

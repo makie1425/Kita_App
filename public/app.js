@@ -3176,9 +3176,9 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
         metric('Storage Consumption',bytes(d.storage?.used_bytes),d.storage?d.storage.scope+'; capacity '+bytes(d.storage.limit_bytes):'Filesystem measurements cannot be retrieved'),
         metric('RAM Consumption',bytes(d.memory?.used_bytes),d.memory?d.memory.scope+'; limit '+bytes(d.memory.limit_bytes):'Container memory measurements cannot be retrieved'),
         metric('Requests Per Minute',latest==null?'Unavailable':latest,'Last completed minute',chart),
-        metric('System Uptime',duration(d.availability?.uptime_seconds),'Observed available time, last 24 hours'),
-        metric('System Downtime',duration(d.availability?.downtime_seconds),'Observed unavailable time, last 24 hours'),
-        metric('System Status',d.availability?.status||'Unavailable',d.availability?'Unobserved time: '+duration(d.availability.unknown_seconds):'External availability monitor not reporting')]),
+        metric('System Uptime',d.availability?.source==='Better Stack'?(d.availability.uptime_percentage==null?'Unavailable':d.availability.uptime_percentage.toFixed(4)+'%'):duration(d.availability?.uptime_seconds),d.availability?.window||'Observed available time, last 24 hours'),
+        metric('System Downtime',duration(d.availability?.downtime_seconds),d.availability?.window||'Observed unavailable time, last 24 hours'),
+        metric('System Status',d.availability?.status||'Unavailable',d.availability?.source==='Better Stack'?'Better Stack; last check: '+(d.availability.observed_at?new Date(d.availability.observed_at).toLocaleString():'Unavailable'):d.availability?'Unobserved time: '+duration(d.availability.unknown_seconds):'External availability monitor not reporting')]),
       h('section',{className:'sa-panel'},[h('h2',null,'Recent Error Logs'),
         d.errors===null?h('p',null,'Unavailable'):!d.errors.length?h('p',null,'No recorded errors.'):
         this.recordTable('monitoring-errors',['Severity','Error Message','Affected Component','Date and Time','Status','Actions'],
