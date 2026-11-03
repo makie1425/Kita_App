@@ -1615,6 +1615,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
       onCancel:e=>{e.preventDefault();close();},
       onClick:e=>{if(e.target===e.currentTarget){const rect=e.currentTarget.getBoundingClientRect();if(e.clientX<rect.left||e.clientX>rect.right||e.clientY<rect.top||e.clientY>rect.bottom)close();}}
     },[h('h2',{id:'purchase-details-title'},r.id),h('p',null,`${r.supplierName||this.purchaseSupplier(r.lines[0]?.supplierId)} | ${r.status} | PO Date: ${r.requested_at||r.dateRequested} | Requested by ${r.requestedBy}`),
+      this.buildPurchaseTracking(r),
       h('div',{className:'purchase-details-table'},table(['Item','Category','Reviewed quantity',unitHeading],r.lines.map(l=>tr([td(l.name),td(l.category),td(l.confirmedQty??l.qty),td(this.requestUnitSummary(l,mixed))],l.id)))),h('p',null,r.notes||''),h('p',null,r.disapprovalReason||r.adminNote||''),h('div',{className:'dialog-actions'},[h('button',{type:'button',className:'kita-button kita-button--primary',autoFocus:true,onClick:close},'Close details'),r.poId?this.purchaseReportLink(r.poId):null])]);
   }
   requestUnitLabel=line=>{const unit=line.orderUnit||this.purchaseUnit(line);return ['piece','pieces'].includes(unit.toLowerCase())?'Pieces':unit;};
@@ -2042,6 +2043,23 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     const f=this.state.deliveryPlan;this.setState({deliveryPlanSaving:true});
     try{const result=await this.authPost('/api/purchase-orders/'+encodeURIComponent(f.id)+'/plan',{expectedDeliveryDate:f.expectedDeliveryDate||null,supplierSentDate:f.supplierSentDate||null,supplierSentVia:f.supplierSentVia||null,supplierSentNote:f.supplierSentNote||''},'PATCH');this.setState({deliveryPlan:null});await this.reloadPurchasing();this.toast(result.message);}catch(e){this.toast(e.message,'error');}finally{this.setState({deliveryPlanSaving:false});}
   };
+  buildPurchaseTracking(order,request=null){
+    const h=React.createElement,r=request||order,raw=String(r.status||'');
+    const rejected=['Declined','Rejected','Disapproved'].includes(raw);
+    const approved=!rejected&&(!!r.poId||!!r.approved_at||['Approved','Approved / Waiting for Delivery','Completed','Partially Received','Fully Received','Received with Discrepancy','Closed'].includes(raw));
+    const review=!approved&&!rejected&&(raw==='Review'||raw==='Under Review'||raw==='Proceed to Purchase'||Number(r.revision)>0);
+    const current=rejected?'Rejected':approved?'Approved':review?'Review':'Pending',index=approved||rejected?2:review?1:0;
+    const date=index===2?(r.approved_at||r.reviewed_at):index===0?(r.requested_at||r.dateRequested||r.created):null;
+    const descriptions={Pending:'Purchase order submitted and awaiting evaluation.',Review:'Purchase order is being reviewed; comments or corrections may be provided.',Approved:'Purchase order has been approved.',Rejected:'Purchase order has been declined.'};
+    return h('section',{className:'po-tracking','aria-label':'Purchase order approval tracking'},[
+      h('h3',null,'Order Status'),
+      h('ol',{className:'po-tracking-steps'},['Pending','Review',rejected?'Rejected':'Approved'].map((label,i)=>h('li',{key:label,className:i<=index?'is-active':'','aria-current':i===index?'step':undefined},[h('span',{className:'po-tracking-dot','aria-hidden':true},String(i+1)),h('strong',null,label)]))),
+      h('section',{className:'po-tracking-details'},[h('h3',null,'Status Details'),h('div',{className:'po-tracking-heading'},[h('strong',null,current),h('span',{className:'po-tracking-badge'},'Current Status')]),
+        h('p',{className:'po-tracking-date'},date?String(date):'Status date not recorded'),h('p',null,descriptions[current]),
+        h('h4',null,'Remarks / Comments'),h('p',{className:'po-tracking-remarks'},(rejected?r.disapprovalReason||r.adminNote:r.adminNote||r.notes)||(rejected?'No rejection remarks recorded.':'No remarks recorded.')),
+        order!==r||['Cancelled','Draft'].includes(raw)?h('p',{className:'po-tracking-date'},'Order / delivery status: '+order.status):null])
+    ]);
+  }
   purchaseOrderDetails(){
     const h=React.createElement,data=this.state.purchaseData,id=this.state.purchaseOrderDetail;
     if(!id||!data)return null;
@@ -2050,6 +2068,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     return h('dialog',{className:'purchase-details-dialog po-order-dialog','aria-labelledby':'po-order-title',ref:node=>{if(node&&!node.open)node.showModal();},onCancel:e=>{e.preventDefault();close();}},[
       h('header',{className:'po-dialog-header'},[h('h2',{id:'po-order-title'},o.id),badge(o.status),h('button',{className:'kita-button','aria-label':'Close purchase order',onClick:close},'Close')]),
       h('div',{className:'po-dialog-body'},[h('p',null,(o.supplierName||this.purchaseSupplier(o.supplierId??o.lines[0]?.supplierId))+' | PO Date: '+(request?.dateRequested||o.created||'')),
+        this.buildPurchaseTracking(o,request),
         table(['Item','Category','Order Qty','Received Qty','Unit','Unit Cost','Subtotal'],o.lines.map(l=>tr([td(l.name),td(l.category||'-'),td(l.orderedQty??l.confirmedQty??l.qty),td(l.deliveredQty||0),td(l.unit||this.purchaseUnit(l)),td(peso(l.unitCost||0)),td(peso(Number(l.orderedQty??l.confirmedQty??l.qty)*Number(l.unitCost||0)))],l.id))),
         request?.notes?h('p',null,request.notes):null,request?.disapprovalReason||request?.adminNote?h('p',null,request.disapprovalReason||request.adminNote):null]),
       h('footer',{className:'dialog-actions'},[...(request?this.purchaseRequestActions(request).slice(1).map(action=>h(action.type,{...action.props,onClick:()=>{close();action.props.onClick();}})):[]),order?this.purchaseReportLink(order.id):null,order?h('a',{className:'kita-button',href:'/purchase-orders/'+encodeURIComponent(order.id)+'/order',target:'_blank',rel:'noopener'},'Print Supplier PO'):null,order&&this.state.role==='admin'&&!['Cancelled','Closed'].includes(order.status)&&order.lines.some(l=>this.receivingOutstanding(l)>0)?btn('Cancel Remaining',()=>{close();this.cancelPurchaseRemainder(order.id);}):null])]);

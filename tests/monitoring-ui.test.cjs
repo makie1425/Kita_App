@@ -77,3 +77,13 @@ test('product comparison uses paired unit bars and handles empty sales',()=>{
  assert.ok(!tree.includes('comparison-track'));
  assert.ok(JSON.stringify(app.buildProductComparison({rows:[]})).includes('No sales recorded for this period.'));
 });
+
+test('purchase tracking has three steps and replaces approved with rejected',()=>{
+ const {app}=setup();
+ for(const [record,status] of [[{status:'Pending Approval'},'Pending'],[{status:'Pending Approval',revision:1},'Review'],[{status:'Approved / Waiting for Delivery',poId:'PO1'},'Approved'],[{status:'Declined',disapprovalReason:'Budget exceeded'},'Rejected']]){
+  const tree=JSON.stringify(app.buildPurchaseTracking(record));
+  assert.equal((tree.match(/"tag":"li"/g)||[]).length,3);
+  assert.ok(tree.includes('"'+status+'"'));
+  if(status==='Rejected'){assert.ok(!tree.includes('"Approved"'));assert.ok(tree.includes('Budget exceeded'));}
+ }
+});
