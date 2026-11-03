@@ -46,13 +46,6 @@ if [[ "${SEED_INITIAL_SUPERADMIN:-false}" == 'true' ]]; then
     artisan accounts:seed-initial-superadmin
 fi
 artisan config:cache
-if [[ "${LOAD_GROCERY_PRESENTATION:-false}" == 'true' ]]; then
-    if [[ -z "${PRESENTATION_ADMIN_EMAIL:-}" || -z "${PRESENTATION_MANAGER_EMAIL:-}" ]]; then
-        echo 'Presentation import skipped: set both PRESENTATION_ADMIN_EMAIL and PRESENTATION_MANAGER_EMAIL. Application startup continues.' >&2
-    elif ! artisan presentation:load-grocery "$PRESENTATION_ADMIN_EMAIL" "$PRESENTATION_MANAGER_EMAIL" --apply; then
-        echo 'Presentation import failed or was refused. It has not completed. Application startup continues; review the account/workspace diagnostics above.' >&2
-    fi
-fi
 if ! artisan route:cache; then
     echo 'Route cache unavailable; continuing with uncached routes.' >&2
     artisan route:clear
@@ -66,8 +59,10 @@ php-fpm -t
 
 php_pid=''
 nginx_pid=''
+import_pid=''
 stop_services() {
     trap - TERM INT
+    [[ -z "$import_pid" ]] || kill -TERM "$import_pid" 2>/dev/null || true
     [[ -z "$nginx_pid" ]] || kill -QUIT "$nginx_pid" 2>/dev/null || true
     [[ -z "$php_pid" ]] || kill -QUIT "$php_pid" 2>/dev/null || true
     wait || true
@@ -98,6 +93,17 @@ fi
 echo 'PHP-FPM listener ready; starting Nginx.'
 nginx -g 'daemon off;' &
 nginx_pid=$!
+# Imports can take several minutes over a remote database. Never delay the web
+# listener for this optional job, and never let its exit stop the web servers.
+if [[ "${LOAD_GROCERY_PRESENTATION:-false}" == 'true' ]]; then
+    if [[ -z "${PRESENTATION_ADMIN_EMAIL:-}" || -z "${PRESENTATION_MANAGER_EMAIL:-}" ]]; then
+        echo 'Presentation import skipped: set both presentation account emails.' >&2
+    else
+        echo 'Starting grocery import in background. Service readiness does not mean the import has completed.'
+        gosu www-data php artisan presentation:load-grocery "$PRESENTATION_ADMIN_EMAIL" "$PRESENTATION_MANAGER_EMAIL" --apply &
+        import_pid=$!
+    fi
+fi
 # Either server exiting ends the container, allowing Render to restart it.
 set +e
 wait -n "$php_pid" "$nginx_pid"

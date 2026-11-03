@@ -42,6 +42,11 @@ bypass it: arrange an empty workspace/account relationship instead. A rejected i
 prints diagnostics and does not prevent the web application from starting. A running
 application is not evidence that the import succeeded; check the explicit import result.
 
+The import runs as a background child after Nginx starts, so remote database latency
+does not block Render's port scan. Server shutdown terminates the import; uncommitted
+data rolls back and a later restart retries safely. Avoid using the target workspace
+until the import completes. Other workspaces retain their normal access boundaries.
+
 Local tests cover role/membership checks, preview without writes, product/batch/sales
 counts, workspace ownership, stock reconciliation, and repeat safety. Production account
 roles and live loading remain unverified until the command executes in Render.
