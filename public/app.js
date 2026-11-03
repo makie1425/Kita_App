@@ -3163,27 +3163,44 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     const points=d.rpm||[],latest=points.at(-1)?.requests,max=Math.max(1,...points.map(p=>p.requests??0));
     const segments=[];let current=[];
     points.forEach((p,i)=>{if(p.requests==null){if(current.length)segments.push(current);current=[];}else current.push([10+i*280/29,90-p.requests/max*80]);});if(current.length)segments.push(current);
-    const chart=h('figure',{style:{margin:'12px 0 0'}},[
-      h('svg',{viewBox:'0 0 300 110',role:'img','aria-label':'Requests per minute during the last 30 completed minutes. Gaps indicate unavailable measurements.',style:{width:'100%',height:110}},
-        [h('path',{d:'M10 10 V90 H290',fill:'none',stroke:'#cbd5e1'}),...segments.map((p,i)=>h('polyline',{key:i,points:p.map(v=>v.join(',')).join(' '),fill:'none',stroke:'#1747e8',strokeWidth:2})),
+    const chart=h('figure',{className:'monitor-chart'},[
+      h('svg',{viewBox:'0 0 300 110',preserveAspectRatio:'none',role:'img','aria-label':'Requests per minute during the last 30 completed minutes. Gaps indicate unavailable measurements.'},
+        [h('defs',null,h('linearGradient',{id:'rpm-fill',x1:0,y1:0,x2:0,y2:1},[h('stop',{offset:'0%',stopColor:'#2563eb',stopOpacity:0.18}),h('stop',{offset:'100%',stopColor:'#2563eb',stopOpacity:0})])),
+         ...[0,1,2,3,4].map(i=>h('line',{key:'grid'+i,x1:10,x2:290,y1:10+i*20,y2:10+i*20,stroke:'#edf2fa',vectorEffect:'non-scaling-stroke'})),
+         ...segments.filter(p=>p.length>1).map((p,i)=>h('polygon',{key:'fill'+i,points:[[p[0][0],90],...p,[p.at(-1)[0],90]].map(v=>v.join(',')).join(' '),fill:'url(#rpm-fill)'})),
+         h('path',{d:'M10 10 V90 H290',fill:'none',stroke:'#cbd5e1',vectorEffect:'non-scaling-stroke'}),...segments.map((p,i)=>h('polyline',{key:i,points:p.map(v=>v.join(',')).join(' '),fill:'none',stroke:'#2563eb',strokeWidth:2,vectorEffect:'non-scaling-stroke'})),
          ...segments.flat().map((p,i)=>h('circle',{key:'p'+i,cx:p[0],cy:p[1],r:2,fill:'#1747e8'})),
          h('text',{x:12,y:10,fontSize:9},String(max)),h('text',{x:10,y:105,fontSize:9},'30 min ago'),h('text',{x:245,y:105,fontSize:9},'Last minute')]),
       h('figcaption',{className:'sa-note'},'Laravel requests/minute, including health checks. Missing samples are gaps.')]);
-    const metric=(label,value,note,extra)=>h('article',{className:'sa-kpi',key:label},[h('div',null,label),h('strong',{style:label==='System Status'?{color:value==='Operational'?'#16803d':value==='Down'?'#b91c1c':'#667085'}:undefined},value),h('p',{className:'sa-note'},note),extra]);
-    return h('div',{className:'sa-dashboard'},[
+    const metric=(label,value,note,extra)=>h('article',{className:'monitor-summary',key:label},[h('div',null,label),h('strong',{style:label==='System Status'?{color:value==='Operational'?'#059669':value==='Down'?'#b91c1c':'#667085'}:undefined},value),h('p',{className:'sa-note'},note),extra]);
+    const resource=(label,data)=>{
+      const used=data?.used_bytes,limit=data?.limit_bytes,ratio=used!=null&&limit>0?used/limit*100:null;
+      const high=ratio!=null&&ratio>=80;
+      return h('article',{className:'monitor-resource'},[
+        h('header',null,[h('h2',null,label),h('span',{className:'monitor-badge'+(ratio==null?' is-unknown':high?' is-high':'')},ratio==null?'Unavailable':ratio.toFixed(1)+'% '+(high?'High usage':'Normal usage'))]),
+        h('strong',{className:'monitor-resource-value'},bytes(used)),h('p',{className:'sa-note'},data?.scope||'Measurement unavailable'),
+        h('div',{className:'monitor-meter-labels'},[h('span',null,'Used: '+bytes(used)),h('span',null,'Limit: '+bytes(limit))]),
+        ratio==null?h('p',{className:'sa-note'},'Capacity unavailable'):h('div',{className:'monitor-meter',role:'progressbar','aria-label':label,'aria-valuemin':0,'aria-valuemax':100,'aria-valuenow':Math.min(100,Math.max(0,ratio))},h('span',{style:{width:Math.min(100,Math.max(0,ratio))+'%',background:high?'#f59e0b':'#2563eb'}})),
+        h('footer',{className:'monitor-meter-labels'},[h('span',null,'Available: '+bytes(used!=null&&limit!=null?Math.max(0,limit-used):null)),h('span',null,'High usage threshold: 80%')])]);
+    };
+    return h('div',{className:'sa-dashboard monitor-dashboard'},[
       this.state.saError?h('p',{role:'alert'},'Refresh failed. Displayed measurements may be stale.'):null,
-      h('div',{className:'sa-kpis sa-operational-grid'},[
-        metric('Storage Consumption',bytes(d.storage?.used_bytes),d.storage?d.storage.scope+'; capacity '+bytes(d.storage.limit_bytes):'Filesystem measurements cannot be retrieved'),
-        metric('RAM Consumption',bytes(d.memory?.used_bytes),d.memory?d.memory.scope+'; limit '+bytes(d.memory.limit_bytes):'Container memory measurements cannot be retrieved'),
-        metric('Requests Per Minute',latest==null?'Unavailable':latest,'Last completed minute',chart),
+      h('div',{className:'monitor-summary-grid'},[
+        metric('System Status',d.availability?.status||'Unavailable',d.availability?.source==='Better Stack'?'Better Stack; last check: '+(d.availability.observed_at?new Date(d.availability.observed_at).toLocaleString():'Unavailable'):'External availability monitoring'),
         metric('System Uptime',d.availability?.source==='Better Stack'?(d.availability.uptime_percentage==null?'Unavailable':d.availability.uptime_percentage.toFixed(4)+'%'):duration(d.availability?.uptime_seconds),d.availability?.window||'Observed available time, last 24 hours'),
         metric('System Downtime',duration(d.availability?.downtime_seconds),d.availability?.window||'Observed unavailable time, last 24 hours'),
-        metric('System Status',d.availability?.status||'Unavailable',d.availability?.source==='Better Stack'?'Better Stack; last check: '+(d.availability.observed_at?new Date(d.availability.observed_at).toLocaleString():'Unavailable'):d.availability?'Unobserved time: '+duration(d.availability.unknown_seconds):'External availability monitor not reporting')]),
+        metric('Requests Per Minute',latest==null?'Unavailable':latest,'Last completed minute'+(points.some(p=>p.requests!=null)?' (Peak: '+Math.max(...points.map(p=>p.requests??0))+' RPM)':''))]),
+      h('div',{className:'monitor-resource-grid'},[resource('Storage Consumption',d.storage),resource('RAM Consumption',d.memory)]),
+      h('section',{className:'sa-panel monitor-chart-panel'},[h('header',null,[h('h2',null,'Laravel Requests Per Minute'),h('span',{className:'sa-note'},'30-minute window')]),chart]),
+      h('div',{className:'monitor-bottom-grid'},[
       h('section',{className:'sa-panel'},[h('h2',null,'Recent Error Logs'),
-        d.errors===null?h('p',null,'Unavailable'):!d.errors.length?h('p',null,'No recorded errors.'):
+        h('p',{className:'sa-note'},'Latest 25 application errors. Messages are sanitized; server logs retain diagnostic details.'),
+        d.errors===null?h('div',{className:'monitor-empty'},'Unavailable'):!d.errors.length?h('div',{className:'monitor-empty'},[h('span',{'aria-hidden':true,className:'monitor-check'},'✓'),h('strong',null,'No recorded errors.'),h('p',{className:'sa-note'},'No entries in the application error log.')]):
         this.recordTable('monitoring-errors',['Severity','Error Message','Affected Component','Date and Time','Status','Actions'],
           d.errors.map(log=>tr([td(log.severity),td(log.message),td(log.component),td(new Date(log.occurred_at.replace(' ','T')+'Z').toLocaleString()),td(log.status),td(btn('View Details',()=>this.monitoringDetail(log.id)))],log.id))),
-        h('p',{className:'sa-note'},'Latest 25 application errors. Messages are sanitized; server logs retain diagnostic details.')]),
+        h('footer',{className:'sa-note monitor-log-footer'},'Log buffer: latest 25 entries')]),
+      h('section',{className:'sa-panel'},[h('h2',null,'Monitoring Environment'),h('dl',{className:'monitor-specs'},[
+        ...[['Monitor integration',d.availability?.source||'External probe'],['Application storage',d.storage?.scope||'Unavailable'],['Memory scope',d.memory?.scope||'Unavailable'],['Dashboard refresh','Every 30 seconds while visible']].map(([label,value])=>h('div',{key:label},[h('dt',null,label),h('dd',null,value)]))]),h('p',{className:'monitor-info'},'Availability follows external monitor checks. Dashboard refresh does not change the check frequency.')])]),
       e?h('section',{className:'sa-panel',role:'region','aria-label':'Error details'},[h('h2',null,'Error #'+e.id),h('p',null,e.message),h('p',null,e.component+' · '+e.severity+' · '+e.occurred_at+' UTC · '+e.status),
         ...['New','Acknowledged','Resolved'].map(status=>btn('Mark '+status,()=>this.monitoringStatus(status))),btn('Close',()=>this.setState({monitoringError:null}))]):null,
       h('p',{className:'sa-note'},'Updated '+new Date(d.measured_at).toLocaleString()+'. Refreshes every 30 seconds while visible. Availability is sampled; unobserved intervals are excluded.'),

@@ -1898,3 +1898,39 @@ body:has(.loading-overlay) button[aria-busy="true"]::before { display: none; }
 .inventory-batch-dialog-header p{color:#e5edff}
 .inventory-batch-dialog-footer{display:flex;justify-content:flex-end;padding:16px 20px;border-top:1px solid #dce6f7;background:#fff;flex-shrink:0}
 body:has(.inventory-batch-dialog[open]){overflow:hidden}
+
+/* Operational monitoring dashboard. */
+.monitor-dashboard{display:flex;flex-direction:column;gap:22px;min-width:0;color:#10233f}
+.monitor-summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px}
+.monitor-summary,.monitor-resource,.monitor-dashboard .sa-panel{background:#fff;border:1px solid #e2eaf4;border-radius:12px;box-shadow:0 2px 3px #16376306;min-width:0}
+.monitor-summary{padding:20px 18px;position:relative;overflow:hidden}
+.monitor-summary:before{content:'';position:absolute;inset:0 0 auto;height:4px;background:#2563eb}
+.monitor-summary:first-child:before{background:#10b981}.monitor-summary:nth-child(3):before{background:#7060ff}
+.monitor-summary>div:first-child{font-size:12px;color:#586e8f;margin-bottom:8px}
+.monitor-summary>strong{font-size:26px;line-height:1.2;letter-spacing:-.7px;overflow-wrap:anywhere}
+.monitor-dashboard .sa-note{font-size:12px;line-height:1.6;color:#647b9b;margin:8px 0 0}
+.monitor-resource-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px}
+.monitor-resource{padding:24px}
+.monitor-resource header,.monitor-chart-panel header{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.monitor-dashboard h2{font-size:16px;line-height:1.4;margin:0;color:#10233f;font-weight:650}
+.monitor-resource-value{display:block;font-size:36px;letter-spacing:-1px;margin-top:10px;overflow-wrap:anywhere}
+.monitor-badge{font-size:11px;padding:4px 8px;background:#d1fae5;color:#047857;border-radius:5px}.monitor-badge.is-high{background:#fef3c7;color:#92400e}
+.monitor-badge.is-unknown{background:#f1f5f9;color:#64748b}
+.monitor-meter-labels{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:12px;color:#647b9b;margin:20px 0 8px}
+.monitor-meter{height:12px;border:1px solid #e2eaf4;border-radius:20px;background:#f1f5f9;padding:2px;box-sizing:border-box;overflow:hidden}
+.monitor-meter>span{height:100%;display:block;border-radius:20px}
+.monitor-resource footer{margin-top:12px}
+.monitor-dashboard .sa-panel{padding:24px;margin:0;overflow:hidden}
+.monitor-chart{margin:16px 0 0;border-top:1px solid #edf2fa;padding-top:16px}
+.monitor-chart svg{display:block;width:100%;height:260px;overflow:visible}
+.monitor-chart svg text{fill:#647b9b;font-size:4px}
+.monitor-chart svg circle{r:.7;fill:#2563eb}
+.monitor-bottom-grid{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:22px}
+.monitor-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;min-height:150px;background:#f7f9fc;border:1px solid #e8eef7;border-radius:9px;margin:20px 0;padding:16px}
+.monitor-check{display:grid;place-items:center;background:#d1fae5;color:#059669;border-radius:50%;width:38px;height:38px;font-size:22px;margin-bottom:12px}
+.monitor-log-footer{border-top:1px solid #edf2fa;padding-top:14px}
+.monitor-specs{margin:16px 0}.monitor-specs>div{display:flex;justify-content:space-between;gap:16px;padding:12px 0;border-top:1px solid #edf2fa;font-size:12px}
+.monitor-specs dt{color:#647b9b}.monitor-specs dd{margin:0;text-align:right;max-width:60%;overflow-wrap:anywhere}
+.monitor-info{background:#eff6ff;border:1px solid #dbeafe;border-radius:8px;padding:12px;color:#2453a6;font-size:12px;line-height:1.6}
+@media(max-width:1100px){.monitor-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.monitor-bottom-grid{grid-template-columns:1fr}}
+@media(max-width:650px){.monitor-summary-grid,.monitor-resource-grid{grid-template-columns:1fr}.monitor-dashboard{gap:16px}.monitor-resource,.monitor-dashboard .sa-panel{padding:18px}.monitor-chart svg{height:180px}.monitor-chart svg text{font-size:6px}.monitor-resource-value{font-size:30px}}
