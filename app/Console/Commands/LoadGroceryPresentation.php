@@ -42,6 +42,8 @@ class LoadGroceryPresentation extends Command
                     return json_decode($progress->products, true, 512, JSON_THROW_ON_ERROR);
                 }
                 if (DB::table('transactions')->where('workspace_id',$workspace)->where('uuid',$prefix.'-2026-49')->exists()) {
+                    \App\Services\LegacyGroceryCheckpoint::adopt($workspace,$manager);
+                    $this->info('Verified legacy grocery dataset; saved completion checkpoint without changing business records.');
                     $this->info('This dataset is already loaded. Nothing changed.'); return null;
                 }
                 // Refuse to merge synthetic history into an operating catalog.

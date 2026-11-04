@@ -96,6 +96,26 @@ class PresentationAccountCheckTest extends TestCase
         $this->actingAs(User::factory()->create(['role'=>'manager']))->getJson('/api/kita-data')->assertOk()->assertJsonCount(0,'PRODUCTS')->assertJsonCount(0,'TRANSACTIONS');
     }
 
+    public function test_legacy_import_is_adopted_without_duplicate_records_and_incomplete_data_is_refused(): void
+    {
+        $manager=User::factory()->create(['role'=>'manager']);
+        $admin=User::factory()->create(['role'=>'admin']);
+        $this->assignWorkspace($manager,$admin);
+        $args=['admin'=>$admin->email,'manager'=>$manager->email,'--apply'=>true];
+        $this->artisan('presentation:load-grocery',$args)->assertSuccessful();
+        DB::table('grocery_imports')->where('workspace_id',$this->fixtureWorkspace)->delete();
+        $this->artisan('presentation:load-grocery',$args)->assertSuccessful();
+        $this->assertDatabaseCount('products',50);
+        $this->assertDatabaseCount('transactions',150);
+        $this->assertDatabaseHas('grocery_imports',['workspace_id'=>$this->fixtureWorkspace,'manager_id'=>$manager->id,'completed'=>true,'completed_steps'=>150]);
+        DB::table('grocery_imports')->where('workspace_id',$this->fixtureWorkspace)->delete();
+        DB::table('supplier_products')->where('workspace_id',$this->fixtureWorkspace)->delete();
+        $this->artisan('presentation:load-grocery',$args)->assertFailed();
+        $this->assertDatabaseCount('grocery_imports',0);
+        $this->assertDatabaseCount('products',50);
+        $this->assertDatabaseCount('transactions',150);
+    }
+
     public function test_unassigned_accounts_receive_a_new_isolated_workspace(): void
     {
         $admin=User::factory()->create(['role'=>'admin']);
