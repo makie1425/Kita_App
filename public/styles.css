@@ -1495,7 +1495,7 @@ body:has(.receiving-dialog[open]) { overflow:hidden; }
 .operations-dashboard .dashboard-metrics .kpi-value { font-size:27px; }
 .operations-dashboard .dashboard-chart-grid { grid-template-columns:minmax(0,1.4fr) minmax(0,1fr); }
 .operations-dashboard .dashboard-chart-grid>.kita-card { display:flex; flex-direction:column; min-height:310px; border-radius:10px; }
-.operations-dashboard .sales-history-chart { min-width:0; width:100%; max-height:245px; }
+.operations-dashboard .sales-history-chart { min-width:0; width:100%; height:auto; max-height:none; }
 .dashboard-chart-grid .sales-history-scroll { flex:1; }
 .sales-peak { text-align:right; font-size:11px; color:#355682; padding-top:10px; border-top:1px solid #edf2fa; }
 .dashboard-chart-grid details { color:#1747e8; }

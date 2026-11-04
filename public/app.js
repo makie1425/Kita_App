@@ -238,14 +238,14 @@ function salesHistoryChart(sales,period){
   const h=React.createElement, points=sales.series;
   const maximum=Math.max(1,...points.map(point=>point.value));
   const minimum=Math.min(0,...points.map(point=>point.value));
-  const x=i=>110+i*650/Math.max(1,points.length-1), y=value=>235-(value-minimum)/(maximum-minimum)*200;
+  const x=i=>110+i*650/Math.max(1,points.length-1), y=value=>335-(value-minimum)/(maximum-minimum)*300;
   const interval=Math.max(1,Math.ceil(points.length/8));
   const unit=period==="daily"?"Hour":period==="yearly"?"Month":"Date (MM-DD)";
   return card([
     h("div",{className:"dashboard-panel-heading"},[h("h2",{key:"title",className:"panel-title"},"Sales History"),h("span",{className:"dashboard-period-badge"},period+" breakdown")]),
     h("p",{key:"range",className:"helper-text"},"Sales (PHP) • "+sales.range),
     !sales.rows.length?h("p",{key:"empty",role:"status"},"No sales recorded for this period."):null,
-    points.length?h("div",{key:"chart",className:"sales-history-scroll"},h("svg",{viewBox:"0 0 800 295",className:"sales-history-chart",role:"img","aria-label":"Sales history line graph, "+sales.range},[
+    points.length?h("div",{key:"chart",className:"sales-history-scroll"},h("svg",{viewBox:"0 0 800 395",className:"sales-history-chart",role:"img","aria-label":"Sales history line graph, "+sales.range},[
       h("title",{key:"title"},"Sales in PHP by "+unit.toLowerCase()),
       ...Array.from({length:5},(_,i)=>{const value=minimum+(maximum-minimum)*i/4;return h("g",{key:"grid"+i},[
         h("line",{x1:110,x2:760,y1:y(value),y2:y(value),stroke:"#e4e7ec"}),
@@ -254,8 +254,8 @@ function salesHistoryChart(sales,period){
       h("polygon",{key:"area",points:x(0)+","+y(0)+" "+points.map((point,i)=>x(i)+","+y(point.value)).join(" ")+" "+x(points.length-1)+","+y(0),fill:"#2864f514"}),
       h("polyline",{key:"line",points:points.map((point,i)=>x(i)+","+y(point.value)).join(" "),fill:"none",stroke:COLORS.brand,strokeWidth:3,strokeLinejoin:"round"}),
       ...points.map((point,i)=>h("circle",{key:point.key,cx:x(i),cy:y(point.value),r:4,fill:COLORS.brand},h("title",null,point.label+": PHP "+point.value.toFixed(2)))),
-      ...points.filter((point,i)=>i%interval===0||i===points.length-1).map(point=>h("text",{key:"label"+point.key,x:x(points.indexOf(point)),y:255,textAnchor:"middle",fontSize:11,fill:COLORS.textSoft},point.label)),
-      h("text",{key:"axis",x:435,y:283,textAnchor:"middle",fontSize:12,fill:COLORS.textSoft},unit),
+      ...points.filter((point,i)=>i%interval===0||i===points.length-1).map(point=>h("text",{key:"label"+point.key,x:x(points.indexOf(point)),y:355,textAnchor:"middle",fontSize:11,fill:COLORS.textSoft},point.label)),
+      h("text",{key:"axis",x:435,y:383,textAnchor:"middle",fontSize:12,fill:COLORS.textSoft},unit),
     ])):null,
     h("div",{className:"sales-peak"},"Peak: "+peso(Math.max(0,...points.map(p=>p.value)))),
     points.length?h("details",{key:"values"},[h("summary",null,"View sales history values"),table([unit,"Sales (PHP)"],points.map(point=>tr([td(point.label),td(peso(point.value))],point.key)))]):null,
