@@ -73,7 +73,7 @@ test('product comparison uses paired unit bars and handles empty sales',()=>{
  const {app}=setup();app.state.data={PRODUCTS:[{id:1,name:'Rice'},{id:2,name:'Milk'}]};
  const tree=JSON.stringify(app.buildProductComparison({rows:[{productId:1,qty:8},{productId:1,qty:2},{productId:2,qty:3}]}));
  assert.ok(tree.includes('Rice: 10 units'));assert.ok(tree.includes('Milk: 3 units'));
- assert.ok(tree.includes('comparison-vertical-bar is-top'));assert.ok(tree.includes('comparison-vertical-bar is-least'));
+ assert.ok(tree.includes('comparison-stack-segment is-top'));assert.ok(tree.includes('comparison-stack-segment is-least'));
  assert.ok(!tree.includes('comparison-track'));
  assert.ok(JSON.stringify(app.buildProductComparison({rows:[]})).includes('No sales recorded for this period.'));
 });
@@ -91,4 +91,14 @@ test('purchase tracking has three steps and replaces approved with rejected',()=
 test('cancelled order replaces the approved endpoint even with an approved request',()=>{
  const {app}=setup();const tree=JSON.stringify(app.buildPurchaseTracking({status:'Cancelled',supplierCallback:{reason:'Supplier cancelled'}},{status:'Approved',poId:'PO1'}));
  assert.equal((tree.match(/"tag":"li"/g)||[]).length,3);assert.ok(tree.includes('"Cancel"'));assert.ok(!tree.includes('"Approved"'));assert.ok(tree.includes('Supplier cancelled'));
+});
+
+test('stacked comparison custom dates include both boundaries and reject reversed dates',()=>{
+ const {app}=setup();app.state.data={PRODUCTS:[{id:1,name:'Rice'},{id:2,name:'Milk'}],SALES_LOG:[{date:'2026-01-01',productId:1,qty:4},{date:'2026-01-03',productId:2,qty:2},{date:'2026-01-04',productId:1,qty:100}]};
+ Object.assign(app.state,{comparisonCustom:true,comparisonFrom:'2026-01-01',comparisonTo:'2026-01-03'});
+ let tree=JSON.stringify(app.buildProductComparison({rows:[],range:'Other period'}));
+ assert.ok(tree.includes('Rice: 4 units'));assert.ok(tree.includes('Milk: 2 units'));assert.ok(!tree.includes('104 units'));
+ assert.ok(tree.includes('"height":"50%"'));assert.ok(tree.includes('"height":"25%"'));
+ app.state.comparisonFrom='2026-02-01';tree=JSON.stringify(app.buildProductComparison({rows:[]}));
+ assert.ok(tree.includes('Choose a valid From and To date.'));assert.ok(!tree.includes('comparison-stack-segment'));
 });

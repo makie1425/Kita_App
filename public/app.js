@@ -1431,24 +1431,36 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
   }
   buildProductComparison(sales){
     const h=React.createElement, quantities=new Map();
-    sales.rows.forEach(row=>quantities.set(String(row.productId),(quantities.get(String(row.productId))||0)+Number(row.qty)));
+    const custom=this.state.comparisonCustom,from=this.state.comparisonFrom||'',to=this.state.comparisonTo||'';
+    const invalid=custom&&(!from||!to||from>to);
+    const rows=custom?(invalid?[]:(this.state.data.SALES_LOG||[]).filter(row=>row.date>=from&&row.date<=to)):sales.rows;
+    rows.forEach(row=>quantities.set(String(row.productId),(quantities.get(String(row.productId))||0)+Number(row.qty)));
     const ranked=[...quantities].map(([id,qty])=>({id,qty,name:this.state.data.PRODUCTS.find(p=>String(p.id)===id)?.name||'Product #'+id})).filter(p=>p.qty>0).sort((a,b)=>b.qty-a.qty||a.name.localeCompare(b.name));
     const top=ranked.slice(0,Math.min(3,Math.ceil(ranked.length/2))),topIds=new Set(top.map(p=>p.id));
     const least=ranked.filter(p=>!topIds.has(p.id)).sort((a,b)=>a.qty-b.qty||a.name.localeCompare(b.name)).slice(0,3);
+    const scale=Math.max(4,Math.ceil(Math.max(0,...top.map((p,i)=>p.qty+(least[i]?.qty||0)))/4)*4);
     return card([
       h('div',{className:'dashboard-panel-heading'},[h('div',null,[h('h2',{className:'panel-title'},'Product Comparison'),null]),h('div',{className:'comparison-legend'},[h('span',{className:'comparison-top'},'Top selling'),h('span',{className:'comparison-least'},'Least selling')])]),
-      top.length?h('figure',{className:'product-comparison-chart','aria-label':'Top and least selling products by units sold'},[
+      h('div',{className:'comparison-date-controls'},[
+        h('label',null,['Date filter',h('select',{value:custom?'custom':'dashboard',onChange:e=>this.setState({comparisonCustom:e.target.value==='custom'})},[h('option',{value:'dashboard'},'Dashboard period'),h('option',{value:'custom'},'Custom date range')])]),
+        custom?h('label',null,['From',h('input',{type:'date',value:from,max:to||undefined,onChange:e=>this.setState({comparisonFrom:e.target.value})})]):null,
+        custom?h('label',null,['To',h('input',{type:'date',value:to,min:from||undefined,onChange:e=>this.setState({comparisonTo:e.target.value})})]):null
+      ]),
+      h('p',{className:'comparison-period',role:invalid?'alert':'status'},invalid?'Choose a valid From and To date.':custom?from+' to '+to:sales.range),
+      top.length?h('figure',{className:'product-comparison-chart','aria-label':'Stacked top and least selling products by units sold'},[
         h('div',{className:'comparison-axis-title'},'Units sold'),
         h('div',{className:'comparison-chart-scroll'},h('div',{className:'comparison-chart-body'},[
-          h('div',{className:'comparison-y-axis'},[4,3,2,1,0].map(i=>h('span',{key:i},String(i*Math.max(1,Math.ceil(top[0].qty/4)))))),
-          h('div',{className:'comparison-plot'},top.map((a,i)=>h('div',{key:a.id,className:'comparison-group'},
-            [a,least[i]].map((product,j)=>h('div',{key:j,className:'comparison-column'},[
-              h('div',{className:'comparison-bar-space'},product?h('div',{className:'comparison-vertical-bar '+(j?'is-least':'is-top'),style:{height:(product.qty/(Math.max(1,Math.ceil(top[0].qty/4))*4)*100)+'%'},title:product.name+': '+product.qty+' units'},h('span',null,String(product.qty))):null),
-              h('div',{className:'comparison-product-name'},product?product.name:'No comparison product')
-            ])))))
+          h('div',{className:'comparison-y-axis'},[4,3,2,1,0].map(i=>h('span',{key:i},String(i*scale/4)))),
+          h('div',{className:'comparison-plot'},top.map((a,i)=>h('div',{key:a.id,className:'comparison-group'},[
+            h('div',{className:'comparison-column'},[
+              h('div',{className:'comparison-stack-space'},[a,least[i]].filter(Boolean).map((product,j)=>h('button',{type:'button',key:product.id,className:'comparison-stack-segment '+(j?'is-least':'is-top'),style:{height:(product.qty/scale*100)+'%'},title:product.name+': '+product.qty+' units','aria-label':product.name+': '+product.qty+' units',onClick:()=>this.setState({comparisonSelection:product.id})},String(product.qty)))),
+              h('div',{className:'comparison-product-name'},['Pair '+(i+1),h('div',null,a.name+' ('+a.qty+')'),h('div',null,least[i]?least[i].name+' ('+least[i].qty+')':'No comparison product')])
+            ])
+          ])))
         ])),
-        h('figcaption',null,'Products ? Least selling includes products with recorded sales.')
-      ]):h('p',{className:'record-empty'},'No sales recorded for this period.'),
+        h('figcaption',null,'Each stack combines two different products. Least selling includes products with recorded sales.'),
+        ranked.some(p=>p.id===this.state.comparisonSelection)?h('p',{role:'status'},ranked.find(p=>p.id===this.state.comparisonSelection).name+': '+ranked.find(p=>p.id===this.state.comparisonSelection).qty+' units'):null
+      ]):h('p',{className:'record-empty'},invalid?'Select a date range to compare products.':'No sales recorded for this period.'),
       h('div',{className:'comparison-footer'},[h('span',null,'Units sold in selected period'),h('span',null,least.length+' pairs compared')])
     ]);
   }
