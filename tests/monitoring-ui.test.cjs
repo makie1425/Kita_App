@@ -92,3 +92,20 @@ test('cancelled order replaces the approved endpoint even with an approved reque
  const {app}=setup();const tree=JSON.stringify(app.buildPurchaseTracking({status:'Cancelled',supplierCallback:{reason:'Supplier cancelled'}},{status:'Approved',poId:'PO1'}));
  assert.equal((tree.match(/"tag":"li"/g)||[]).length,3);assert.ok(tree.includes('"Cancel"'));assert.ok(!tree.includes('"Approved"'));assert.ok(tree.includes('Supplier cancelled'));
 });
+
+test('purchase form removes expected delivery and adds a validated packaged catalog item',()=>{
+ const {app}=setup();
+ app.state.screen='mgrRequest';app.state.newReqCart=[];
+ app.state.data={PRODUCTS:[{id:1,name:'Rice',category:'Grocery',stockUnit:'Piece',unitPrice:10,supplierId:7,status:'Active'}],SUPPLIERS:[{id:7,name:'Supply Co',status:'Active'}]};
+ const initial=JSON.stringify(app.buildPurchaseRequests());
+ assert.ok(!initial.includes('Expected delivery'));assert.ok(initial.includes('Subtotal (PHP)'));assert.ok(initial.includes('Add First Item'));
+ const nodes=(v)=>!v||typeof v!=='object'?[]:Array.isArray(v)?v.flatMap(nodes):[v,...nodes(v.children)];
+ app.state.purchaseItemDraft={supplierId:'7',productId:'1',qty:2,orderUnit:'Box',unitCost:10};
+ let modal=app.buildItemPickerModal();assert.equal(modal.tag,'dialog');
+ nodes(modal).find(n=>n.tag==='button'&&JSON.stringify(n.children).includes('Add Item')).props.onClick();
+ assert.equal(app.state.newReqCart.length,0);assert.ok(app.state.purchaseItemError);
+ app.state.purchaseItemDraft.stockUnitsPerOrder=12;
+ nodes(app.buildItemPickerModal()).find(n=>n.tag==='button'&&JSON.stringify(n.children).includes('Add Item')).props.onClick();
+ assert.equal(app.state.newReqCart.length,1);assert.equal(app.state.newReqCart[0].stockUnitsPerOrder,12);assert.equal(app.state.newReqSupplier,'7');
+ const populated=JSON.stringify(app.buildPurchaseRequests());assert.ok(populated.includes('240.00'));
+});
