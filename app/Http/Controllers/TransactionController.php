@@ -17,6 +17,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Illuminate\Validation\Rule;
 
 class TransactionController extends Controller
 {
@@ -72,7 +73,8 @@ class TransactionController extends Controller
             'items.*.productId' => ['required', 'integer', 'min:1', 'distinct'],
             'items.*.qty' => ['required', 'integer', 'min:1', 'max:1000000'],
             'amount' => ['sometimes', 'required', 'numeric', 'min:0', 'max:99999999.99', 'decimal:0,2'],
-            'restock' => ['sometimes', 'boolean'],
+            'refund_classification' => ['required_if:action,refund', 'nullable', Rule::in(['Damaged', 'Expired', 'Incorrect Item', 'Cancellation', 'Returnable'])],
+            'restock' => [Rule::prohibitedIf($request->input('action') === 'refund'), 'sometimes', 'boolean'],
             'request_key' => ['nullable', 'string', 'max:80', 'regex:/^[A-Za-z0-9_-]+$/'],
             'provider_refund_id' => ['nullable', 'string', 'max:80', 'regex:/^ref_[A-Za-z0-9]+$/'],
             'replacement_product_id' => ['required_if:action,exchange', 'nullable', 'integer', 'min:1'],
@@ -171,11 +173,15 @@ class TransactionController extends Controller
                     throw ValidationException::withMessages(['exchange_tendered' => 'Collect the cash price difference before approving the exchange.']);
                 }
             }
-            $restock = $action === 'void' || ($data['restock'] ?? true);
+            $classification = $action === 'refund' ? $data['refund_classification'] : null;
+            $restock = $action === 'refund'
+                ? in_array($classification, ['Incorrect Item', 'Cancellation', 'Returnable'], true)
+                : ($action === 'void' || ($data['restock'] ?? true));
             $approvalId = DB::table('transaction_approvals')->insertGetId(WorkspaceWrite::owned([
                 'transaction_uuid' => $uuid, 'manager_id' => $manager->id, 'requested_by' => $request->user()->id,
                 'requested_by_role' => $request->user()->role,
-                'action' => $action, 'reason' => $data['reason'], 'replacement_product_id' => $replacement?->id,
+                'action' => $action, 'reason' => $classification ?? $data['reason'],
+                'replacement_product_id' => $replacement?->id,
                 'amount' => $action === 'exchange' ? 0 : $refundCents / 100, 'restock' => $restock,
                 'provider_refund_id' => $action === 'refund' && $transaction->paymentMode !== 'Cash' ? $data['provider_refund_id'] : null,
                 'request_key' => $data['request_key'] ?? null, 'created_at' => now(), 'updated_at' => now(),
@@ -198,6 +204,13 @@ class TransactionController extends Controller
                 }
                 if (! $restock) {
                     FifoInventory::returnStock($line->productId, $return['qty'], $uuid, false);
+                    if ($action === 'refund') {
+                        $product = $products->get($line->productId);
+                        if (! $product) {
+                            throw ValidationException::withMessages(['items' => 'An original product no longer exists. The return requires manual reconciliation.']);
+                        }
+                        StockMovement::record($line->productId, (int) $product->stock, (int) $product->stock, 'refund_write_off', $uuid, $request->user());
+                    }
                 }
                 WorkspaceRead::table('transaction_lines')->where('id', $line->id)->update([
                     'refundedQty' => $return['newQty'], 'refundedAmount' => $return['cumulative'] / 100, 'updated_at' => now(),

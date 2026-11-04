@@ -150,7 +150,7 @@ class SellableStockTest extends TestCase
         $this->sale(2)->assertCreated();
         $this->travel(1)->days();
         $this->getJson('/api/inventory/availability?productId=1&quantity=1')->assertUnprocessable()->assertSee('Expired');
-        $this->patchJson('/api/transactions/STOCK-SALE', ['action' => 'refund', 'restock' => true, 'reason' => 'Physically returned to quarantine', 'manager_id' => $this->manager->id, 'manager_pin' => '1234'])->assertOk();
+        $this->patchJson('/api/transactions/STOCK-SALE', ['action' => 'refund', 'refund_classification' => 'Returnable', 'reason' => 'Physically returned to quarantine', 'manager_id' => $this->manager->id, 'manager_pin' => '1234'])->assertOk();
         $this->getJson('/api/inventory/availability')->assertJsonPath('products.0.stockOnHand', 4)->assertJsonPath('products.0.sellableStock', 0)->assertJsonPath('products.0.expiredStock', 4);
     }
 

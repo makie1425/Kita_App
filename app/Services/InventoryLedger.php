@@ -7,7 +7,7 @@ class InventoryLedger
     public const TYPES = [
         'purchase_receiving'=>'Purchase receipt', 'checkout'=>'Sale',
         'payment_reservation'=>'Payment reservation', 'payment_release'=>'Reservation release',
-        'refund'=>'Customer return', 'void'=>'Sale void / stock restored',
+        'refund'=>'Customer return', 'refund_write_off'=>'Returned goods written off', 'void'=>'Sale void / stock restored',
         'exchange'=>'Exchange return', 'exchange_replacement'=>'Exchange issue',
         'adjustment'=>'Stock adjustment', 'reconciliation'=>'Stock count adjustment',
         'write-off'=>'Write-off', 'disposal'=>'Disposal', 'transfer'=>'Transfer out', 'supplier return'=>'Return to supplier',

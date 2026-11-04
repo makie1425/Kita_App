@@ -7,6 +7,7 @@ use App\Services\TransactionNumber;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
+use ZipArchive;
 
 class ReportsTest extends TestCase
 {
@@ -33,6 +34,25 @@ class ReportsTest extends TestCase
             $this->insertFixture('transaction_lines', ['transaction_uuid' => 'sale-'.$index, 'productId' => 1, 'name' => '=Danger,<script>', 'qty' => 1, 'unitPrice' => 10, 'lineTotal' => 10]);
             $this->insertFixture('inventory_batches', ['productId' => 1, 'supplierId' => 1, 'quantityReceived' => 2, 'quantityRemaining' => 2, 'unitCost' => 10, 'receivedDate' => $date, 'source' => 'receiving', 'created_at' => $date]);
         }
+    }
+
+    public function test_excel_export_is_a_real_workbook_with_filtered_rows_and_numeric_cells(): void
+    {
+        $response = $this->get('/reports/data?type=sales&from=2026-10-06&to=2026-10-06&format=xlsx')
+            ->assertOk()->assertHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+
+        $zip = new ZipArchive;
+        $this->assertTrue($zip->open($response->baseResponse->getFile()->getPathname()) === true);
+        $sheet = $zip->getFromName('xl/worksheets/sheet1.xml');
+        $summary = $zip->getFromName('xl/worksheets/sheet2.xml');
+        $this->assertIsString($sheet);
+        $this->assertIsString($summary);
+        $this->assertStringContainsString('=Danger,&lt;script&gt;', $sheet);
+        $this->assertStringContainsString('2026-10-06', $sheet);
+        $this->assertStringNotContainsString('2026-10-07', $sheet);
+        $this->assertMatchesRegularExpression('/<c r="[A-Z]+2"><v>10<\/v><\/c>/', $sheet);
+        $this->assertStringContainsString('Sales', $summary);
+        $zip->close();
     }
 
     public function test_date_and_product_filters_apply_to_all_dated_reports(): void
@@ -162,7 +182,7 @@ class ReportsTest extends TestCase
         $this->getJson('/reports/data?type=sales&from=2026-10-07&to=2026-10-01')->assertUnprocessable();
         $this->getJson('/reports/data?type=unknown')->assertUnprocessable();
         $this->actingAs(User::factory()->create(['role' => 'cashier', 'status' => 'Active']));
-        foreach (['json', 'csv', 'print', 'pdf'] as $format) {
+        foreach (['json', 'csv', 'print', 'pdf', 'xlsx'] as $format) {
             $this->getJson('/reports/data?type=inventory&format='.$format)->assertForbidden();
         }
     }

@@ -4,9 +4,9 @@ FROM php:8.3-fpm-bookworm AS php-base
 # Composer's locked requirements: mbstring, DOM/libxml and the built-in PHP
 # extensions. PDO MySQL is required by KITA; OPcache is for production.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        libonig-dev libxml2-dev libonig5 libxml2 \
-    && docker-php-ext-install -j"$(nproc)" mbstring dom pdo_mysql opcache \
-    && apt-get purge -y --auto-remove libonig-dev libxml2-dev \
+        libonig-dev libxml2-dev libzip-dev libonig5 libxml2 libzip4 \
+    && docker-php-ext-install -j"$(nproc)" mbstring dom pdo_mysql opcache zip \
+    && apt-get purge -y --auto-remove libonig-dev libxml2-dev libzip-dev \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /var/www/html
 

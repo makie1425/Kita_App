@@ -52,7 +52,8 @@ class EvaluationWorkflowTest extends TestCase
 
     private function approval(string $action = 'refund'): array
     {
-        return ['action' => $action, 'reason' => 'Customer return', 'manager_id' => $this->manager->id, 'manager_pin' => '1234'];
+        return ['action' => $action, 'reason' => 'Customer return', 'manager_id' => $this->manager->id, 'manager_pin' => '1234']
+            + ($action === 'refund' ? ['refund_classification' => 'Returnable'] : []);
     }
 
     public function test_expired_batches_are_excluded_from_sales_and_catalog_but_remain_for_disposal(): void
@@ -83,8 +84,10 @@ class EvaluationWorkflowTest extends TestCase
         $batch = $this->batch(2, '2026-10-13');
         $this->postJson('/api/transactions', $this->sale())->assertCreated();
         $this->travel(1)->days();
-        $this->patchJson('/api/transactions/SALE', $this->approval() + ['restock' => false])->assertOk();
+        $this->patchJson('/api/transactions/SALE', array_replace($this->approval(), ['refund_classification' => 'Expired']))->assertOk();
         $this->assertDatabaseHas('inventory_batches', ['id' => $batch, 'quantityRemaining' => 1]);
+        $this->assertDatabaseHas('transaction_approvals', ['action' => 'refund', 'reason' => 'Expired', 'restock' => false]);
+        $this->assertDatabaseHas('transaction_return_lines', ['restocked' => false]);
         $this->travelBack();
         $this->travelTo(\Carbon\Carbon::parse('2026-10-12 10:00:00'));
         DB::transaction(function () {

@@ -37,7 +37,8 @@ class CheckoutStockTest extends TestCase
 
     private function approval(string $action = 'refund'): array
     {
-        return ['action' => $action, 'reason' => 'Returnable', 'manager_id' => $this->manager->id, 'manager_pin' => '1234'];
+        return ['action' => $action, 'reason' => 'Returnable', 'manager_id' => $this->manager->id, 'manager_pin' => '1234']
+            + ($action === 'refund' ? ['refund_classification' => 'Returnable'] : []);
     }
 
     public function test_checkout_computes_totals_and_deducts_stock_once(): void
@@ -180,9 +181,29 @@ class CheckoutStockTest extends TestCase
     public function test_nonreturnable_refund_does_not_restore_inventory(): void
     {
         $this->postJson('/api/transactions', $this->sale())->assertCreated();
-        $this->patchJson('/api/transactions/TXN-test', $this->approval() + ['restock' => false])->assertOk();
+        $this->patchJson('/api/transactions/TXN-test', array_replace($this->approval(), ['reason' => 'Damaged return', 'refund_classification' => 'Damaged']))->assertOk();
         $this->assertDatabaseHas('products', ['id' => 1, 'stock' => 4]);
+        $this->assertDatabaseHas('transaction_approvals', ['action' => 'refund', 'reason' => 'Damaged', 'restock' => false]);
         $this->assertDatabaseHas('transaction_return_lines', ['restocked' => false]);
+        $this->assertDatabaseHas('stock_movements', ['referenceType' => 'refund_write_off', 'referenceId' => 'TXN-test', 'quantityChange' => 0]);
+    }
+
+    public function test_refund_classification_is_required_and_cannot_be_overridden_by_restock_flag(): void
+    {
+        $this->postJson('/api/transactions', $this->sale())->assertCreated();
+        $body = $this->approval();
+        unset($body['refund_classification']);
+        $this->patchJson('/api/transactions/TXN-test', $body)->assertUnprocessable()->assertJsonValidationErrors('refund_classification');
+        $this->patchJson('/api/transactions/TXN-test', array_replace($this->approval(), ['refund_classification' => 'Other']))
+            ->assertUnprocessable()->assertJsonValidationErrors('refund_classification');
+        $this->patchJson('/api/transactions/TXN-test', $this->approval() + ['restock' => false])
+            ->assertUnprocessable()->assertJsonValidationErrors('restock');
+        $this->assertDatabaseHas('products', ['id' => 1, 'stock' => 4]);
+        $this->assertDatabaseCount('transaction_return_lines', 0);
+        $this->patchJson('/api/transactions/TXN-test', $this->approval())->assertOk();
+        $this->assertDatabaseHas('products', ['id' => 1, 'stock' => 5]);
+        $this->assertDatabaseHas('transaction_approvals', ['action' => 'refund', 'reason' => 'Returnable', 'restock' => true]);
+        $this->assertDatabaseHas('transaction_return_lines', ['restocked' => true]);
     }
 
     public function test_void_restores_stock_and_cannot_repeat(): void

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Services\InventoryRules;
+use App\Services\ExcelReport;
 use App\Services\ReceivingRemarks;
 use App\Services\TransactionNumber;
 use Dompdf\Dompdf;
@@ -18,7 +19,7 @@ class ReportController extends Controller
         InventoryRules::authorize($request, ['manager', 'admin']);
         $filters = $request->validate([
             'type' => ['required', Rule::in(['general', 'inventory', 'sales', 'receipts', 'batches', 'movements', 'expiry', 'receiving', ...\App\Services\PurchasingReports::TYPES])],
-            'format' => ['nullable', Rule::in(['json', 'print', 'csv', 'pdf'])],
+            'format' => ['nullable', Rule::in(['json', 'print', 'csv', 'pdf', 'xlsx'])],
             'from' => ['nullable', 'date_format:Y-m-d'],
             'to' => ['nullable', 'date_format:Y-m-d', ...($request->filled('from') ? ['after_or_equal:from'] : [])],
             'category' => ['nullable', 'string', 'max:100'],
@@ -270,6 +271,12 @@ class ReportController extends Controller
     public function respond(Request $request, string $type, array $data)
     {
         extract($data);
+        if ($request->input('format') === 'xlsx') {
+            return response()->download(ExcelReport::create($data), 'kita-'.$type.'-'.now()->timezone('Asia/Manila')->format('Y-m-d').'.xlsx', [
+                'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                'Cache-Control' => 'private, no-store',
+            ])->deleteFileAfterSend(true);
+        }
         if ($request->input('format') === 'csv') {
             return response()->streamDownload(function () use ($rows, $columns) {
                 $out = fopen('php://output', 'w');
