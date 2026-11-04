@@ -28,7 +28,6 @@ app.reloadCatalog=async()=>{app.state.promotionsLocal=[{id:42,name:'Saved promot
   nodes(tree).find(n=>n.type==='button'&&text(n)==='Record contact').props.onClick();
   Object.assign(app.state.supplierContactForm,{person:'Supplier',notes:'Missing units',outcome:'Replacement'});await app.saveSupplierContact();assert.equal(calls.at(-1).url,'/api/receipts/R1/supplier-contacts');assert.equal(app.state.supplierContactForm,null);
   app.state.regParentId=1;app.state.regVariantLabel='Vanilla';app.setRegField('regParentId')({target:{value:''}});assert.equal(app.state.regVariantLabel,'');
-  assert.equal(app.evidenceLink('ADJ-1').props.href,'/api/inventory/adjustments/ADJ-1/evidence');
   assert(app.buildReceivingFields({productId:1,name:'Milk',unitCost:5}).some(n=>nodes(n).some(i=>i.props?.['aria-label']==='Lot number (optional) for Milk')));
   console.log('Manager checklist UI: persisted promotions, failure handling, override decline, expiry settings, recall lookup, supplier contact and lot fields passed.');
 })().catch(e=>{console.error(e);process.exitCode=1;});

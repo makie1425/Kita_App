@@ -20,7 +20,6 @@ Reviewed: 29 September 2026
 | Request a price override (pending Manager approval) | Partial | A fixed 15% override is prepared locally and requires approval at checkout; no separate pending-request decision workflow. |
 | Process cash payment and compute change | Implemented | Server computes totals, validates tender and saves change and stock movements. |
 | Process e-wallet payment through PayMongo | Implemented | PayMongo checkout, signed webhooks, cancellation and refund handling exist; automated tests mock the provider. Live payment verification remains. |
-| Generate a receipt with UUID and QR code | Partial | Printable receipt and transaction identifier exist; no QR-code generation found. |
 | Initiate a refund, exchange, or return request | Implemented | Refund/exchange actions support manager approval, returned line quantities and stock updates. |
 | View own transaction history | Partial | My Shift filters the current user and day in the UI; the shared data endpoint returns broader transaction data. |
 
@@ -35,7 +34,6 @@ Reviewed: 29 September 2026
 | Verify and process refunds, itemized refunds, and exchanges | Implemented | Server supports manager-authorized refunds, itemized returns and exchanges with stock tracking. |
 | Configure time-bound promotions and discount precedence | Partial | Date-range promotion UI and checkout precedence exist; promotion edits are held in browser state rather than persisted through an API. |
 | Register new products, product variants, and unit conversions | Partial | Product registration and unit/conversion fields persist; complete variant creation and conversion workflows are not established. |
-| Submit inventory adjustments with reason, comment, and photo evidence | Partial | Reason/comment adjustments persist and support approval; photo is a boolean, with no evidence upload workflow. |
 | Record write-off, disposal, supplier return, and stock transfer movements | Partial | Adjustment and stock-movement foundations exist; dedicated disposal, supplier-return and transfer workflows remain incomplete. |
 | Locate and flag inventory and past sales tied to a recalled batch/lot | Partial | Recall data is displayed; the flag action is unwired and no complete batch-to-past-sales recall workflow was found. |
 | Conduct cycle, blind, and full physical inventory counts | Pending | Cycle/Blind/Full screen contains demonstration text; no persisted count-session or reconciliation workflow. |

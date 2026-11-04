@@ -72,18 +72,15 @@ class ManagerChecklistTest extends TestCase
         $this->patchJson('/api/inventory/expiry-settings', ['days' => -1])->assertUnprocessable();
     }
 
-    public function test_evidence_is_validated_saved_and_only_available_to_authorized_roles(): void
+    public function test_adjustments_do_not_accept_photo_evidence(): void
     {
         $body = ['productId' => 1, 'qtyChange' => -1, 'reason' => 'Damaged', 'comment' => 'Broken packaging'];
-        $this->postJson('/api/inventory/adjustments', $body + ['evidence' => 'data:image/png;base64,bm90LWFuLWltYWdl'])->assertUnprocessable();
-        $image = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aV1cAAAAASUVORK5CYII=';
-        $id = $this->postJson('/api/inventory/adjustments', $body + ['evidence' => 'data:image/png;base64,'.$image])->assertCreated()->json('id');
-        $this->assertDatabaseHas('adjustments', ['id' => $id, 'photo' => true]);
-        $this->get('/api/inventory/adjustments/'.$id.'/evidence')->assertOk()->assertHeader('Content-Type', 'image/png')->assertContent(base64_decode($image));
-        $fake = $this->postJson('/api/inventory/adjustments', $body + ['photo' => true])->assertCreated()->json('id');
-        $this->assertDatabaseHas('adjustments', ['id' => $fake, 'photo' => false]);
-        $this->actingAs($this->assignMember(User::factory()->create(['role' => 'cashier'])));
-        $this->getJson('/api/inventory/adjustments/'.$id.'/evidence')->assertForbidden();
+        $this->postJson('/api/inventory/adjustments', $body + ['evidence' => 'data:image/png;base64,AAAA'])->assertUnprocessable();
+        $this->postJson('/api/inventory/adjustments', $body + ['photo' => true])->assertUnprocessable();
+        $id = $this->postJson('/api/inventory/adjustments', $body)->assertCreated()->json('id');
+        $this->assertDatabaseHas('adjustments', ['id' => $id, 'photo' => false]);
+        $this->assertDatabaseCount('adjustment_evidence', 0);
+        $this->get('/api/inventory/adjustments/'.$id.'/evidence')->assertNotFound();
     }
 
     public function test_supplier_return_deducts_exact_batch_and_retry_cannot_duplicate(): void

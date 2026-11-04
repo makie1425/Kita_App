@@ -229,10 +229,9 @@ class KitaDataController extends Controller
     {
         return array_map(function (array $row): array {
             $row = $this->numericRow($row, ['productId', 'qtyChange']);
-            $row['photo'] = (bool) $row['photo'];
 
             return $row;
-        }, $this->rows($pdo, ['table'=>'adjustments','columns'=>['id','productId','qtyChange','reason','status','photo','comment','remarks','date'],'order'=>'date DESC, id DESC']));
+        }, $this->rows($pdo, ['table'=>'adjustments','columns'=>['id','productId','qtyChange','reason','status','comment','remarks','date'],'order'=>'date DESC, id DESC']));
     }
 
     private function promotions(PDO $pdo): array

@@ -75,16 +75,6 @@ class ManagerWorkflowController extends Controller
         });
     }
 
-    public function evidence(Request $r, string $id)
-    {
-        InventoryRules::authorize($r);
-        $e = \App\Services\WorkspaceRead::table('adjustment_evidence')->where('adjustmentId', $id)->first();
-        abort_unless($e, 404);
-
-        return response(base64_decode($e->content))->header('Content-Type', $e->mime)
-            ->header('X-Content-Type-Options', 'nosniff')->header('Cache-Control', 'private, no-store');
-    }
-
     public function contact(Request $r, string $id)
     {
         InventoryRules::authorize($r);

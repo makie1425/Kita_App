@@ -894,7 +894,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
   confirmAddDamage=()=>{
     const {productId,qty}=this.state.addDamageForm,q=Number(qty);
     if(!productId||!Number.isInteger(q)||q<=0){this.toast("Select a product and enter a positive whole quantity.","error");return;}
-    this.authPost("/api/inventory/adjustments",{productId:Number(productId),qtyChange:-q,reason:"Damaged",comment:"Damaged item reported from inventory",photo:false})
+    this.authPost("/api/inventory/adjustments",{productId:Number(productId),qtyChange:-q,reason:"Damaged",comment:"Damaged item reported from inventory"})
       .then(()=>{this.setState({addDamageOpen:false});this.toast("Damage adjustment submitted for Admin approval.");return this.reloadCatalog();}).catch(error=>this.toast(error.message,"error"));
   };
   printApprovedPO=productId=>()=>{

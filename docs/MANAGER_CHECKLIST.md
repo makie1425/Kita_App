@@ -4,7 +4,6 @@ Implemented October 13, 2026:
 
 - Promotions are saved on the server, validate dates and overlapping product/category offers, reject below-cost offers, and refresh at checkout. Existing discount precedence remains: override price first, then employee/senior discount or promotion.
 - Product registration supports a parent product and named variants, with separate barcodes, stock and conversion factors. Duplicate, nested and circular variant relationships are rejected.
-- Adjustment photo evidence accepts verified PNG/JPEG/WebP images up to 2 MB. Evidence is stored in the database so Render's ephemeral disk does not lose it, and is served only to authorized inventory users.
 - Supplier returns remove quantities from a selected batch and product balance, record its original supplier, and preserve audit/movement history. Retried submissions do not deduct twice.
 - Recall tracing searches exact batch or lot numbers and lists physical/sellable quantities and linked sales/payment reservations, including returned quantities. Receipt entry now records optional lot numbers. Sales predating batch allocations cannot be reconstructed automatically.
 - Receiving discrepancy history supports dated supplier contact notes, channel, contact person, outcome and recorder. Contacts also appear in the purchase report. This records a conversation; it does not send messages.
