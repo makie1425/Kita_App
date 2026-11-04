@@ -131,8 +131,9 @@ class DatabaseBackup
     {
         $this->locked(function () {
             $history = $this->history();
+            $retentionDays = BackupSettings::current()['retention_days'];
             foreach (array_slice($history, 1) as $backup) {
-                if (filemtime($this->path($backup['id'])) < now()->subDays(max(1, config('backup.retention_days')))->timestamp) {
+                if (filemtime($this->path($backup['id'])) < now()->subDays($retentionDays)->timestamp) {
                     File::delete($this->path($backup['id']));
                 }
             }

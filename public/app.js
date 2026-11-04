@@ -3254,7 +3254,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     try { const query=kind==='audit'?'?'+new URLSearchParams(this.state.auditFilters||{}):'';
       const r=await fetch(kind==='audit'?'/api/super-admin/audit'+query:'/api/backups',{credentials:'same-origin',headers:{Accept:'application/json'}});
       const body=await r.json();this.handleSessionResponse(r,body);if(!r.ok)throw new Error(body.message||'Unable to load records.');
-      this.setState({[kind==='audit'?'saAuditData':'saBackupData']:body});
+      this.setState(kind==='audit'?{saAuditData:body}:{saBackupData:body,saBackupTime:body.schedule,saBackupRetention:String(body.retention_days)});
     }catch(e){this.setState({saRecordsError:e.message});}finally{this.setState({saRecordsBusy:false});}
   };
   createSaBackup=async()=>{
@@ -3262,10 +3262,27 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     try{await this.authPost('/api/backups',{});await this.loadSaRecords('backup');}
     catch(e){this.setState({saRecordsError:e.message});}finally{this.backupBusy=false;this.setState({saBackupCreating:false});}
   };
+  saveSaBackupSettings=async()=>{
+    if(this.state.saBackupSaving)return;
+    this.setState({saBackupSaving:true,saRecordsError:'',saBackupMessage:''});
+    try{
+      await this.authPost('/api/backups/settings',{schedule:this.state.saBackupTime,retention_days:Number(this.state.saBackupRetention)},'PATCH');
+      await this.loadSaRecords('backup');
+      this.setState({saBackupMessage:'Backup settings saved.'});
+    }catch(e){this.setState({saRecordsError:e.message});}
+    finally{this.setState({saBackupSaving:false});}
+  };
   buildSaBackup(){const h=React.createElement,d=this.state.saBackupData;
     return h('section',{className:'sa-panel'},[h('h2',null,'Database Backup'),
       h('p',null,'Encrypted full-database snapshots. Download and retain your backup securely. Local files can be lost when this service restarts or redeploys; persistent private storage is required for server retention.'),
       h('p',null,'Restore requires the matching application version and encryption key, and is performed by the server operator.'),
+      d?h('div',{className:'form-grid'},[
+        h('label',{key:'time'},['Daily backup time ('+d.timezone+')',h('input',{type:'time',value:this.state.saBackupTime??d.schedule,onChange:e=>this.setState({saBackupTime:e.target.value})})]),
+        h('label',{key:'retention'},['Keep backups for days (1–365)',h('input',{type:'number',min:1,max:365,step:1,value:this.state.saBackupRetention??String(d.retention_days),onChange:e=>this.setState({saBackupRetention:e.target.value})})]),
+        h('button',{key:'save',className:'kita-button',disabled:this.state.saBackupSaving,onClick:this.saveSaBackupSettings},this.state.saBackupSaving?'Saving...':'Save backup settings')
+      ]):null,
+      this.state.saBackupMessage?h('p',{role:'status'},this.state.saBackupMessage):null,
+      h('p',null,'Scheduled backups require the server scheduler to run. Confirm that a new backup appears after the chosen time.'),
       h('button',{className:'kita-button',disabled:this.state.saBackupCreating,onClick:this.createSaBackup},this.state.saBackupCreating?'Creating backup...':'Create backup'),btn('Refresh',()=>this.loadSaRecords('backup')),
       this.state.saRecordsError?h('p',{role:'alert'},this.state.saRecordsError):null,
       d?this.recordTable('sa-backups',['Created','Size','Actions'],d.backups.map(b=>tr([td(new Date(b.created_at).toLocaleString()),td((b.bytes/1048576).toFixed(2)+' MB'),td(h('a',{href:'/api/backups/'+encodeURIComponent(b.id)+'/download'},'Download encrypted backup'))],b.id))):h('p',null,'Open or refresh to load backups.')]);

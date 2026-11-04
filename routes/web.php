@@ -24,6 +24,7 @@ Route::get('/', function () {
 Route::middleware('role:super_admin')->prefix('api/backups')->group(function () {
     Route::get('/', [BackupController::class, 'index']);
     Route::post('/', [BackupController::class, 'store'])->middleware('throttle:3,1');
+    Route::patch('/settings', [BackupController::class, 'update'])->middleware('throttle:10,1');
     Route::get('/{id}/download', [BackupController::class, 'download']);
 });
 Route::get('/api/super-admin/audit', [SuperAdminDashboardController::class,'audit'])->middleware('role:super_admin');

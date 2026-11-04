@@ -4,6 +4,8 @@ Super Admin → Backup Configuration creates actual encrypted database snapshots
 
 ## Configuration and scheduling
 
+The Super Admin can change the daily backup time and retention period from Database Backup. Saved values override the defaults below. The timezone stays under server control.
+
 Set these environment values, then refresh cached configuration if used:
 
 ```dotenv

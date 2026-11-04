@@ -2,6 +2,7 @@
 
 use App\Models\User;
 use App\Services\DatabaseBackup;
+use App\Services\BackupSettings;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -30,7 +31,10 @@ Artisan::command('backup:restore {id} {--confirm=}', function (DatabaseBackup $b
 })->purpose('Restore a matching database snapshot in maintenance mode');
 
 Schedule::command('backup:run')
-    ->dailyAt(config('backup.time'))->timezone(config('backup.timezone'))->withoutOverlapping();
+    ->everyMinute()->when(function () {
+        $settings = BackupSettings::current();
+        return now($settings['timezone'])->format('H:i') === $settings['time'];
+    })->withoutOverlapping();
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());

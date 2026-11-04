@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use App\Services\DatabaseBackup;
+use App\Services\BackupSettings;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\DatabaseMigrations;
@@ -38,8 +39,36 @@ class BackupTest extends TestCase
             $this->actingAs(User::factory()->create(['role' => $role]));
             $this->getJson('/api/backups')->assertForbidden();
             $this->postJson('/api/backups')->assertForbidden();
+            $this->patchJson('/api/backups/settings', ['schedule' => '04:15', 'retention_days' => 14])->assertForbidden();
             $this->getJson('/api/backups/missing/download')->assertForbidden();
         }
+    }
+
+    public function test_super_admin_can_save_schedule_and_retention_with_validation(): void
+    {
+        $this->actingAs(User::factory()->create(['role' => 'superadmin']));
+        $this->getJson('/api/backups')->assertOk()->assertJsonPath('schedule', config('backup.time'));
+        $this->patchJson('/api/backups/settings', ['schedule' => '25:99', 'retention_days' => 0])->assertUnprocessable();
+        $this->patchJson('/api/backups/settings', ['schedule' => '04:15', 'retention_days' => 14])->assertOk()
+            ->assertJsonPath('time', '04:15')->assertJsonPath('retention_days', 14);
+        $this->getJson('/api/backups')->assertOk()->assertJsonPath('schedule', '04:15')->assertJsonPath('retention_days', 14);
+        $this->assertSame(['time' => '04:15', 'timezone' => config('backup.timezone'), 'retention_days' => 14], BackupSettings::current());
+        $this->patchJson('/api/backups/settings', ['schedule' => '22:30', 'retention_days' => 7])->assertOk();
+        $this->assertDatabaseCount('backup_settings', 1);
+        $this->assertDatabaseHas('backup_settings', ['id' => 1, 'time' => '22:30', 'retention_days' => 7]);
+    }
+
+    public function test_prune_uses_saved_retention_days(): void
+    {
+        $this->actingAs(User::factory()->create(['role' => 'superadmin']));
+        $backups = app(DatabaseBackup::class);
+        $old = $backups->create();
+        touch($backups->path($old), now()->subDays(9)->timestamp);
+        $this->travel(1)->seconds();
+        $backups->create();
+        $this->patchJson('/api/backups/settings', ['schedule' => '04:15', 'retention_days' => 7])->assertOk();
+        $backups->prune();
+        $this->assertFileDoesNotExist(config('backup.path').'/'.$old);
     }
 
     public function test_super_admin_can_create_list_and_download_encrypted_backup(): void
