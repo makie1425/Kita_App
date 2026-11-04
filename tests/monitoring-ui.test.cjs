@@ -100,7 +100,7 @@ test('purchase form removes expected delivery and adds a validated packaged cata
  const initial=JSON.stringify(app.buildPurchaseRequests());
  assert.ok(!initial.includes('Expected delivery'));assert.ok(initial.includes('Subtotal (PHP)'));assert.ok(initial.includes('Add First Item'));
  const nodes=(v)=>!v||typeof v!=='object'?[]:Array.isArray(v)?v.flatMap(nodes):[v,...nodes(v.children)];
- app.state.purchaseItemDraft={supplierId:'7',productId:'1',qty:2,orderUnit:'Box',unitCost:10};
+ app.state.purchaseItemDraft={supplierId:'7',category:'Grocery',subcategoryId:'none',productId:'1',qty:2,orderUnit:'Box',unitCost:10};
  let modal=app.buildItemPickerModal();assert.equal(modal.tag,'dialog');
  nodes(modal).find(n=>n.tag==='button'&&JSON.stringify(n.children).includes('Add Item')).props.onClick();
  assert.equal(app.state.newReqCart.length,0);assert.ok(app.state.purchaseItemError);
@@ -108,4 +108,27 @@ test('purchase form removes expected delivery and adds a validated packaged cata
  nodes(app.buildItemPickerModal()).find(n=>n.tag==='button'&&JSON.stringify(n.children).includes('Add Item')).props.onClick();
  assert.equal(app.state.newReqCart.length,1);assert.equal(app.state.newReqCart[0].stockUnitsPerOrder,12);assert.equal(app.state.newReqSupplier,'7');
  const populated=JSON.stringify(app.buildPurchaseRequests());assert.ok(populated.includes('240.00'));
+});
+
+test('purchase item filters cascade and reject items outside the selected category',()=>{
+ const {app}=setup();app.state.newReqCart=[];
+ app.state.data={PRODUCTS:[{id:1,name:'Rice',category:'Food',subcategoryId:10,supplierId:7,status:'Active'},{id:2,name:'Soap',category:'Household',supplierId:7,status:'Active'},{id:3,name:'Other supplier',category:'Food',subcategoryId:10,supplierId:8,status:'Active'}],SUPPLIERS:[{id:7,name:'Supply',status:'Active'},{id:8,name:'Other',status:'Active'}],SUBCATEGORIES:[{id:10,name:'Grains'}]};
+ const nodes=v=>!v||typeof v!=='object'?[]:Array.isArray(v)?v.flatMap(nodes):[v,...nodes(v.children)];
+ const field=label=>nodes(app.buildItemPickerModal()).find(n=>n.tag==='label'&&JSON.stringify(n.children[0]).includes('"'+label+'"')).children.flat(Infinity).find(n=>n?.tag==='select');
+ assert.equal(field('Item Name').props.disabled,true);
+ field('Supplier').props.onChange({target:{value:'7'}});
+ field('Category').props.onChange({target:{value:'Food'}});
+ assert.equal(field('Item Name').props.disabled,true);
+ field('Subcategory').props.onChange({target:{value:'10'}});
+ assert.ok(JSON.stringify(field('Item Name')).includes('Rice'));assert.ok(!JSON.stringify(field('Item Name')).includes('Soap'));assert.ok(!JSON.stringify(field('Item Name')).includes('Other supplier'));
+ field('Item Name').props.onChange({target:{value:'1'}});
+ field('Category').props.onChange({target:{value:'Household'}});
+ assert.equal(app.state.purchaseItemDraft.productId,undefined);assert.equal(app.state.purchaseItemDraft.subcategoryId,undefined);
+ field('Subcategory').props.onChange({target:{value:'none'}});
+ assert.ok(JSON.stringify(field('Item Name')).includes('Soap'));
+ app.state.purchaseItemDraft.productId='1';
+ nodes(app.buildItemPickerModal()).find(n=>n.tag==='button'&&JSON.stringify(n.children).includes('Add Item')).props.onClick();
+ assert.equal(app.state.newReqCart.length,0);assert.ok(app.state.purchaseItemError);
+ field('Supplier').props.onChange({target:{value:'8'}});
+ assert.equal(app.state.purchaseItemDraft.category,undefined);assert.equal(app.state.purchaseItemDraft.productId,undefined);
 });

@@ -2119,13 +2119,19 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
   buildItemPickerModal(){
     const h=React.createElement,s=this.state,d=s.purchaseItemDraft||{},products=s.data.PRODUCTS;
     const supplier=String(s.newReqCart.length?s.newReqSupplier:d.supplierId||'');
-    const product=products.find(p=>String(p.id)===String(d.productId));
+    const available=products.filter(p=>supplier&&p.status==='Active'&&!p.archivedAt&&(!p.supplierId||String(p.supplierId)===supplier));
+    const categories=[...new Set(available.map(p=>p.category).filter(Boolean))];
+    const categoryItems=available.filter(p=>p.category===d.category);
+    const subkey=p=>p.subcategoryId?String(p.subcategoryId):'none';
+    const subcategories=[...new Set(categoryItems.map(subkey))];
+    const matching=d.category&&d.subcategoryId?categoryItems.filter(p=>subkey(p)===d.subcategoryId):[];
+    const product=matching.find(p=>String(p.id)===String(d.productId));
     const line=product?{...d,productId:product.id,name:this.productLabel(product),qty:d.qty??1}:null;
     const stock=line?this.purchaseUnit(line):'',unit=d.orderUnit||stock;
     const set=(key,value)=>this.setState({purchaseItemDraft:{...d,[key]:value},purchaseItemError:''});
     const field=(label,input)=>h('label',null,[h('span',null,label),input]);
     const save=()=>{
-      if(!supplier||!s.data.SUPPLIERS.some(v=>String(v.id)===supplier&&v.status==='Active'&&!v.archivedAt)||!product||product.status!=='Active'||product.archivedAt||(product.supplierId&&String(product.supplierId)!==supplier)){this.setState({purchaseItemError:'Select a supplier and a registered item.'});return;}
+      if(!supplier||!s.data.SUPPLIERS.some(v=>String(v.id)===supplier&&v.status==='Active'&&!v.archivedAt)||!product||product.status!=='Active'||product.archivedAt||(product.supplierId&&String(product.supplierId)!==supplier)){this.setState({purchaseItemError:'Select a supplier, category, subcategory, and matching registered item.'});return;}
       const qty=Number(d.qty??1),cost=Number(d.unitCost??product.unitPrice??0),factor=Number(d.stockUnitsPerOrder);
       if(!Number.isInteger(qty)||qty<1||!Number.isFinite(cost)||cost<0||(this.requestUsesPackage({...line,orderUnit:unit})&&(!Number.isInteger(factor)||factor<1||qty*factor>1000000))){this.setState({purchaseItemError:'Enter a positive whole quantity, valid cost, and stock units per package when required.'});return;}
       if(s.newReqCart.some(v=>v.productId===product.id)){this.setState({purchaseItemError:'This item is already in the order. Update its quantity in the table.'});return;}
@@ -2136,9 +2142,12 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
       h('header',null,[h('h2',{id:'po-item-title'},'Add Item to Order'),h('button',{type:'button',className:'po-close','aria-label':'Close',onClick:this.closeItemPicker},'\u00d7')]),
       h('div',{className:'po-item-fields'},[
         field('Supplier',h('select',{value:supplier,disabled:!!s.newReqCart.length,onChange:e=>this.setState({purchaseItemDraft:{supplierId:e.target.value},purchaseItemError:''})},[h('option',{value:''},'Select a supplier...'),...s.data.SUPPLIERS.filter(v=>v.status==='Active'&&!v.archivedAt).map(v=>h('option',{value:v.id,key:v.id},v.name))])),
-        field('Item Name',h('select',{value:d.productId||'',onChange:e=>this.setState({purchaseItemDraft:{supplierId:supplier,productId:e.target.value},purchaseItemError:''})},[h('option',{value:''},'Select a registered item...'),...products.filter(v=>v.status==='Active'&&!v.archivedAt&&(!v.supplierId||String(v.supplierId)===supplier)).map(v=>h('option',{value:v.id,key:v.id},this.productLabel(v)))])),
         h('div',{className:'po-field-pair'},[
-          field('Category',h('input',{readOnly:true,value:product?.category||'',placeholder:'From selected item'})),
+          field('Category',h('select',{value:d.category||'',disabled:!supplier,onChange:e=>this.setState({purchaseItemDraft:{supplierId:supplier,category:e.target.value},purchaseItemError:''})},[h('option',{value:''},'Select category...'),...categories.map(v=>h('option',{value:v,key:v},v))])),
+          field('Subcategory',h('select',{value:d.subcategoryId||'',disabled:!d.category,onChange:e=>this.setState({purchaseItemDraft:{supplierId:supplier,category:d.category,subcategoryId:e.target.value},purchaseItemError:''})},[h('option',{value:''},'Select subcategory...'),...subcategories.map(v=>h('option',{value:v,key:v},v==='none'?'Without subcategory':(s.data.SUBCATEGORIES||[]).find(c=>String(c.id)===v)?.name||'Subcategory #'+v))]))
+        ]),
+        field('Item Name',h('select',{value:d.productId||'',disabled:!supplier||!d.category||!d.subcategoryId,onChange:e=>this.setState({purchaseItemDraft:{supplierId:supplier,category:d.category,subcategoryId:d.subcategoryId,productId:e.target.value},purchaseItemError:''})},[h('option',{value:''},'Select a registered item...'),...matching.map(v=>h('option',{value:v.id,key:v.id},this.productLabel(v)))])),
+        h('div',{className:'po-field-pair'},[
           field('Purchase Unit',h('select',{value:unit,disabled:!product,onChange:e=>this.setState({purchaseItemDraft:{...d,orderUnit:e.target.value,stockUnitsPerOrder:''}})},[...new Set([stock,product?.purchaseUnit,'Box','Case','Pack'].filter(Boolean))].map(v=>h('option',{value:v,key:v},v))))
         ]),
         h('div',{className:'po-field-pair'},[
