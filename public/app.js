@@ -302,7 +302,7 @@ class Component extends DCLogic {
     promoSelectedItems:[], promoStartDate:"", promoEndDate:"", promoType:"Near-Expiry", promoOccasionName:"", promoCategory:"", promoDiscountPct:"",
     invSelected:{}, catSelected:{},
     supMgrScreen:"list", supMgrSearch:"", supMgrSelected:{}, supMgrDetailId:null, supMgrModalOpen:false,
-    supMgrForm:{id:null,name:"",address:"",contact:"",phone:"",email:"",category:"",status:"Active",paymentTerms:"Cash on Delivery",notes:""},
+    supMgrForm:{id:null,name:"",address:"",contact:"",phone:"",email:"",category:"",status:"Active",notes:""},
     supMgrProductPickerOpen:false, supMgrProductSearch:"", supMgrProductChecked:{}, supMgrDetailTab:"products",
     accountsLocal:null, acctModalOpen:false, acctModalMode:"create", acctForm:{id:null,employeeId:"",name:"",role:"Cashier",password:"",status:"Active",dateCreated:""},
     saDashboard:null, saLoading:false, saError:"", acctRoleFilter:"", acctStatusFilter:"", acctCreatedNote:"",
@@ -967,7 +967,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     if(!ids.length){ this.toast("Select at least one supplier.","error"); return; }
     return this.archiveAction('archive','suppliers',ids);
   };
-  openSupMgrModal=(sup)=>()=>this.setState({supMgrModalOpen:true,supMgrForm:sup?{...sup}:{id:null,name:"",address:"",contact:"",phone:"",email:"",category:"",status:"Active",paymentTerms:"Cash on Delivery",notes:""}});
+  openSupMgrModal=(sup)=>()=>this.setState({supMgrModalOpen:true,supMgrForm:sup?{...sup}:{id:null,name:"",address:"",contact:"",phone:"",email:"",category:"",status:"Active",notes:""}});
   closeSupMgrModal=()=>this.setState({supMgrModalOpen:false});
   setSupMgrFormField=field=>e=>this.setState(s=>({supMgrForm:{...s.supMgrForm,[field]:e.target.value}}));
   saveSupMgrForm=()=>{ const {supMgrForm}=this.state;
@@ -1007,7 +1007,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     const original=(this.state.accountsLocal||[]).find(a=>a.id===f.id&&a.role===f.role);
     if(!creating&&original&&original.status!==f.status&&!this.confirmAccountStatus(f))return;
     this.accountBusy=true;
-    const payload={first_name:f.first_name,last_name:f.last_name,email:f.email,...(this.state.role==="superadmin"?{}:{username:f.username||null}),role:f.role,status:f.status,...(this.state.role==="superadmin"?{}:{schedule:f.schedule||null})};
+    const payload={first_name:f.first_name,last_name:f.last_name,email:f.email,...(this.state.role==="superadmin"?{}:{username:f.username||null}),role:this.state.role==="manager"?"cashier":f.role,status:f.status,...(this.state.role==="superadmin"?{}:{schedule:f.schedule||null})};
 
     this.authPost(creating?"/api/accounts":`/api/accounts/${encodeURIComponent(f.role)}/${f.id}`,payload,creating?"POST":"PATCH")
       .then(res=>{this.setState({acctModalOpen:false,acctError:""});this.toast(res.message);if(this.state.role==="superadmin")this.reloadSaDashboard();return Promise.all([this.reloadAccounts(),this.reloadCatalog()]);})
@@ -2103,9 +2103,9 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     return h('div',{className:'inventory-workspace'},[moduleTitle('Supplier Accounts'),
       h('div',{className:'purchase-filters'},[h('label',null,['Supplier',h('select',{value:s.accountSupplier||'',onChange:e=>this.setState({accountSupplier:e.target.value})},[h('option',{value:''},'All suppliers'),...(s.data?.SUPPLIERS||[]).map(v=>h('option',{value:v.id},v.name))])]),h('button',{className:'kita-button',disabled:s.supplierAccountsLoading,onClick:this.loadSupplierAccounts},s.supplierAccountsLoading?'Refreshing...':'Refresh'),btn('Reports / Export',()=>{this.setState({screen:'admReports',reportFilters:{type:'payables',supplierId:s.accountSupplier||''}});})]),
       s.supplierAccountsError?h('p',{role:'alert'},s.supplierAccountsError):null,
-      h('div',{className:'inventory-summary'},[kpi('Accepted Purchases',peso(receipts.reduce((n,r)=>n+Number(r.receivedValue),0))),kpi('Recorded Payments',peso(receipts.reduce((n,r)=>n+Number(r.payments),0))),kpi('Supplier Credits',peso(receipts.reduce((n,r)=>n+Number(r.credits),0))),kpi('Unpaid Balance',peso(receipts.reduce((n,r)=>n+Number(r.balance),0)))]),
+      h('div',{className:'inventory-summary'},[kpi('Accepted Purchases',peso(receipts.reduce((n,r)=>n+Number(r.receivedValue),0))),kpi('Recorded Payments',peso(receipts.reduce((n,r)=>n+Number(r.payments),0))),kpi('Supplier Credits',peso(receipts.reduce((n,r)=>n+Number(r.credits),0)))]),
       null,
-      this.recordTable('supplier-balances',['Supplier','PO Number','Receipt ID','Receipt Date','Due Date','Accepted Value','Payments','Credits','Unpaid Balance','Account Remark','Actions'],receipts.map(r=>tr([td(r.supplierName),td(r.poId),td(r.id),td(r.date),td(r.paymentDueDate||'Not recorded'),td(peso(r.receivedValue)),td(peso(r.payments)),td(peso(r.credits)),td(r.balance==null?'Review required':peso(r.balance)),td(r.accountRemark),td([h('a',{href:'/receipts/'+encodeURIComponent(r.id)+'/report',target:'_blank',rel:'noopener'},'Receipt slip'),admin&&Number(r.balance)>0&&!r.unknownCosts&&Number(r.legacyPaidValue||0)===0?btn('Record Payment / Credit',()=>this.setState({settlementForm:{receiptId:r.id,kind:'Payment',date:s.data?.BUSINESS_DATE||new Date().toISOString().slice(0,10),amount:'',reference:'',notes:'',requestKey:crypto.randomUUID()}})):null])],r.id))),
+      this.recordTable('supplier-balances',['Supplier','PO Number','Receipt ID','Receipt Date','Due Date','Accepted Value','Payments','Credits','Account Remark','Actions'],receipts.map(r=>tr([td(r.supplierName),td(r.poId),td(r.id),td(r.date),td(r.paymentDueDate||'Not recorded'),td(peso(r.receivedValue)),td(peso(r.payments)),td(peso(r.credits)),td(r.accountRemark),td([h('a',{href:'/receipts/'+encodeURIComponent(r.id)+'/report',target:'_blank',rel:'noopener'},'Receipt slip'),admin&&Number(r.balance)>0&&!r.unknownCosts&&Number(r.legacyPaidValue||0)===0?btn('Record Payment / Credit',()=>this.setState({settlementForm:{receiptId:r.id,kind:'Payment',date:s.data?.BUSINESS_DATE||new Date().toISOString().slice(0,10),amount:'',reference:'',notes:'',requestKey:crypto.randomUUID()}})):null])],r.id))),
       f?card([h('h3',null,'Record entry for '+f.receiptId),h('div',{className:'purchase-filters'},[h('label',null,['Entry type',h('select',{value:f.kind,onChange:e=>edit('kind',e.target.value)},['Payment','Credit note'].map(v=>h('option',{value:v},v)))]),...[['date','Date','date'],['amount','Amount (PHP)','number'],['reference','Payment / credit note reference','text'],['notes','Notes','text']].map(([key,label,type])=>h('label',{key},[label,h('input',{type,value:f[key],...(type==='number'?{min:0.01,step:0.01}:{}),onChange:e=>edit(key,e.target.value)})]))]),h('button',{className:'kita-button',disabled:s.settlementSaving,onClick:this.saveSupplierSettlement},s.settlementSaving?'Saving...':'Record entry'),btn('Cancel',()=>this.setState({settlementForm:null}))]):null,
       h('h3',null,'Payment and credit history'),this.recordTable('supplier-settlements',['Date','Receipt ID','Type','Amount','Reference','Recorded By','Remarks','Action'],entries.map(e=>tr([td(e.date),td(e.receiptId),td(e.kind),td(peso(e.amount)),td(e.reference),td(e.actor),td(e.voidedAt?'Voided: '+e.voidReason:e.notes),td(admin&&!e.voidedAt?btn('Void entry',()=>this.voidSupplierSettlement(e.id)):null)],e.id)))]);
   }
@@ -2665,8 +2665,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
         React.createElement("div",{key:"t",style:{fontWeight:800,marginBottom:12}},supMgrForm.id==null?"Add Supplier":"Edit Supplier"),
         React.createElement("div",{key:"grid",style:{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:10,marginBottom:12}},[
           f("Supplier Name","name"),f("Contact Person","contact"),f("Contact Number","phone"),f("Email (optional)","email"),f("Supply Category","category"),
-          React.createElement("div",{key:"pt"},[React.createElement("label",{style:{fontSize:12,fontWeight:700,color:COLORS.textSoft}},"Payment Terms"),
-            React.createElement("select",{value:supMgrForm.paymentTerms,onChange:this.setSupMgrFormField("paymentTerms"),style:{width:"100%",padding:8,border:"1px solid "+COLORS.border,borderRadius:7,marginTop:4}},["Cash on Delivery","7 Days Credit","30 Days Credit"].map(o=>React.createElement("option",{key:o},o)))]),
+
           React.createElement("div",{key:"st"},[React.createElement("label",{style:{fontSize:12,fontWeight:700,color:COLORS.textSoft}},"Status"),
             React.createElement("select",{value:supMgrForm.status,onChange:this.setSupMgrFormField("status"),style:{width:"100%",padding:8,border:"1px solid "+COLORS.border,borderRadius:7,marginTop:4}},["Active","Inactive"].map(o=>React.createElement("option",{key:o},o)))]),
         ]),
@@ -2709,14 +2708,14 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
           card(sp.callbackLog.map((c,i)=>React.createElement("div",{key:i,style:{fontSize:13,padding:"6px 0",borderBottom:"1px solid #eef1f6"}},c.date+" â€” "+c.note)));
       }
       return React.createElement("div",null,[
-        React.createElement("button",{onClick:this.goSupMgrList,style:{marginBottom:12,background:"none",border:"none",color:COLORS.brand,fontWeight:700,cursor:"pointer"}},"â† Back to Supplier"),
+        btn("Back to Suppliers",this.goSupMgrList),
         card([
           React.createElement("div",{key:"h",style:{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}},[
             React.createElement("div",null,[React.createElement("div",{style:{fontWeight:800,fontSize:18}},sp.name),React.createElement("div",{style:{fontSize:12,color:COLORS.textSoft,marginTop:2}},sp.category)]),
             React.createElement("div",{style:{display:"flex",gap:8}},[badge(sp.status),btn("Edit",this.openSupMgrModal(sp))]),
           ]),
           React.createElement("div",{key:"grid",style:{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:12,fontSize:13}},[
-            ["Contact",sp.contact],["Phone",sp.phone],["Email",sp.email||"â€”"],["Address",sp.address],["Payment Terms",sp.paymentTerms],["Notes",sp.notes||"â€”"],
+            ["Contact",sp.contact],["Phone",sp.phone],["Email",sp.email||"â€”"],["Address",sp.address],["Notes",sp.notes||"â€”"],
           ].map(([l,v],i)=>React.createElement("div",{key:i},[React.createElement("div",{style:{fontSize:11,fontWeight:700,color:COLORS.textMuted}},l),React.createElement("div",{style:{marginTop:2}},v)]))),
         ],{marginBottom:16}),
         React.createElement("div",{style:{display:"flex",gap:6,marginBottom:14}},tabs.map(([k,l])=>React.createElement("button",{key:k,onClick:this.setSupMgrDetailTab(k),style:{padding:"8px 14px",borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer",background:supMgrDetailTab===k?COLORS.brand:"#fff",color:supMgrDetailTab===k?"#fff":COLORS.text,border:"1px solid "+(supMgrDetailTab===k?COLORS.brand:COLORS.border)}},l))),
@@ -2737,7 +2736,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
       this.recordTable("suppliers",["","Supplier Name","Contact Person","Contact Number","Category","Status","Product Count","Action"],list.map(sp=>tr([
         td(React.createElement("input",{type:"checkbox",checked:!!supMgrSelected[sp.id],onChange:this.toggleSupMgrSelect(sp.id)})),
         td(sp.name,{fontWeight:600}),td(sp.contact),td(sp.phone),td(sp.category),td(badge(sp.status)),td(sp.products.length),
-        td(React.createElement("button",{onClick:this.openSupMgrDetail(sp.id),style:{color:COLORS.brand,background:"none",border:"none",fontWeight:700,cursor:"pointer"}},"View â†’"))],sp.id))),
+        td(btn("View",this.openSupMgrDetail(sp.id)))],sp.id))),
       supMgrModalOpen?this.buildMgrSupplierModal():null,
     ]);
   }
@@ -2919,14 +2918,14 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
       const callbackRows = s.callbackLog.length===0 ? [React.createElement("div",{key:"e",style:{fontSize:13,color:COLORS.textMuted}},"No callbacks logged.")]
         : s.callbackLog.map((c,i)=>React.createElement("div",{key:i,style:{fontSize:13,padding:"6px 0",borderBottom:"1px solid #eef1f6"}},c.date+" â€” "+c.note));
       return React.createElement("div",null,[
-        React.createElement("button",{key:"back",onClick:this.closeSupplierDetail,style:{marginBottom:12,background:"none",border:"none",color:COLORS.brand,fontWeight:700,cursor:"pointer"}},"â† Back"),
+        btn("Back to Suppliers",this.closeSupplierDetail),
         sectionTitle(s.name,s.category),this.buildSupplierPerformance(s.id),
         card(infoRows,{marginBottom:14}),
         card([React.createElement("div",{key:"t",style:{fontWeight:800,marginBottom:8}},"Supplier Callback Log")].concat(callbackRows)),
       ]);
     }
     return React.createElement("div",null,[moduleTitle("Supplier Records"),
-      this.recordTable("supplier-records",["Supplier","Category","Status","Details"],data.SUPPLIERS.map(s=>tr([td(s.name,{fontWeight:600}),td(s.category),td(badge(s.status)),td(React.createElement("button",{onClick:this.openSupplierDetail(s.id),style:{color:COLORS.brand,background:"none",border:"none",fontWeight:700,cursor:"pointer"}},"View â†’"))],s.id)))]);
+      this.recordTable("supplier-records",["Supplier","Category","Status","Details"],data.SUPPLIERS.map(s=>tr([td(s.name,{fontWeight:600}),td(s.category),td(badge(s.status)),td(btn("View",this.openSupplierDetail(s.id)))],s.id)))]);
   }
   scheduleReport=()=>{
     clearTimeout(this.reportFilterTimer);this.reportRequestId=(this.reportRequestId||0)+1;this.reportController?.abort();
@@ -3019,7 +3018,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     const normalizeFilters=filters=>JSON.stringify(Object.entries(filters||{type:'sales'}).filter(([,value])=>value).sort(([a],[b])=>a.localeCompare(b)));
     const pendingFilters=!!loaded&&normalizeFilters(f)!==normalizeFilters(s.reportAppliedFilters);
     const common={'Product':'product','Category':'category','Brand':'brand','Subcategory':'subcategory'};
-    const schemas={general:{'Section':'section','Metric':'metric','Value':'value'},
+    const schemas={general:{'Section':'section','Record':'record','Field / Metric':'metric','Value':'value'},
       receiving:{'PO Number':'reportPo','Receipt ID':'reference','Supplier':'supplier','Product':'product','Remarks':'remarks','Discrepancy':'discrepancyType','Condition':'condition','Received':'quantity'},
       expiry:{'Product ID':'code','Batch':'batch','Product name':'product','Category':'category','Manufacturer':'manufacturer','Expiration date':'expiryDate','Stock remaining':'remaining','Unit':'unit','Expiration status':'status'},
       sales:{'Transaction No.':'reference','Sale date':'date',...common,'Status':'status','Quantity':'quantity','Line total (PHP)':'amount','Refunded (PHP)':'refunded'},
@@ -3038,7 +3037,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     const appliedLabels=Object.entries(r?.labels||{}).filter(([key])=>key!=='Type').map(([key,value])=>key+': '+value).join(', ');
     const emptyMessage=h('div',{className:'report-table-message',role:s.reportError?'alert':'status','aria-live':'polite'},s.reportLoading?'Loading report records. Please wait...':s.reportError?'Unable to update the report. '+s.reportError:!loaded?'Choose your filters, then click Refresh to load the report.':'No results found'+(appliedLabels?' for '+appliedLabels:'')+'. Change or clear the filters and try again.');
     const reportGroups=[
-      ['Overview',[['general','General','Combined sales, inventory, and purchases summary.']]],
+      ['Overview',[['general','General','All available reports, summaries, and record details.']]],
       ['Sales',[['sales','Sales details','View sold items, sales amounts, and transaction status.']]],
       ['Inventory',[['batches','Batches',''],['inventory','Stock on hand','Check current quantities and stock availability.'],['receipts','Stock received','See products received, with supplier and batch details.'],['movements','Stock changes','Track stock added, removed, or adjusted.'],['expiry','Expiring products','Check expiration dates and print a monitoring report.']]],
       ['Purchasing',[['purchase_orders','Purchase orders','Review orders placed with suppliers and their status.'],['outstanding_orders','Pending deliveries','Find ordered items that still need to be received.'],['receiving','Delivery discrepancies','Review missing, damaged, and other flagged deliveries.'],['purchases','Purchase history','Review recorded purchases and their costs.']]],
@@ -3115,7 +3114,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
       acctModalOpen?h("div",{key:"modal",style:{position:"fixed",inset:0,background:"rgba(15,31,74,0.38)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:50,padding:16}},
         h("div",{role:"dialog","aria-modal":true,"aria-label":acctModalMode==="create"?"Create Account":"Edit Account",style:{width:400,maxHeight:"85vh",overflowY:"auto",background:"#fff",borderRadius:14,padding:20}},[
           h("h3",{key:"title"},acctModalMode==="create"?"Create Account":"Edit Account"),input("first_name","First Name"),input("last_name","Last Name"),input("email","Email","email"),this.state.role!=='superadmin'?input("username","Employee ID (optional)"):null,
-          h("label",{key:"role"},["Role",h("select",{value:f.role,disabled:acctModalMode==="edit",onChange:this.setAcctField("role"),style:{width:"100%",padding:10,marginBottom:10}},roles.map(role=>h("option",{key:role,value:role},role)))]),
+          this.state.role==="manager"?null:h("label",{key:"role"},["Role",h("select",{value:f.role,disabled:acctModalMode==="edit",onChange:this.setAcctField("role"),style:{width:"100%",padding:10,marginBottom:10}},roles.map(role=>h("option",{key:role,value:role},role)))]),
           h("p",null,"Temporary credentials are emailed to new accounts. Password setup is required on first login."),this.state.role!=="superadmin"?input("schedule","Schedule (optional)"):null,
           h("label",{key:"status"},["Status",h("select",{value:f.status,onChange:this.setAcctField("status"),style:{width:"100%",padding:10,marginBottom:10}},(acctModalMode==="create"?["Active"]:["Active","Inactive"]).map(status=>h("option",{key:status},status)))]),
           this.state.acctError?h("p",{key:"error",role:"alert",style:{color:COLORS.red}},this.state.acctError):null,

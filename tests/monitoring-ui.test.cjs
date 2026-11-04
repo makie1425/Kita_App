@@ -132,3 +132,16 @@ test('purchase item filters cascade and reject items outside the selected catego
  field('Supplier').props.onChange({target:{value:'8'}});
  assert.equal(app.state.purchaseItemDraft.category,undefined);assert.equal(app.state.purchaseItemDraft.productId,undefined);
 });
+
+test('cashier accounts hide role selector and suppliers use labeled boxed navigation',()=>{
+ const {app}=setup();app.state.role='manager';app.state.accountsLocal=[];app.state.acctModalOpen=true;app.state.acctModalMode='create';app.state.acctForm={role:'cashier',status:'Active'};
+ let tree=JSON.stringify(app.buildMgrCashiers());assert.ok(!tree.includes('"key":"role"'));assert.ok(tree.includes('Create Account'));
+ app.state.supMgrForm={name:'Supplier',paymentTerms:'30 Days Credit'};
+ tree=JSON.stringify(app.buildMgrSupplierModal());assert.ok(!tree.includes('Payment Terms'));assert.ok(!tree.includes('30 Days Credit'));
+ app.state.data={SUPPLIERS:[{id:1,name:'Supplier',status:'Active',callbackLog:[]}]};
+ tree=JSON.stringify(app.buildAdmSuppliers());assert.ok(tree.includes('View'));assert.ok(tree.includes('kita-button'));assert.ok(!tree.includes('View ?'));
+ app.state.supplierDetailId=1;app.buildSupplierPerformance=()=>null;
+ tree=JSON.stringify(app.buildAdmSuppliers());assert.ok(tree.includes('Back to Suppliers'));
+ app.state.supplierAccountsData={receipts:[],settlements:[]};app.state.settlementForm=null;
+ tree=JSON.stringify(app.buildSupplierAccounts());assert.ok(!tree.includes('Unpaid Balance'));assert.ok(tree.includes('Recorded Payments'));
+});

@@ -36,20 +36,29 @@ class ReportController extends Controller
         $type = $filters['type'];
         if ($type === 'general') {
             $rows = collect();
-            foreach (['sales'=>'Sales', 'inventory'=>'Current Inventory', 'purchases'=>'Purchases'] as $component=>$section) {
+            foreach (['sales'=>'Sales', 'inventory'=>'Current Inventory', 'receipts'=>'Receipts', 'batches'=>'Inventory Batches', 'movements'=>'Stock Movements', 'expiry'=>'Expiry', 'receiving'=>'Receiving Audit', 'purchase_orders'=>'Purchase Orders', 'outstanding_orders'=>'Outstanding Deliveries', 'purchases'=>'Purchases', 'supplier_book'=>'Supplier Book', 'payables'=>'Accounts Payable'] as $component=>$section) {
                 $query = ['type'=>$component, 'format'=>'json'];
                 if ($component !== 'inventory') $query += $request->only(['from','to']);
                 $part = $request->duplicate($query);
                 $part->setUserResolver($request->getUserResolver());
                 $result = $this->__invoke($part)->getData(true);
                 foreach ($result['summary'] as $metric=>$value) {
-                    $rows->push((object)compact('section','metric','value'));
+                    $rows->push((object)(compact('section','metric','value') + ['record'=>'Summary']));
                 }
+                $rows->push((object)['section'=>$section, 'record'=>'Scope', 'metric'=>'Notes', 'value'=>$result['note']]);
+                foreach ($result['rows'] as $index=>$detail) {
+                    foreach ($result['columns'] as $metric=>$key) {
+                        $value = $detail[$key] ?? '';
+                        if (is_array($value)) $value = json_encode($value, JSON_UNESCAPED_UNICODE);
+                        $rows->push((object)['section'=>$section, 'record'=>'Record '.($index+1), 'metric'=>$metric, 'value'=>$value]);
+                    }
+                }
+                if (!$result['rows']) $rows->push((object)['section'=>$section, 'record'=>'Details', 'metric'=>'Records', 'value'=>'No records for the selected scope.']);
             }
             return $this->respond($request, $type, [
-                'title'=>'General Report', 'columns'=>['Section'=>'section','Metric'=>'metric','Value'=>'value'],
+                'title'=>'General Report', 'columns'=>['Section'=>'section','Record'=>'record','Field / Metric'=>'metric','Value'=>'value'],
                 'rows'=>$rows, 'summary'=>[], 'moneyKeys'=>[], 'numericKeys'=>[],
-                'note'=>'Sales and purchases use the selected dates. Inventory is current, not a historical balance. Totals follow the same definitions as the individual reports.',
+                'note'=>'All available report types, including summaries and record details. Date handling and current balances follow each section?s notes. Sections overlap; do not add their totals together.',
                 'labels'=>['Type'=>'General'] + array_filter(['From'=>$request->input('from'),'To'=>$request->input('to')]),
                 'generated'=>now()->timezone('Asia/Manila')->format('Y-m-d H:i:s').' Asia/Manila',
                 'preparedBy'=>$request->user()->name,
