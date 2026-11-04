@@ -1943,3 +1943,7 @@ body:has(.inventory-batch-dialog[open]){overflow:hidden}
 .po-text-button{border:0;background:none;color:#245ff5;cursor:pointer;font:inherit;padding:0}
 .po-item-error{background:#fff0f0;color:#b42318;padding:10px;border-radius:8px;font-size:12px;margin:0}
 @media(max-width:520px){.po-field-pair{grid-template-columns:1fr}.po-cart-toolbar{padding:14px;flex-wrap:wrap}.po-cart-toolbar input{max-width:100%;width:100%}.po-item-fields{padding:18px}}
+.po-low-stock{padding:12px;border:1px solid #fecaca;border-radius:10px;background:#fff7f7;color:#b42318;font-size:12px}
+.po-low-stock-list{display:grid;gap:6px;max-height:150px;overflow-y:auto;margin-top:8px}
+.po-low-stock-list button{display:grid;gap:4px;padding:10px;text-align:left;border:1px solid #fecdca;border-radius:8px;background:#fff;color:#b42318;cursor:pointer;font:inherit}
+.po-low-stock-list button:hover,.po-low-stock-list button:focus-visible{background:#fee4e2;outline:2px solid #b42318;outline-offset:-2px}

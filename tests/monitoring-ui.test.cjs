@@ -110,27 +110,22 @@ test('purchase form removes expected delivery and adds a validated packaged cata
  const populated=JSON.stringify(app.buildPurchaseRequests());assert.ok(populated.includes('240.00'));
 });
 
-test('purchase item filters cascade and reject items outside the selected category',()=>{
+test('item-first PO suggests low stock and selects category and eligible suppliers',()=>{
  const {app}=setup();app.state.newReqCart=[];
- app.state.data={PRODUCTS:[{id:1,name:'Rice',category:'Food',subcategoryId:10,supplierId:7,status:'Active'},{id:2,name:'Soap',category:'Household',supplierId:7,status:'Active'},{id:3,name:'Other supplier',category:'Food',subcategoryId:10,supplierId:8,status:'Active'}],SUPPLIERS:[{id:7,name:'Supply',status:'Active'},{id:8,name:'Other',status:'Active'}],SUBCATEGORIES:[{id:10,name:'Grains'}]};
+ app.state.data={PRODUCTS:[{id:1,name:'Rice',category:'Food',subcategoryId:10,supplierId:7,status:'Active',sellableStock:2,minStock:10,unitPrice:30},{id:2,name:'Soap',category:'Care',supplierId:8,status:'Active',sellableStock:20,minStock:5}],SUPPLIERS:[{id:7,name:'Supply',status:'Active',products:[{productId:1,costPrice:25}]},{id:8,name:'Other',status:'Active',products:[]}],SUBCATEGORIES:[{id:10,name:'Grains'}]};
  const nodes=v=>!v||typeof v!=='object'?[]:Array.isArray(v)?v.flatMap(nodes):[v,...nodes(v.children)];
- const field=label=>nodes(app.buildItemPickerModal()).find(n=>n.tag==='label'&&JSON.stringify(n.children[0]).includes('"'+label+'"')).children.flat(Infinity).find(n=>n?.tag==='select');
- assert.equal(field('Item Name').props.disabled,true);
- field('Supplier').props.onChange({target:{value:'7'}});
- field('Category').props.onChange({target:{value:'Food'}});
- assert.equal(field('Item Name').props.disabled,true);
- field('Subcategory').props.onChange({target:{value:'10'}});
- assert.ok(JSON.stringify(field('Item Name')).includes('Rice'));assert.ok(!JSON.stringify(field('Item Name')).includes('Soap'));assert.ok(!JSON.stringify(field('Item Name')).includes('Other supplier'));
+ const field=label=>nodes(app.buildItemPickerModal()).find(n=>n.tag==='label'&&JSON.stringify(n.children[0]).includes('"'+label+'"')).children.flat(Infinity).find(n=>['select','input'].includes(n?.tag));
+ assert.ok(JSON.stringify(app.buildItemPickerModal()).includes('Low Stock'));
  field('Item Name').props.onChange({target:{value:'1'}});
- field('Category').props.onChange({target:{value:'Household'}});
- assert.equal(app.state.purchaseItemDraft.productId,undefined);assert.equal(app.state.purchaseItemDraft.subcategoryId,undefined);
- field('Subcategory').props.onChange({target:{value:'none'}});
- assert.ok(JSON.stringify(field('Item Name')).includes('Soap'));
- app.state.purchaseItemDraft.productId='1';
+ assert.equal(field('Category').props.value,'Food');assert.equal(field('Category').props.readOnly,true);
+ assert.equal(field('Subcategory').props.value,'Grains');assert.equal(field('Supplier').props.value,'7');
+ assert.equal(app.state.purchaseItemDraft.qty,8);assert.equal(app.state.purchaseItemDraft.unitCost,25);
+ app.state.data.SUPPLIERS[1].products=[{productId:1,costPrice:28}];
+ field('Item Name').props.onChange({target:{value:'1'}});assert.equal(field('Supplier').props.value,'');
+ field('Supplier').props.onChange({target:{value:'8'}});assert.equal(app.state.purchaseItemDraft.unitCost,28);
+ app.state.newReqCart=[{productId:1}];app.state.newReqSupplier='7';field('Item Name').props.onChange({target:{value:'2'}});
  nodes(app.buildItemPickerModal()).find(n=>n.tag==='button'&&JSON.stringify(n.children).includes('Add Item')).props.onClick();
- assert.equal(app.state.newReqCart.length,0);assert.ok(app.state.purchaseItemError);
- field('Supplier').props.onChange({target:{value:'8'}});
- assert.equal(app.state.purchaseItemDraft.category,undefined);assert.equal(app.state.purchaseItemDraft.productId,undefined);
+ assert.equal(app.state.newReqCart.length,1);assert.ok(app.state.purchaseItemError.includes('separate PO'));
 });
 
 test('cashier accounts hide role selector and suppliers use labeled boxed navigation',()=>{
