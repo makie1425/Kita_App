@@ -10,7 +10,7 @@ use Illuminate\Support\Carbon;
 
 class LoadGroceryPresentation extends Command
 {
-    protected $signature = 'presentation:load-grocery {admin} {manager} {--apply}';
+    protected $signature = 'presentation:load-grocery {admin} {manager} {--apply} {--expand}';
     protected $description = 'Load an isolated, repeat-safe grocery presentation dataset into a verified manager workspace';
 
     public function handle(): int
@@ -80,7 +80,7 @@ class LoadGroceryPresentation extends Command
                 DB::table('grocery_imports')->insert(['workspace_id'=>$workspace,'manager_id'=>$manager->id,'products'=>json_encode($products,JSON_THROW_ON_ERROR),'completed_steps'=>0,'completed'=>false,'created_at'=>now(),'updated_at'=>now()]);
                 return $products;
             });
-            if ($products === null) return self::SUCCESS;
+            if ($products === null) return $this->option('expand') ? $this->call('presentation:expand-grocery', ['admin'=>$this->argument('admin'),'manager'=>$this->argument('manager'),'--apply'=>true]) : self::SUCCESS;
             $this->line('Grocery import: catalog committed. 50 products are now visible; loading history in resumable transactions.');
             $insert = fn($table,$row)=>DB::table($table)->insert($row+['workspace_id'=>$workspace]);
                 foreach ([2024,2025,2026] as $year) {
@@ -136,6 +136,7 @@ class LoadGroceryPresentation extends Command
             Carbon::setTestNow($clock);
             if($previous)Auth::setUser($previous);else Auth::forgetUser();
         }
+        if ($this->option('expand')) return $this->call('presentation:expand-grocery', ['admin'=>$this->argument('admin'),'manager'=>$this->argument('manager'),'--apply'=>true]);
         return $this->call('presentation:check-accounts', ['admin'=>$this->argument('admin'),'manager'=>$this->argument('manager')]);
     }
 

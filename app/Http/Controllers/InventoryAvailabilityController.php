@@ -12,10 +12,14 @@ class InventoryAvailabilityController extends Controller
     {
         $data = $request->validate(['productId' => ['nullable', 'integer', 'min:1'], 'quantity' => ['nullable', 'integer', 'min:1', 'max:1000000', 'required_with:productId']]);
 
+        // A read-only preflight must not wait for a product write lock.
+        // Checkout separately locks and revalidates stock before committing a sale.
+        $request->attributes->set('workspace_scope_snapshot',true);
+        try {
         return DB::transaction(function () use ($data) {
             $query = \App\Services\WorkspaceRead::table('products')->orderBy('id');
             if (isset($data['productId'])) {
-                $product = $query->where('id', $data['productId'])->lockForUpdate()->first();
+                $product = $query->where('id', $data['productId'])->first();
                 abort_unless($product, 404, 'Product not found.');
                 $products = [InventoryAvailability::assertSellable($product, $data['quantity'])];
             } else {
@@ -30,5 +34,9 @@ class InventoryAvailabilityController extends Controller
             }
             return response()->json(['products' => $products, 'activePromotions' => $promotions, 'businessDate' => now()->toDateString(), 'checkedAt' => now()->toIso8601String()])->header('Cache-Control', 'private, no-store');
         });
+        } finally {
+            $request->attributes->remove('workspace_scope_snapshot');
+            $request->attributes->remove('workspace_verified_scopes');
+        }
     }
 }

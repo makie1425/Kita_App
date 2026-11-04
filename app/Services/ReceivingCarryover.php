@@ -54,7 +54,7 @@ class ReceivingCarryover
                 return response()->json(['message'=>'Carryover already linked.', 'poId'=>$target->id]);
             }
             abort_unless(in_array($target->status, [PurchaseWorkflow::WAITING,'Approved','Ordered']) && !WorkspaceRead::table('receiving_records')->where('poId',$target->id)->exists(), 422, 'Choose an approved subsequent PO before its first receipt.');
-            abort_unless(WorkspaceRead::table('receiving_records')->where('poId',$id)->exists() && $target->created >= $source->created && strcmp($target->id, $source->id) > 0, 422, 'Choose a subsequent PO for a recorded shortage.');
+            abort_unless(WorkspaceRead::table('receiving_records')->where('poId',$id)->exists() && $target->created >= $source->created && self::isSubsequent($source, $target), 422, 'Choose a subsequent PO for a recorded shortage.');
             $line = WorkspaceRead::table('purchase_order_lines')->where('poId',$id)->where('id',$data['sourceLine'])->lockForUpdate()->first();
             abort_unless($line && $data['quantity'] <= self::remaining($line)-self::reserved($line->id),422,'The shortage quantity is already allocated or no longer outstanding.');
             $targetLine = WorkspaceRead::table('purchase_order_lines')->where('poId',$target->id)->where('productId',$line->productId)->lockForUpdate()->first();
@@ -73,6 +73,15 @@ class ReceivingCarryover
         },3);
     }
 
+    private static function isSubsequent(object $source, object $target): bool
+    {
+        if ($target->created > $source->created) return true;
+        // Compare the immutable sequence, not two different date-format strings.
+        if (preg_match('/^PO-(?:[0-9]{4}-[0-9]{2}|[0-9]{8})-([0-9]+)$/', $source->id, $a)
+            && preg_match('/^PO-(?:[0-9]{4}-[0-9]{2}|[0-9]{8})-([0-9]+)$/', $target->id, $b)) return (int)$b[1] > (int)$a[1];
+        return strcmp($target->id, $source->id) > 0;
+    }
+
     private static function createDeliveryOrder(Request $request, object $source): string
     {
         $original = WorkspaceRead::table('item_requests')->where('id', $source->itemRequestId)->first();
@@ -80,7 +89,7 @@ class ReceivingCarryover
         $number = (int) DB::table('inventory_sequences')->where('name', 'purchase_orders')->value('lastValue');
         do {
             abort_if($number >= PHP_INT_MAX - 1, 409, 'Purchase order numbering limit reached.');
-            $id = 'PO-'.now()->format('Y-m').'-'.str_pad((string) ++$number, 6, '0', STR_PAD_LEFT);
+            $id = 'PO-'.now()->timezone('Asia/Manila')->format('Ymd').'-'.str_pad((string) ++$number, 6, '0', STR_PAD_LEFT);
         } while (DB::table('item_requests')->where('id', $id)->exists() || DB::table('purchase_orders')->where('id', $id)->exists());
         DB::table('inventory_sequences')->where('name', 'purchase_orders')->update(['lastValue'=>$number]);
         DB::table('item_requests')->insert(WorkspaceWrite::owned([

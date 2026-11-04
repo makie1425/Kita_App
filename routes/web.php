@@ -85,6 +85,7 @@ Route::patch('/api/super-admin/errors/{id}', [SuperAdminDashboardController::cla
 Route::middleware('role:manager,admin')->group(function () {
     Route::get('/api/purchasing', [PurchasingController::class, 'index']);
     Route::post('/api/suppliers', [PurchasingController::class, 'supplier']);
+    Route::patch('/api/suppliers/{id}', [PurchasingController::class, 'supplier'])->whereNumber('id');
     Route::get('/purchase-orders/{id}/order', [PurchasingController::class, 'supplierOrder']);
     Route::get('/receipts/{id}/report', [PurchasingController::class, 'receiptReport']);
     Route::get('/purchase-orders/{id}/report', [PurchasingController::class, 'report']);

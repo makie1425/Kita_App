@@ -261,25 +261,40 @@ class PurchasingController extends Controller
         }, 3);
     }
 
-    public function supplier(Request $request)
+    public function supplier(Request $request, ?string $id = null)
     {
         InventoryRules::authorize($request);
         $data = $request->validate([
             'name' => ['required', 'string', 'max:160'], 'contact' => ['nullable', 'string', 'max:120'],
             'phone' => ['nullable', 'string', 'max:40'], 'email' => ['nullable', 'email', 'max:160'],
             'address' => ['nullable', 'string', 'max:255'],
+            'products'=>['sometimes','array','max:500'], 'products.*.productId'=>['required','integer','distinct'], 'products.*.costPrice'=>['required',...InventoryRules::moneyRules()], 'products.*.preferred'=>['required','boolean'],
+            'category'=>['nullable','string','max:100'], 'notes'=>['nullable','string','max:2000'],
         ]);
 
-        return DB::transaction(function () use ($request, $data) {
+        return DB::transaction(function () use ($request, $data, $id) {
             InventoryRules::lockActor($request);
             $sequence = DB::table('inventory_sequences')->where('name', 'suppliers')->lockForUpdate()->first();
+            if ($id !== null) abort_unless(WorkspaceRead::table('suppliers')->where('id',$id)->lockForUpdate()->exists(),404);
             $data['name'] = trim($data['name']);
-            if (! $data['name'] || WorkspaceRead::table('suppliers')->whereRaw('LOWER(TRIM(name)) = ?', [Str::lower($data['name'])])->exists()) {
+            if (! $data['name'] || WorkspaceRead::table('suppliers')->when($id !== null, fn($q)=>$q->where('id','!=',$id))->whereRaw('LOWER(TRIM(name)) = ?', [Str::lower($data['name'])])->exists()) {
                 throw ValidationException::withMessages(['name' => 'Enter a unique supplier name.']);
+            }
+            $products = $data['products'] ?? null; unset($data['products']);
+            if ($products !== null) foreach ($products as $product) InventoryRules::product($product['productId'], 'products');
+            if ($id !== null) {
+                if ($products !== null) {
+                    WorkspaceRead::table('supplier_products')->where('supplierId',$id)->delete();
+                    foreach ($products as $product) DB::table('supplier_products')->insert(WorkspaceWrite::owned(['supplierId'=>(int)$id]+$product));
+                }
+                WorkspaceRead::table('suppliers')->where('id',$id)->update($data);
+                InventoryRules::audit($request->user()->name,'Updated supplier',$id,null,json_encode($data));
+                return response()->json(['message'=>'Supplier updated.','supplier'=>WorkspaceRead::table('suppliers')->where('id',$id)->first()]);
             }
             $id = max((int) $sequence->lastValue, (int) DB::table('suppliers')->max('id')) + 1;
             DB::table('inventory_sequences')->where('name', 'suppliers')->update(['lastValue' => $id]);
             DB::table('suppliers')->insert(WorkspaceWrite::owned($data + ['id' => $id, 'status' => 'Active', 'callbackLog' => '[]']));
+            if ($products !== null) foreach ($products as $product) DB::table('supplier_products')->insert(WorkspaceWrite::owned(['supplierId'=>$id]+$product));
             InventoryRules::audit($request->user()->name, 'Created supplier', (string) $id, null, json_encode($data));
 
             return response()->json(['message' => 'Supplier created.', 'supplier' => $data + ['id' => $id, 'status' => 'Active']], 201);

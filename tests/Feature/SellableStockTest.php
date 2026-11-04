@@ -34,6 +34,19 @@ class SellableStockTest extends TestCase
         Http::preventStrayRequests();
     }
 
+    public function test_stock_preflight_resolves_scope_once_without_product_write_lock(): void
+    {
+        $this->batch(5, '2027-01-01');
+        $queries=[];
+        DB::listen(function($q) use (&$queries){$queries[]=$q->sql;});
+        $this->getJson('/api/inventory/availability?productId=1&quantity=1')->assertOk();
+        $owners=array_filter($queries,fn($sql)=>str_contains($sql, 'users" as "owner'));
+        $this->assertCount(1,$owners);
+        $this->assertStringNotContainsString('for update',strtolower(implode(' ', $queries)));
+        $other=User::factory()->create(['role'=>'manager']);
+        $this->actingAs($other)->getJson('/api/inventory/availability?productId=1&quantity=1')->assertNotFound();
+    }
+
     private function batch(int $qty, ?string $expiry = null, bool $recalled = false, string $received = '2026-10-01', int $cost = 10): int
     {
         FifoInventory::receive(1, $qty, $cost, $received, batch: 'B-'.Str::random(5), expiry: $expiry);

@@ -9,7 +9,16 @@ class WorkspaceRead
 {
  public static function id(): ?int
  {
-  return self::forUser(auth()->user());
+  $request=request();
+  if (!$request->attributes->get('workspace_scope_snapshot', false)) return self::forUser(auth()->user());
+  $actor=auth()->user();
+  $key=implode(':',[$actor?->id,$actor?->role,$actor?->workspace_id,$actor?->status]);
+  $scopes=$request->attributes->get('workspace_verified_scopes',[]);
+  if (!array_key_exists($key,$scopes)) {
+   $scopes[$key]=self::forUser($actor);
+   $request->attributes->set('workspace_verified_scopes',$scopes);
+  }
+  return $scopes[$key];
  }
  public static function forUser(?User $actor): ?int
  {

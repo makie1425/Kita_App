@@ -118,7 +118,7 @@ class KitaDataController extends Controller
             $row['products'] = [];
 
             return $row;
-        }, $this->rows($pdo, ['table'=>'suppliers','columns'=>['id','name','status','contact','phone','email','address','category','archivedAt','archivedBy','callbackLog'],'order'=>'id DESC']));
+        }, $this->rows($pdo, ['table'=>'suppliers','columns'=>['id','name','status','contact','phone','email','address','category','notes','archivedAt','archivedBy','callbackLog'],'order'=>'id DESC']));
 
         $index = [];
         foreach ($suppliers as $key => $supplier) {

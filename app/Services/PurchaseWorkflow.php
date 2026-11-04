@@ -46,7 +46,7 @@ class PurchaseWorkflow
             }
             $number = (int) $sequence->lastValue;
             // Keep the existing sequence across years; never renumber historical records.
-            $prefix = 'PO-'.now()->format('Y-m').'-';
+            $prefix = 'PO-'.now()->timezone('Asia/Manila')->format('Ymd').'-';
             do {
                 abort_if($number >= PHP_INT_MAX - 1, 409, 'Purchase order numbering limit reached.');
                 $id = $prefix.str_pad((string) ++$number, 6, '0', STR_PAD_LEFT);

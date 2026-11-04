@@ -11,12 +11,12 @@ const COLORS = {
 };
 
 const mojibakeReplacements = [
-  ["â‚±", "\u20B1"], ["â€”", " - "], ["â€¦", "..."], ["âˆ’", "-"], ["âš ", "[!]"],
-  ["ðŸ”", "[Search]"], ["âœ•", "x"], ["ðŸ”’", "[Lock]"], ["âŸ³", "..."],
-  ["â–²", "^"], ["â–¼", "v"], ["Ã—", "x"], ["Â·", " - "], ["ðŸ“·", "[Photo]"],
-  ["â†’", "->"], ["â†", "<-"], ["â–¾", "v"], ["ðŸ–¨", "[Print]"], ["âœ“", "[OK]"],
-  ["â³", "[Time]"], ["ðŸŽ‰", "[Event]"], ["ðŸ“‰", "[Chart]"], ["ðŸ—‚", "[Category]"],
-  ["â˜…", "*"], ["â˜†", "-"], ["â›”", "[Block]"], ["Î”", "Delta"], ["â“˜", "?"]
+  ["₱", "\u20B1"], ["—", " - "], ["…", "..."], ["−", "-"], ["⚠", "[!]"],
+  ["🔍", "[Search]"], ["✕", "x"], ["🔒", "[Lock]"], ["⟳", "..."],
+  ["▲", "^"], ["▼", "v"], ["×", "x"], ["·", " - "], ["📷", "[Photo]"],
+  ["→", "->"], ["←", "<-"], ["▾", "v"], ["🖨", "[Print]"], ["✓", "[OK]"],
+  ["⏳", "[Time]"], ["🎉", "[Event]"], ["📉", "[Chart]"], ["🗂", "[Category]"],
+  ["★", "*"], ["☆", "-"], ["⛔", "[Block]"], ["Δ", "Delta"], ["ⓘ", "?"]
 ];
 function cleanMojibake(value) {
   if (typeof value !== "string") return value;
@@ -118,8 +118,9 @@ function statusValue(value) {
 }
 
 const PRODUCT_MEASUREMENT_UNITS={"Weight": {"mg": "mg (Milligram)", "g": "g (Gram)", "kg": "kg (Kilogram)", "tonne": "t (Metric tonne)", "oz": "oz (Ounce ? weight)", "lb": "lb (Pound)"}, "Volume": {"mL": "mL (Milliliter)", "cL": "cL (Centiliter)", "dL": "dL (Deciliter)", "Liter": "L (Liter)", "kL": "kL (Kiloliter)", "US fl oz": "fl oz (US fluid ounce)", "US pint": "pt (US pint)", "US quart": "qt (US quart)", "US gallon": "gal (US gallon)", "Imp gallon": "gal (Imperial gallon)", "cm3": "cm? (Cubic centimeter)", "m3": "m? (Cubic meter)"}, "Length": {"mm": "mm (Millimeter)", "cm": "cm (Centimeter)", "m": "m (Meter)", "km": "km (Kilometer)", "in": "in (Inch)", "ft": "ft (Foot)", "yd": "yd (Yard)"}, "Area": {"cm2": "cm? (Square centimeter)", "m2": "m? (Square meter)", "in2": "in? (Square inch)", "ft2": "ft? (Square foot)"}, "Count": {"Piece": "Piece", "Pair": "Pair", "Dozen": "Dozen", "Sheet": "Sheet", "Serving": "Serving", "Tablet": "Tablet", "Capsule": "Capsule"}};
-function peso(n){ n=Number(n)||0; return "â‚±"+n.toLocaleString("en-PH",{minimumFractionDigits:2,maximumFractionDigits:2}); }
-function badge(status){ const c=statusStyle(status); return React.createElement("span",{className:"status-badge",style:{background:c.bg,color:c.fg,fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:20,display:"inline-block",whiteSpace:"nowrap"}},status); }
+function peso(n){ n=Number(n)||0; return "₱"+n.toLocaleString("en-PH",{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function statusLabel(status){return ({"Pending Approval":"Pending","Proceed to Purchase":"Under Review","Declined":"Rejected","Disapproved":"Rejected","Canceled":"Cancelled","Nearly expired":"Near Expiry"})[status]||status;}
+function badge(status){ const c=statusStyle(status); return React.createElement("span",{className:"status-badge",style:{background:c.bg,color:c.fg,fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:20,display:"inline-block",whiteSpace:"nowrap"}},statusLabel(status)); }
 function card(children, style){ return React.createElement("div",{className:"kita-card",style:Object.assign({background:COLORS.surface,border:"1px solid "+COLORS.border,borderRadius:12,padding:18},style||{})},children); }
 function sectionTitle(t, sub){ return React.createElement("div",{className:"section-heading",style:{marginBottom:16}},[React.createElement("h1",{key:"t",style:{fontSize:24,fontWeight:800,margin:0,letterSpacing:-0.7}},t), sub?React.createElement("div",{key:"s",style:{fontSize:13,color:COLORS.textSoft,marginTop:2}},sub):null]); }
 function moduleTitle(title, subtitle){
@@ -480,7 +481,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
   };
   goScreen=key=>()=>{ this.setState({screen:key,sidebarOpen:false}); if(["mgrRequest","mgrRequestView","mgrPurchaseHistory","mgrPO","mgrSupplier","admSuppliers","admPurchasedOrders","admForwarded","admDisapproved","admReceivingApprovals"].includes(key)&&!this.state.purchaseData&&!this.state.purchaseLoading)this.reloadPurchasing().catch(()=>{}); if(key==="supplierAccounts")this.loadSupplierAccounts(); if(key==="purchaseOrders"&&!this.state.purchaseData&&!this.state.purchaseLoading)this.reloadPurchasing().catch(()=>{}); if(key==="saDashboard")this.reloadSaDashboard(); if(key==="saBackup")this.loadSaRecords("backup"); if(key==="saAudit")this.loadSaRecords("audit"); if(["mgrCashiers","admManagers","saAdmins"].includes(key)&&!this.state.accountsLocal)this.reloadAccounts().catch(error=>this.toast(error.message,"error")); if(key==="shift") this.reloadCatalog().catch(()=>this.toast("Could not refresh shift transactions.","error")); };
 
-  simScannerDisconnect=()=>{ this.setState({scannerConnected:false}); this.toast("Scanner disconnected â€” use manual entry.","warn"); };
+  simScannerDisconnect=()=>{ this.setState({scannerConnected:false}); this.toast("Scanner disconnected — use manual entry.","warn"); };
   simPaymentTimeout=()=>{ if(this.state.paymentState==="processing"||this.state.paymentState==="pending"){ this.setState({paymentState:"timeout"}); this.toast("Payment timed out.","error"); } else this.toast("Start an e-wallet payment first.","warn"); };
   simDamagedBarcode=()=>{ this.setState({screen:"mgrRegistration"}); this.toast("Damaged barcode auto-regenerated for Nissin Cup Noodles Beef.","warn"); };
   simDuplicateRefund=()=>{ this.setState({screen:"refunds",refundLookup:"TXN-88213"}); setTimeout(()=>this.doRefundLookup(),50); };
@@ -506,7 +507,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
   sellableStock=p=>Number(p?.sellableStock??0);
   refreshStockAvailability=async(productId,quantity)=>{
     const actor=this.state.authenticatedUser,requestId=(this.stockRequestId||0)+1;this.stockRequestId=requestId;
-    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),10000);
+    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),30000);
     try{
       const suffix=productId?'?'+new URLSearchParams({productId,quantity}):'';
       const response=await fetch('/api/inventory/availability'+suffix,{headers:{Accept:'application/json'},credentials:'same-origin',cache:'no-store',signal:controller.signal});
@@ -540,7 +541,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     if(current())this.addVerifiedProductToCart(fresh,manual);
   });
   addVerifiedProductToCart=(p,manual)=>{
-    if(p.status==="Quarantine"){ this.toast(`"${p.name}" is quarantined â€” blocked from sale.`,"error"); return; }
+    if(p.status==="Quarantine"){ this.toast(`"${p.name}" is quarantined — blocked from sale.`,"error"); return; }
     if(p.status!=="Active"||this.sellableStock(p)<=0){ this.toast(`"${p.name}" has no sellable stock. ${(p.exclusionReasons||[]).join('; ')}`,"error"); return; }
     const existing=this.state.cart.find(l=>l.productId===p.id);
     if(existing && existing.qty>=this.sellableStock(p)){ this.toast(`Only ${this.sellableStock(p)} units of ${p.name} are available.`,"error"); return; }
@@ -549,7 +550,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     const promo=this.activePromo(p.id);
     this.setState(s=>({cart:[...s.cart,{lineId:Date.now()+Math.random(),productId:p.id,name:this.productLabel(p),qty:1,unitPrice:p.price,originalPrice:p.price,vatClass:p.vatClass,manual:!!manual,
       overridden:false,overrideReason:"",overrideApprover:"",promo,pulse:false}]}));
-    this.toast(`Added "${p.name}"${manual?" (Manual Entry)":""}${promo?" â€” promo "+promo.name+" applied":""}.`);
+    this.toast(`Added "${p.name}"${manual?" (Manual Entry)":""}${promo?" — promo "+promo.name+" applied":""}.`);
   };
   stepQty=(lineId,delta)=>()=>this.queueStockSelection(async current=>{
     const line=this.state.cart.find(l=>l.lineId===lineId);
@@ -649,7 +650,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
       this.toast(error.message,"error");
     }).finally(()=>{this.checkoutInFlight=false;});
   };
-  tickReservation=()=>{ if(this.state.paymentState!=="pending") return; if(this.state.reservationSeconds<=0){ this.setState({paymentState:"timeout"}); this.toast("Reservation expired â€” stock released.","error"); return; }
+  tickReservation=()=>{ if(this.state.paymentState!=="pending") return; if(this.state.reservationSeconds<=0){ this.setState({paymentState:"timeout"}); this.toast("Reservation expired — stock released.","error"); return; }
     setTimeout(()=>{ this.setState(s=>({reservationSeconds:s.reservationSeconds-1})); this.tickReservation(); },1000); };
   retryPayment=()=>{ this.setState({paymentState:"idle"}); setTimeout(this.startPayment,50); };
   switchToCash=()=>this.setState({paymentMethod:"cash",paymentState:"idle"});
@@ -771,7 +772,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
   doRefundLookup=()=>{ const {data,refundLookup}=this.state; if(!data) return;
     const t=data.TRANSACTIONS.find(tt=>tt.uuid.toLowerCase()===refundLookup.trim().toLowerCase());
     if(!t){ this.setState({refundError:"No transaction found matching that number.",refundTxn:null}); return; }
-    if(!["Unused","Paid","Partially Refunded"].includes(t.status)){ this.setState({refundError:`Cannot refund â€” this transaction is already ${t.status}${t.refundDate?" ("+t.refundDate+")":""}.`,refundTxn:null}); return; }
+    if(!["Unused","Paid","Partially Refunded"].includes(t.status)){ this.setState({refundError:`Cannot refund — this transaction is already ${t.status}${t.refundDate?" ("+t.refundDate+")":""}.`,refundTxn:null}); return; }
     this.setState({refundTxn:t,refundAction:"",refundQuantities:{},refundRestock:true,providerRefundId:"",returnRequestKey:null,approvalManagerId:"",refundError:"",refundClass:"",refundSelectedLines:[],approvalPin:"",approvalResult:"",exchangeTransaction:null,exchangeReceiptOpen:false,exchangeReplacement:"",exchangeTendered:""});
   };
   setRefundClass=cls=>()=>this.setState({refundClass:cls});
@@ -970,10 +971,18 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
   openSupMgrModal=(sup)=>()=>this.setState({supMgrModalOpen:true,supMgrForm:sup?{...sup}:{id:null,name:"",address:"",contact:"",phone:"",email:"",category:"",status:"Active",notes:""}});
   closeSupMgrModal=()=>this.setState({supMgrModalOpen:false});
   setSupMgrFormField=field=>e=>this.setState(s=>({supMgrForm:{...s.supMgrForm,[field]:e.target.value}}));
-  saveSupMgrForm=()=>{ const {supMgrForm}=this.state;
-    if(!supMgrForm.name.trim()){ this.toast("Supplier name is required.","error"); return; }
-    if(supMgrForm.id==null){ const id=Date.now(); this.setState(s=>({suppliersLocal:[...s.suppliersLocal,{...supMgrForm,id,products:[],callbackLog:[]}],supMgrModalOpen:false,supMgrScreen:"detail",supMgrDetailId:id})); this.toast("Supplier added."); }
-    else { this.setState(s=>({suppliersLocal:s.suppliersLocal.map(sp=>sp.id===supMgrForm.id?{...sp,...supMgrForm}:sp),supMgrModalOpen:false})); this.toast("Supplier updated."); }
+  saveSupMgrForm=async()=>{
+    if(this.supplierSaving)return;
+    const f=this.state.supMgrForm;
+    if(!f.name.trim()){this.toast('Supplier name is required.','error');return;}
+    this.supplierSaving=true;
+    try{
+      const payload=Object.fromEntries(['name','contact','phone','email','address','category','notes'].map(key=>[key,f[key]||'']));
+      const result=await this.authPost('/api/suppliers'+(f.id?'/'+f.id:''),payload,f.id?'PATCH':'POST');
+      await this.reloadCatalog();
+      this.setState({supMgrModalOpen:false,supMgrScreen:'detail',supMgrDetailId:Number(result.supplier.id)});
+      this.toast(result.message);
+    }catch(e){this.toast(e.message,'error');}finally{this.supplierSaving=false;}
   };
   openSupMgrDetail=id=>()=>this.setState({supMgrScreen:"detail",supMgrDetailId:id,supMgrDetailTab:"products"});
   setSupMgrDetailTab=tab=>()=>this.setState({supMgrDetailTab:tab});
@@ -981,19 +990,23 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
   closeSupMgrProductPicker=()=>this.setState({supMgrProductPickerOpen:false});
   setSupMgrProductSearch=e=>this.setState({supMgrProductSearch:e.target.value});
   toggleSupMgrProductCheck=id=>()=>this.setState(s=>({supMgrProductChecked:{...s.supMgrProductChecked,[id]:!s.supMgrProductChecked[id]}}));
-  addSupMgrSelectedProducts=()=>{ const {supMgrDetailId,supMgrProductChecked,productsLocal}=this.state;
-    const ids=Object.keys(supMgrProductChecked).filter(k=>supMgrProductChecked[k]).map(Number);
-    if(!ids.length){ this.toast("Select at least one product.","error"); return; }
-    this.setState(s=>({suppliersLocal:s.suppliersLocal.map(sp=>{ if(sp.id!==supMgrDetailId) return sp;
-      const existing=new Set(sp.products.map(pr=>pr.productId));
-      const added=ids.filter(id=>!existing.has(id)).map(id=>{ const p=productsLocal.find(pp=>pp.id===id); return {productId:id,costPrice:p?Number(p.unitPrice??p.cost):0,preferred:false}; });
-      return {...sp,products:[...sp.products,...added]}; }),supMgrProductPickerOpen:false}));
-    this.toast(`${ids.length} product(s) linked to this supplier.`);
+  persistSupplierProducts=async(supplierId,products)=>{
+    if(this.supplierSaving)return;
+    const supplier=this.state.suppliersLocal.find(s=>s.id===supplierId);if(!supplier)return;
+    this.supplierSaving=true;
+    try{await this.authPost('/api/suppliers/'+supplierId,{...supplier,products},'PATCH');await this.reloadCatalog();this.setState({supMgrProductPickerOpen:false});this.toast('Supplier products saved.');}
+    catch(e){this.toast(e.message,'error');}finally{this.supplierSaving=false;}
   };
-  removeSupMgrProduct=(supplierId,productId)=>()=>this.setState(s=>({suppliersLocal:s.suppliersLocal.map(sp=>sp.id!==supplierId?sp:{...sp,products:sp.products.filter(pr=>pr.productId!==productId)})}));
-  setSupMgrProductCost=(supplierId,productId)=>e=>{ const val=parseFloat(e.target.value)||0;
-    this.setState(s=>({suppliersLocal:s.suppliersLocal.map(sp=>sp.id!==supplierId?sp:{...sp,products:sp.products.map(pr=>pr.productId!==productId?pr:{...pr,costPrice:val})})})); };
-  toggleSupMgrPreferred=(supplierId,productId)=>()=>this.setState(s=>({suppliersLocal:s.suppliersLocal.map(sp=>sp.id!==supplierId?sp:{...sp,products:sp.products.map(pr=>pr.productId!==productId?pr:{...pr,preferred:!pr.preferred})})}));
+  addSupMgrSelectedProducts=()=>{
+    const s=this.state,sp=s.suppliersLocal.find(v=>v.id===s.supMgrDetailId),ids=Object.keys(s.supMgrProductChecked).filter(k=>s.supMgrProductChecked[k]).map(Number);
+    if(!ids.length||!sp)return;
+    const existing=new Set(sp.products.map(p=>p.productId));
+    return this.persistSupplierProducts(sp.id,[...sp.products,...ids.filter(id=>!existing.has(id)).map(id=>({productId:id,costPrice:Number(s.productsLocal.find(p=>p.id===id)?.unitPrice||0),preferred:false}))]);
+  };
+  removeSupMgrProduct=(supplierId,productId)=>()=>this.persistSupplierProducts(supplierId,this.state.suppliersLocal.find(s=>s.id===supplierId).products.filter(p=>p.productId!==productId));
+  setSupMgrProductCost=(supplierId,productId)=>e=>{const value=e.target.value;this.setState(s=>({suppliersLocal:s.suppliersLocal.map(sp=>sp.id!==supplierId?sp:{...sp,products:sp.products.map(p=>p.productId!==productId?p:{...p,costPrice:value})})}));};
+  saveSupMgrProductCosts=supplierId=>()=>this.persistSupplierProducts(supplierId,this.state.suppliersLocal.find(s=>s.id===supplierId).products.map(p=>({...p,costPrice:Number(p.costPrice)})));
+  toggleSupMgrPreferred=(supplierId,productId)=>()=>this.persistSupplierProducts(supplierId,this.state.suppliersLocal.find(s=>s.id===supplierId).products.map(p=>p.productId!==productId?p:{...p,preferred:!p.preferred}));
   // ---- Admin: Manage Accounts ----
   openAcctModal=(mode,acct)=>()=>this.setState({acctModalOpen:true,acctModalMode:mode,acctError:"",acctForm:acct?{...acct,password:""}:{id:null,username:"",email:"",name:"",role:this.state.role==="superadmin"?"admin":"cashier",password:"",status:"Active"}});
   closeAcctModal=()=>this.setState({acctModalOpen:false,acctError:""});
@@ -1092,7 +1105,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
   resetPromoForm=()=>this.setState({promoSelectedItems:[],promoStartDate:"",promoEndDate:"",promoType:"Near-Expiry",promoOccasionName:"",promoCategory:"",promoDiscountPct:""});
   quickPromoFromNearExpiry=productId=>()=>{ this.setState({screen:"mgrPromotions",promoSelectedItems:[productId],promoType:"Near-Expiry",promoStartDate:this.state.data.BUSINESS_DATE,promoEndDate:this.state.data.BUSINESS_DATE,promoDiscountPct:""}); };
   quickPromoFromLeastSales=productId=>()=>{ this.setState({screen:"mgrPromotions",promoSelectedItems:[productId],promoType:"Slow-Moving",promoStartDate:this.state.data.BUSINESS_DATE,promoEndDate:this.state.data.BUSINESS_DATE,promoDiscountPct:""}); };
-  copyPromotion=promo=>()=>{ this.setState({promoSelectedItems:[...promo.productIds],promoType:promo.type,promoOccasionName:promo.occasionName||"",promoCategory:promo.category||"",promoDiscountPct:String(promo.discountPct),promoStartDate:"",promoEndDate:""}); this.toast("Promotion copied â€” set new dates and save."); };
+  copyPromotion=promo=>()=>{ this.setState({promoSelectedItems:[...promo.productIds],promoType:promo.type,promoOccasionName:promo.occasionName||"",promoCategory:promo.category||"",promoDiscountPct:String(promo.discountPct),promoStartDate:"",promoEndDate:""}); this.toast("Promotion copied — set new dates and save."); };
   savePromotion=async()=>{
     if(this.promotionSaving)return;
     const {data,promoType,promoSelectedItems,promoCategory,promoStartDate,promoEndDate,promoDiscountPct,promoOccasionName,promotionsLocal}=this.state;
@@ -1101,7 +1114,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     let productIds = promoType==="Category-Wide" ? data.PRODUCTS.filter(p=>p.category===promoCategory).map(p=>p.id) : promoSelectedItems;
     if(!productIds.length){ this.toast(promoType==="Category-Wide"?"Select a category.":"Select at least one item.","error"); return; }
     for(const pid of productIds){ const p=data.PRODUCTS.find(pp=>pp.id===pid); const promoPrice=p.price*(1-pct/100);
-      if(promoPrice<Number(p.unitPrice??p.cost)){ this.toast(`"${p.name}": this discount would sell below cost â€” ${peso(p.unitPrice??p.cost)} minimum.`,"error"); return; } }
+      if(promoPrice<Number(p.unitPrice??p.cost)){ this.toast(`"${p.name}": this discount would sell below cost — ${peso(p.unitPrice??p.cost)} minimum.`,"error"); return; } }
     for(const pid of productIds){ const conflict=promotionsLocal.find(pr=>pr.productIds.includes(pid) && !(promoEndDate<pr.startDate||promoStartDate>pr.endDate));
       if(conflict){ const p=data.PRODUCTS.find(pp=>pp.id===pid); this.toast(`Conflict: "${p.name}" already has an overlapping promotion "${conflict.name}".`,"error"); return; } }
     const name = promoType==="Category-Wide" ? promoCategory+" Category Promo" : promoType==="Seasonal" ? (promoOccasionName||"Seasonal Promo") : promoType+" Promo";
@@ -1158,17 +1171,17 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     if(!data) return card(loadingStatus("Loading catalog..."));
     if(transactionResult) return this.buildTransactionView(transactionResult);
     const totals=this.computeTotals();
-    const priorityNote = employeeDiscount ? "Applied: Employee Discount (10%) â€” Senior/PWD & Promotions not stacked" : seniorApplied ? "Applied: Senior/PWD Discount (20% + VAT exemption) â€” Promotions not stacked" : null;
+    const priorityNote = employeeDiscount ? "Applied: Employee Discount (10%) — Senior/PWD & Promotions not stacked" : seniorApplied ? "Applied: Senior/PWD Discount (20% + VAT exemption) — Promotions not stacked" : null;
     const cartRows=cart.map(l=>tr([
       td(React.createElement("div",null,[
         React.createElement("div",{key:"n",style:{fontWeight:700}},l.name),
         l.qty>this.sellableStock((this.state.productsLocal||data.PRODUCTS).find(p=>p.id===l.productId))?React.createElement("div",{key:"stock-warning",role:"alert",style:{color:COLORS.red}},"Requested quantity exceeds current sellable stock. Update or remove this item."):null,
         l.manual?React.createElement("span",{key:"m",style:{fontSize:10,fontWeight:700,color:COLORS.blue,background:COLORS.blueBg,padding:"2px 6px",borderRadius:6,marginRight:6}},"Manual Entry"):null,
-        l.overridden?React.createElement("span",{key:"o",title:`Approved by ${l.overrideApprover} â€” ${l.overrideReason}`,style:{fontSize:10,fontWeight:700,color:COLORS.amber,background:COLORS.amberBg,padding:"2px 6px",borderRadius:6,marginRight:6}},"Overridden"):null,
+        l.overridden?React.createElement("span",{key:"o",title:`Approved by ${l.overrideApprover} — ${l.overrideReason}`,style:{fontSize:10,fontWeight:700,color:COLORS.amber,background:COLORS.amberBg,padding:"2px 6px",borderRadius:6,marginRight:6}},"Overridden"):null,
         (l.promo && !employeeDiscount && !seniorApplied)?React.createElement("span",{key:"p",style:{fontSize:10,fontWeight:700,color:COLORS.purple,background:COLORS.purpleBg,padding:"2px 6px",borderRadius:6}},"Promo: "+l.promo.name):null,
       ])),
       td(React.createElement("div",{style:{display:"flex",alignItems:"center",gap:6,animation:l.pulse?"pulse .3s ease 2":"none"}},[
-        React.createElement("button",{key:"m",onClick:this.stepQty(l.lineId,-1),style:{width:24,height:24,borderRadius:6,border:"1px solid "+COLORS.border,background:"#fff",cursor:"pointer"}},"âˆ’"),
+        React.createElement("button",{key:"m",onClick:this.stepQty(l.lineId,-1),style:{width:24,height:24,borderRadius:6,border:"1px solid "+COLORS.border,background:"#fff",cursor:"pointer"}},"−"),
         React.createElement("span",{key:"q",style:{minWidth:20,textAlign:"center",fontWeight:700}},l.qty),
         React.createElement("button",{key:"p",onClick:this.stepQty(l.lineId,1),style:{width:24,height:24,borderRadius:6,border:"1px solid "+COLORS.border,background:"#fff",cursor:"pointer"}},"+"),
       ])),
@@ -1186,12 +1199,12 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
         card([
           React.createElement("div",{key:"t",style:{fontWeight:800,fontSize:16,marginBottom:4}},"1. Scan a product"),
           React.createElement("div",{key:"h",style:{fontSize:12,color:COLORS.textSoft,marginBottom:10}},"Scan the barcode or type it below, then press Enter or Add."),
-          !scannerConnected?React.createElement("div",{key:"w",style:{background:COLORS.redBg,color:COLORS.red,padding:"8px 12px",borderRadius:8,fontSize:12,fontWeight:600,marginBottom:10}},"âš  Scanner disconnected â€” use manual entry below."):null,
+          !scannerConnected?React.createElement("div",{key:"w",style:{background:COLORS.redBg,color:COLORS.red,padding:"8px 12px",borderRadius:8,fontSize:12,fontWeight:600,marginBottom:10}},"⚠ Scanner disconnected — use manual entry below."):null,
           React.createElement("div",{key:"row",style:{display:"flex",gap:8}},[
             React.createElement("input",{key:"i",autoFocus:true,value:barcodeInput,onChange:this.setBarcodeInput,onKeyDown:this.onBarcodeKey,placeholder:"Scan or type barcode, then Enter...",style:{flex:1,padding:"12px 14px",border:"1px solid "+COLORS.border,borderRadius:8,fontFamily:"'JetBrains Mono',monospace",fontSize:14}}),
             React.createElement("button",{key:"add",onClick:this.scanBarcode,style:{padding:"0 16px",background:COLORS.brand,color:"#fff",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer"}},"Add"),
           ]),
-          React.createElement("button",{key:"ml",onClick:this.openManualLookup,style:{marginTop:10,fontSize:12,fontWeight:700,color:COLORS.brand,background:"none",border:"none",cursor:"pointer"}},"Search product manually"),
+          React.createElement("button",{key:"ml",onClick:this.openManualLookup,style:{marginTop:10,fontSize:12,fontWeight:700,color:COLORS.brand,background:"none",border:"none",cursor:"pointer"}},"Search Products"),
         ],{marginBottom:16}),
         card([React.createElement("div",{key:"t",style:{fontWeight:800,fontSize:16,marginBottom:10}},`2. Cart (${cart.length} item${cart.length!==1?"s":""})`),
           cart.length===0?React.createElement("div",{key:"e",style:{padding:"30px 0",textAlign:"center",color:COLORS.textMuted,fontSize:13}},"Scan an item to begin."):table(["Item","Qty","Unit Price","Line Total","Actions"],cartRows)]),
@@ -1200,7 +1213,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
         card([React.createElement("div",{key:"t",style:{fontWeight:800,marginBottom:10}},"3. Discounts"),
           React.createElement("div",{key:"row",style:{display:"flex",flexDirection:"column",gap:8}},[
             React.createElement("label",{key:"emp",style:{display:"flex",alignItems:"center",gap:8,fontSize:13,fontWeight:600}},[React.createElement("input",{key:"cb",type:"checkbox",checked:employeeDiscount,onChange:this.toggleEmployeeDiscount}),"Employee Discount (10%)"]),
-            seniorApplied?React.createElement("div",{key:"chip",style:{background:COLORS.greenBg,color:COLORS.green,padding:"8px 10px",borderRadius:8,fontSize:12,fontWeight:700,display:"flex",justifyContent:"space-between"}},[React.createElement("span",{key:"n"},`Senior/PWD: ${seniorInfo.name}`),React.createElement("span",{key:"x",onClick:this.removeSenior,style:{cursor:"pointer"}},"âœ•")])
+            seniorApplied?React.createElement("div",{key:"chip",style:{background:COLORS.greenBg,color:COLORS.green,padding:"8px 10px",borderRadius:8,fontSize:12,fontWeight:700,display:"flex",justifyContent:"space-between"}},[React.createElement("span",{key:"n"},`Senior/PWD: ${seniorInfo.name}`),React.createElement("span",{key:"x",onClick:this.removeSenior,style:{cursor:"pointer"}},"✕")])
               :React.createElement("button",{key:"btn",onClick:this.openSeniorPwd,style:{padding:"9px 10px",background:"#fff",border:"1px solid "+COLORS.border,borderRadius:8,fontWeight:700,fontSize:12,cursor:"pointer"}},"Apply Senior/PWD Discount"),
           ]),
           priorityNote?React.createElement("div",{key:"pn",style:{marginTop:8,fontSize:11,color:COLORS.textSoft,fontStyle:"italic"}},priorityNote):null,
@@ -1214,21 +1227,21 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
         card([React.createElement("div",{key:"t",style:{fontWeight:800,marginBottom:10}},"5. Payment"),
           React.createElement("div",{key:"tog",style:{display:"flex",gap:6,marginBottom:10}},["cash","ewallet"].map(m=>React.createElement("button",{key:m,onClick:this.setPaymentMethod(m),style:{flex:1,padding:"9px 0",borderRadius:8,fontWeight:700,fontSize:12,cursor:"pointer",background:paymentMethod===m?COLORS.brand:"#fff",color:paymentMethod===m?"#fff":COLORS.text,border:"1px solid "+(paymentMethod===m?COLORS.brand:COLORS.border)}},m==="cash"?"Cash":"QR Ph"))),
           paymentMethod==="cash"?React.createElement("div",{key:"cash"},[
-            React.createElement("input",{key:"i",value:tendered,onChange:this.setTendered,placeholder:"Tendered amount",type:"number",style:{width:"100%",padding:"9px 10px",border:"1px solid "+COLORS.border,borderRadius:8,fontSize:13,marginBottom:6}}),
+            React.createElement("input",{key:"i",value:tendered,onChange:this.setTendered,placeholder:"Amount Tendered",type:"number",style:{width:"100%",padding:"9px 10px",border:"1px solid "+COLORS.border,borderRadius:8,fontSize:13,marginBottom:6}}),
             tendered?React.createElement("div",{key:"c",style:{fontSize:12,color:COLORS.textSoft}},`Change: ${peso(Math.max(0,(parseFloat(tendered)||0)-totals.grandTotal))}`):null,
           ]):React.createElement("div",{key:"ew",style:{fontSize:13,fontWeight:700,marginBottom:6}},"QR Ph payment"),
           paymentMethod==="ewallet" && ewalletProvider==="QR Ph"?React.createElement("div",{key:"qr-help",style:{fontSize:12,color:COLORS.textSoft,marginBottom:8}},"Open checkout to display a QR for "+peso(totals.grandTotal)+". Scan with a QR Ph-compatible wallet or banking app. Payment is confirmed automatically."):null,
-          paymentState==="pending"?React.createElement("div",{key:"pend",style:{background:COLORS.amberBg,color:COLORS.amber,padding:"10px",borderRadius:8,fontSize:12,fontWeight:700,marginBottom:8,display:"flex",justifyContent:"space-between"}},[React.createElement("span",{key:"l"},"ðŸ”’ Stock reserved â€” Pending"),React.createElement("span",{key:"t",style:{fontFamily:"'JetBrains Mono',monospace"}},reservationSeconds+"s")]):null,
+          paymentState==="pending"?React.createElement("div",{key:"pend",style:{background:COLORS.amberBg,color:COLORS.amber,padding:"10px",borderRadius:8,fontSize:12,fontWeight:700,marginBottom:8,display:"flex",justifyContent:"space-between"}},[React.createElement("span",{key:"l"},"🔒 Stock reserved — Pending"),React.createElement("span",{key:"t",style:{fontFamily:"'JetBrains Mono',monospace"}},reservationSeconds+"s")]):null,
           paymentState==="processing"?React.createElement("div",{key:"proc",style:{background:COLORS.blueBg,color:COLORS.blue,padding:"10px",borderRadius:8,fontSize:12,fontWeight:700,marginBottom:8}},loadingStatus("Processing payment...")):null,
-          paymentState==="authorized"?React.createElement("div",{key:"auth",style:{background:COLORS.blueBg,color:COLORS.blue,padding:"10px",borderRadius:8,fontSize:12,fontWeight:700,marginBottom:8}},"Authorized â€” finalizingâ€¦"):null,
-          (paymentState==="failed"||paymentState==="timeout")?React.createElement("div",{key:"fail",style:{background:COLORS.redBg,color:COLORS.red,padding:"10px",borderRadius:8,fontSize:12,fontWeight:700,marginBottom:8}},[React.createElement("div",{key:"m"},paymentState==="timeout"?"Timed out â€” reservation released.":"Payment failed."),React.createElement("div",{key:"a",style:{display:"flex",gap:8,marginTop:6}},[btn("Retry",this.retryPayment),btn("Switch to Cash",this.switchToCash)])]):null,
+          paymentState==="authorized"?React.createElement("div",{key:"auth",style:{background:COLORS.blueBg,color:COLORS.blue,padding:"10px",borderRadius:8,fontSize:12,fontWeight:700,marginBottom:8}},"Authorized — finalizing…"):null,
+          (paymentState==="failed"||paymentState==="timeout")?React.createElement("div",{key:"fail",style:{background:COLORS.redBg,color:COLORS.red,padding:"10px",borderRadius:8,fontSize:12,fontWeight:700,marginBottom:8}},[React.createElement("div",{key:"m"},paymentState==="timeout"?"Timed out — reservation released.":"Payment failed."),React.createElement("div",{key:"a",style:{display:"flex",gap:8,marginTop:6}},[btn("Retry",this.retryPayment),btn("Switch to Cash",this.switchToCash)])]):null,
           paymentState==="cancelled"?React.createElement("div",{key:"c",style:{background:COLORS.redBg,color:COLORS.red,padding:"10px",borderRadius:8,fontSize:12,fontWeight:700,marginBottom:8}},"Payment cancelled."):null,
           React.createElement("div",{key:"actions",style:{display:"flex",gap:8}},[
-            (paymentState==="idle"||paymentState==="failed"||paymentState==="timeout"||paymentState==="cancelled")?React.createElement("button",{key:"pay",onClick:this.startPayment,style:{flex:1,padding:"11px",background:COLORS.brand,color:"#fff",border:"none",borderRadius:8,fontWeight:800,cursor:"pointer"}},"Charge "+peso(totals.grandTotal)):null,
+            (paymentState==="idle"||paymentState==="failed"||paymentState==="timeout"||paymentState==="cancelled")?React.createElement("button",{key:"pay",onClick:this.startPayment,style:{flex:1,padding:"11px",background:COLORS.brand,color:"#fff",border:"none",borderRadius:8,fontWeight:800,cursor:"pointer"}},"Complete Sale "+peso(totals.grandTotal)):null,
             (paymentState==="pending"||paymentState==="processing")?React.createElement("button",{key:"cancel",onClick:this.cancelPayment,style:{flex:1,padding:"11px",background:"#fff",border:"1px solid "+COLORS.border,borderRadius:8,fontWeight:700,cursor:"pointer"}},"Cancel"):null,
           ]),
         ]),
-        card([React.createElement("div",{key:"t",onClick:this.toggleCommit,style:{fontWeight:800,cursor:"pointer",display:"flex",justifyContent:"space-between"}},[React.createElement("span",{key:"l"},"Transaction steps"),React.createElement("span",{key:"c"},commitOpen?"â–²":"â–¼")]),
+        card([React.createElement("div",{key:"t",onClick:this.toggleCommit,style:{fontWeight:800,cursor:"pointer",display:"flex",justifyContent:"space-between"}},[React.createElement("span",{key:"l"},"Transaction steps"),React.createElement("span",{key:"c"},commitOpen?"▲":"▼")]),
           commitOpen?React.createElement("div",{key:"body",style:{marginTop:10}},[
             ...commitSteps.map((s)=>React.createElement("div",{key:s,style:{display:"flex",alignItems:"center",gap:8,fontSize:12,padding:"4px 0",color:COLORS.text}},[React.createElement("span",{key:"d",style:{width:8,height:8,borderRadius:"50%",background:COLORS.green}}),React.createElement("span",{key:"l"},s)])),
           ]):null,
@@ -1535,7 +1548,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     const h=React.createElement;
     return h('div',{className:'purchase-filters'},[
       h('label',null,['Supplier',h('select',{value:this.state.purchaseSupplierFilter||'',onChange:e=>this.setState({purchaseSupplierFilter:e.target.value})},[h('option',{value:''},'All suppliers'),...(this.state.data?.SUPPLIERS||[]).map(s=>h('option',{key:s.id,value:s.id},s.name))])]),
-      !receiving?h('label',null,['Status',h('select',{value:this.state.purchaseStatusFilter||'',onChange:e=>this.setState({purchaseStatusFilter:e.target.value})},['','Pending Approval','Approved / Waiting for Delivery','Declined','Completed','Partially Received','Fully Received','Received with Discrepancy','Pending','Approved','Draft','Closed'].map(s=>h('option',{key:s,value:s},s||'All PO Statuses')))]):null,
+      !receiving?h('label',null,['Status',h('select',{value:this.state.purchaseStatusFilter||'',onChange:e=>this.setState({purchaseStatusFilter:e.target.value})},['','Pending Approval','Approved / Waiting for Delivery','Declined','Completed','Partially Received','Fully Received','Received with Discrepancy','Pending','Approved','Draft','Closed'].map(s=>h('option',{key:s,value:s},s?statusLabel(s):'All PO Status')))]):null,
       h('label',null,['PO date from',h('input',{type:'date',value:this.state.purchaseFrom||'',onChange:e=>this.setState({purchaseFrom:e.target.value})})]),
       h('label',null,['PO date to',h('input',{type:'date',value:this.state.purchaseTo||'',onChange:e=>this.setState({purchaseTo:e.target.value})})]),
       receiving?this.buildReceivingAuditFilter():null,
@@ -1652,7 +1665,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
   buildReceivingBudgetReviews(){
     const h=React.createElement,entries=(this.state.purchaseData?.orders||[]).flatMap(o=>(o.budgetRequests||[]).filter(r=>r.status==='Pending').map(r=>({...r,order:o})));
     if(!entries.length)return null;
-    return h('section',{className:'sa-panel'},[h('h2',null,'Additional receiving amounts'),null,...entries.map(r=>h('div',{key:r.id,className:'purchase-budget-review'},[h('strong',null,r.poId+' · '+peso(r.amount)),h('p',null,r.reason),h('small',null,'Remaining approved balance: '+peso(r.order.receivingBalance)),h('div',{className:'purchase-actions'},['Declined'].map(action=>h('button',{type:'button',className:'kita-button',disabled:!!this.state.budgetSaving,onClick:()=>this.reviewReceivingBudget(r,action)},action==='Approved'?'Approve additional amount':'Decline')))]))]);
+    return h('section',{className:'sa-panel'},[h('h2',null,'Additional receiving amounts'),null,...entries.map(r=>h('div',{key:r.id,className:'purchase-budget-review'},[h('strong',null,r.poId+' · '+peso(r.amount)),h('p',null,r.reason),h('small',null,'Remaining approved balance: '+peso(r.order.receivingBalance)),h('div',{className:'purchase-actions'},['Declined'].map(action=>h('button',{type:'button',className:'kita-button',disabled:!!this.state.budgetSaving,onClick:()=>this.reviewReceivingBudget(r,action)},action==='Approved'?'Approve additional amount':'Reject')))]))]);
   }
   requestUsesPackage=line=>{const stock=this.purchaseUnit(line),unit=line.orderUnit||stock;return unit!==stock&&!(['piece','pieces'].includes(stock.toLowerCase())&&unit==='Piece');};
   canReviewPurchase=r=>['admin','superadmin','super_admin'].includes(this.state.role)&&!r.poId&&['Pending','Pending Approval','Proceed to Purchase'].includes(r.status);
@@ -1892,7 +1905,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
         h('div',{className:'receipt-history-dialog-body',tabIndex:0,'aria-label':'Receipt items, scroll for more'},[
           h('div',{className:'receipt-history-audit'},[status(selected),h('span',null,(selected.exceptions||[]).join('; ')||'No exceptions')]),
           h('div',{className:'inspection-table-wrap'},table(['Original PO','Product','Type','Delivered','Damaged','Accepted','Outstanding'],(selected.summary||[]).map((e,i)=>tr([td(e.poId),td(e.name),td({current:'Current order',missing:'Missing items',damaged:'Replacement',outstanding:'Outstanding items'}[e.type]||e.type),td(e.delivered),td(e.damaged),td(e.accepted),td(e.remaining)],i)))),
-          review?h('div',{className:'inspection-approval'},[h('label',null,['Review note',h('textarea',{value:s.stockReceiptReviewNotes?.[selected.id]||'',disabled:!!s.receivingSaving,onChange:e=>this.setState(s=>({stockReceiptReviewNotes:{...s.stockReceiptReviewNotes,[selected.id]:e.target.value}}))})]),...['Approved','Declined'].map(action=>h('button',{type:'button',className:'kita-button',disabled:!!s.receivingSaving,onClick:()=>this.stockReceiptAction(selected,action)},action==='Approved'?'Approve receipt':'Decline receipt'))]):null
+          review?h('div',{className:'inspection-approval'},[h('label',null,['Review note',h('textarea',{value:s.stockReceiptReviewNotes?.[selected.id]||'',disabled:!!s.receivingSaving,onChange:e=>this.setState(s=>({stockReceiptReviewNotes:{...s.stockReceiptReviewNotes,[selected.id]:e.target.value}}))})]),...['Approved','Declined'].map(action=>h('button',{type:'button',className:'kita-button',disabled:!!s.receivingSaving,onClick:()=>this.stockReceiptAction(selected,action)},action==='Approved'?'Approve receipt':'Reject receipt'))]):null
         ]),
         h('footer',{className:'receipt-history-dialog-footer'},[h('button',{type:'button',className:'kita-button',autoFocus:true,disabled:!!s.receivingSaving,onClick:close},'Close'),h('div',{className:'receipt-history-footer-actions'},[!review&&selected.status==='Approved'?h('button',{type:'button',className:'kita-button',disabled:!!s.receivingSaving,onClick:()=>this.stockReceiptAction(selected,'post')},'Post approved receipt'):null,h('a',{className:'kita-button kita-button--primary',href:'/stock-receipts/'+encodeURIComponent(selected.id)+'/report',target:'_blank',rel:'noopener'},'View / Print stock receipt')])])
       ]):null
@@ -2078,7 +2091,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
       h('div',{className:'inventory-view-tabs'},[btn('Create Purchase Order',this.goScreen('mgrRequest')),btn('Stock Receiving',this.goScreen(this.state.role==='manager'?'mgrPO':'admReceivingApprovals')),btn('Supplier Accounts',this.goScreen('supplierAccounts'))]),
       h('div',{className:'po-filter-panel'},[h('div',{className:'po-filter-fields'},[
         field('purchaseSupplierFilter','Supplier',[['','All Suppliers'],...(this.state.data?.SUPPLIERS||[]).map(s=>[s.id,s.name])]),
-        field('purchaseStatusFilter','Status',[['','All PO Statuses'],...['Pending Approval','Approved / Waiting for Delivery','Declined','Completed','Partially Received','Fully Received','Received with Discrepancy','Pending','Approved','Draft','Closed','Cancelled'].map(s=>[s,s])]),field('purchaseFrom','PO Date From'),field('purchaseTo','PO Date To')]),
+        field('purchaseStatusFilter','Status',[['','All PO Status'],...['Pending Approval','Approved / Waiting for Delivery','Declined','Completed','Partially Received','Fully Received','Received with Discrepancy','Pending','Approved','Draft','Closed','Cancelled'].map(s=>[s,statusLabel(s)])]),field('purchaseFrom','PO Date From'),field('purchaseTo','PO Date To')]),
         h('div',{className:'po-filter-bottom'},[h('input',{type:'search','aria-label':'Search purchase records',placeholder:'Search purchase records...',value:this.state.tableViews['purchase-order-workspace']?.query||'',onChange:e=>this.setTableView('purchase-order-workspace',{query:e.target.value,page:1})}),h('div',{className:'po-filter-actions'},[btn('Clear Filters',()=>{this.setState({purchaseSupplierFilter:'',purchaseStatusFilter:'',purchaseFrom:'',purchaseTo:''});this.setTableView('purchase-order-workspace',{query:'',page:1});}),btn('Refresh',()=>this.reloadPurchasing())])])]),
       this.recordTable('purchase-order-workspace',['Purchase ID','PO Date','Supplier','Items','Expected Delivery','Status','Actions'],orders.map(o=>tr([td(o.id),td(String(o.sourceRequest?.dateRequested||o.created||'').slice(0,10)),td(o.supplierName||this.purchaseSupplier(o.supplierId??o.lines[0]?.supplierId)),td(o.lines.length),td(o.expectedDeliveryDate||'Not scheduled'),td(badge(o.status)),td(h('div',{className:'po-row-actions'},[btn('View',()=>this.setState({purchaseOrderDetail:o.id})),o.posted?h('a',{className:'kita-button',href:'/purchase-orders/'+encodeURIComponent(o.id)+'/order',target:'_blank',rel:'noopener'},'Print Supplier PO'):null]))],o.id)),{externalSearch:true}),this.purchaseOrderDetails(),this.purchaseReviewDetails()]);
   }
@@ -2112,14 +2125,15 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
   buildPurchaseStatusList(declined=false){
     const h=React.createElement,state=this.purchasingState();if(state)return state;
     const records=this.filterPurchases(this.state.purchaseData.requests).filter(r=>declined?['Declined','Disapproved'].includes(r.status):!!r.poId);
-    return h('div',null,[moduleTitle(declined?'Declined Requests':'Approved Purchase Orders'),this.purchaseFilters(),this.recordTable('purchase-status',['PO ID','Supplier','Received batches','Status','Admin / reason','Actions'],records.map(r=>tr([td(r.poId||r.id),td(r.supplierName||this.purchaseSupplier(r.lines[0]?.supplierId)),td(this.purchaseBatchSummary(r.poId||r.id)),td(badge(r.status)),td(r.disapprovalReason||r.adminNote||r.approvedBy),td([btn('View',()=>this.setState({purchaseRequestDetail:r.id})),r.poId?this.purchaseReportLink(r.poId):null])],r.id))),this.purchaseRequestDetails()]);
+    return h('div',null,[moduleTitle(declined?'Rejected Purchase Requests':'Approved Purchase Orders'),this.purchaseFilters(),this.recordTable('purchase-status',['PO Number','Supplier','Received batches','Status','Reviewed By / Remarks','Actions'],records.map(r=>tr([td(r.poId||r.id),td(r.supplierName||this.purchaseSupplier(r.lines[0]?.supplierId)),td(this.purchaseBatchSummary(r.poId||r.id)),td(badge(r.status)),td(r.disapprovalReason||r.adminNote||r.approvedBy),td([btn('View',()=>this.setState({purchaseRequestDetail:r.id})),r.poId?this.purchaseReportLink(r.poId):null])],r.id))),this.purchaseRequestDetails()]);
   }
 
   buildMgrRequest(){ return this.buildPurchaseRequests(); }
   buildItemPickerModal(){
     const h=React.createElement,s=this.state,d=s.purchaseItemDraft||{},products=s.data.PRODUCTS;
     const supplier=String(s.newReqCart.length?s.newReqSupplier:d.supplierId||'');
-    const available=products.filter(p=>supplier&&p.status==='Active'&&!p.archivedAt&&(!p.supplierId||String(p.supplierId)===supplier));
+    const linked=new Set((s.data.SUPPLIERS.find(v=>String(v.id)===supplier)?.products||[]).map(v=>String(v.productId)));
+    const available=products.filter(p=>supplier&&p.status==='Active'&&!p.archivedAt&&(!p.supplierId||String(p.supplierId)===supplier||linked.has(String(p.id))));
     const categories=[...new Set(available.map(p=>p.category).filter(Boolean))];
     const categoryItems=available.filter(p=>p.category===d.category);
     const subkey=p=>p.subcategoryId?String(p.subcategoryId):'none';
@@ -2131,7 +2145,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     const set=(key,value)=>this.setState({purchaseItemDraft:{...d,[key]:value},purchaseItemError:''});
     const field=(label,input)=>h('label',null,[h('span',null,label),input]);
     const save=()=>{
-      if(!supplier||!s.data.SUPPLIERS.some(v=>String(v.id)===supplier&&v.status==='Active'&&!v.archivedAt)||!product||product.status!=='Active'||product.archivedAt||(product.supplierId&&String(product.supplierId)!==supplier)){this.setState({purchaseItemError:'Select a supplier, category, subcategory, and matching registered item.'});return;}
+      if(!supplier||!s.data.SUPPLIERS.some(v=>String(v.id)===supplier&&v.status==='Active'&&!v.archivedAt)||!product||product.status!=='Active'||product.archivedAt||(product.supplierId&&String(product.supplierId)!==supplier&&!linked.has(String(product.id)))){this.setState({purchaseItemError:'Select a supplier, category, subcategory, and matching registered item.'});return;}
       const qty=Number(d.qty??1),cost=Number(d.unitCost??product.unitPrice??0),factor=Number(d.stockUnitsPerOrder);
       if(!Number.isInteger(qty)||qty<1||!Number.isFinite(cost)||cost<0||(this.requestUsesPackage({...line,orderUnit:unit})&&(!Number.isInteger(factor)||factor<1||qty*factor>1000000))){this.setState({purchaseItemError:'Enter a positive whole quantity, valid cost, and stock units per package when required.'});return;}
       if(s.newReqCart.some(v=>v.productId===product.id)){this.setState({purchaseItemError:'This item is already in the order. Update its quantity in the table.'});return;}
@@ -2269,9 +2283,9 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
         card([
           React.createElement("div",{key:"t",style:{fontWeight:800,marginBottom:10}},"New Inventory Adjustment"),
           React.createElement("div",{key:"step2",style:{opacity:1,pointerEvents:"auto"}},[
-            React.createElement("div",{key:"l",style:{fontSize:12,fontWeight:700,color:COLORS.textSoft,marginBottom:8}},"â€” Adjustment Details"),
+            React.createElement("div",{key:"l",style:{fontSize:12,fontWeight:700,color:COLORS.textSoft,marginBottom:8}},"— Adjustment Details"),
             React.createElement("div",{key:"grid",style:{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:10,marginBottom:10}},[
-              React.createElement("select",{key:"p",value:newAdjForm.productId,onChange:this.setNewAdjField("productId"),style:{padding:8,border:"1px solid "+COLORS.border,borderRadius:7}},[React.createElement("option",{key:"-",value:""},"Productâ€¦"),...data.PRODUCTS.map(p=>React.createElement("option",{key:p.id,value:p.id},p.name))]),
+              React.createElement("select",{key:"p",value:newAdjForm.productId,onChange:this.setNewAdjField("productId"),style:{padding:8,border:"1px solid "+COLORS.border,borderRadius:7}},[React.createElement("option",{key:"-",value:""},"Product…"),...data.PRODUCTS.map(p=>React.createElement("option",{key:p.id,value:p.id},p.name))]),
               React.createElement("select",{key:"direction",value:this.state.adjustmentType||"decrease",onChange:e=>this.setState({adjustmentType:e.target.value}),"aria-label":"Adjustment type",style:{padding:8,border:"1px solid "+COLORS.border,borderRadius:7}},[React.createElement("option",{key:"decrease",value:"decrease"},"Stock decrease")]),
               React.createElement("input",{key:"q",value:newAdjForm.qtyChange,onChange:this.setNewAdjField("qtyChange"),type:"number",min:1,step:1,placeholder:"Adjustment quantity",style:{padding:8,border:"1px solid "+COLORS.border,borderRadius:7}}),
               React.createElement("select",{key:"r",value:newAdjForm.reason,onChange:this.setNewAdjField("reason"),style:{padding:8,border:"1px solid "+COLORS.border,borderRadius:7}},["Shrinkage","Damaged","Lost","Expired","Count correction"].map(o=>React.createElement("option",{key:o},o))),
@@ -2280,8 +2294,8 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
             btn("Submit Adjustment",this.submitAdjustment,"primary"),
           ]),
         ],{marginBottom:16}),
-        this.recordTable("adjustments",["Ref","Product","Qty Î”","Reason","Remarks","Status"],adjustmentsLocal.map((a,i)=>{ const p=data.PRODUCTS.find(pp=>pp.id===a.productId);
-          return tr([td(a.id,{fontFamily:"'JetBrains Mono',monospace"}),td(p?p.name:"â€”"),td(a.qtyChange,{color:COLORS.red,fontWeight:700}),td(a.reason),td(a.remarks,{fontSize:12,color:COLORS.textSoft}),td(badge(a.status))],i); })),
+        this.recordTable("adjustments",["Ref","Product","Qty Δ","Reason","Remarks","Status"],adjustmentsLocal.map((a,i)=>{ const p=data.PRODUCTS.find(pp=>pp.id===a.productId);
+          return tr([td(a.id,{fontFamily:"'JetBrains Mono',monospace"}),td(p?p.name:"—"),td(a.qtyChange,{color:COLORS.red,fontWeight:700}),td(a.reason),td(a.remarks,{fontSize:12,color:COLORS.textSoft}),td(badge(a.status))],i); })),
       ]);
     } else if(['writeoffs','recall','reconciliation','expiry'].includes(invTab)){
       body=this.buildInventoryWorkflows(invTab);
@@ -2302,10 +2316,10 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
       React.createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:10}},[
         this.state.stockAvailabilityError?React.createElement("p",{role:"alert"},"Live stock update failed: "+this.state.stockAvailabilityError):null,
         moduleTitle("Inventory"),
-        React.createElement("div",{key:"actions",style:{display:"flex",gap:8}},[btn("+ Add Item",this.goScreen("mgrRegistration"),"primary"),btn("+ Add Category",this.openCategoryModal),btn("âš  Add Damage",this.openAddDamage,"danger")]),
+        React.createElement("div",{key:"actions",style:{display:"flex",gap:8}},[btn("+ Add Item",this.goScreen("mgrRegistration"),"primary"),btn("+ Add Category",this.openCategoryModal),btn("⚠ Add Damage",this.openAddDamage,"danger")]),
       ]),
       React.createElement("div",{style:{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap"}},tabs.map(([k,l])=>React.createElement("button",{key:k,onClick:this.setInvTab(k),style:{padding:"8px 14px",borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer",background:invTab===k?COLORS.brand:"#fff",color:invTab===k?"#fff":COLORS.text,border:"1px solid "+(invTab===k?COLORS.brand:COLORS.border)}},l))),
-      body, React.createElement("div",{style:{marginTop:14,fontSize:12,color:COLORS.red,fontWeight:600}},"â›” Negative-inventory guard: any action dropping stock below 0 is hard-blocked."),
+      body, React.createElement("div",{style:{marginTop:14,fontSize:12,color:COLORS.red,fontWeight:600}},"⛔ Negative-inventory guard: any action dropping stock below 0 is hard-blocked."),
       this.state.priceEditOpen?this.buildPriceEditModal():null,
       this.state.addDamageOpen?this.buildAddDamageModal():null,
       this.state.categoryModalOpen?this.buildCategoryModal():null,
@@ -2334,23 +2348,23 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     return React.createElement("div",{style:{position:"fixed",inset:0,background:"rgba(15,31,74,0.38)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:50,padding:20}},
       React.createElement("div",{style:{width:480,maxWidth:"92vw",background:"#fff",borderRadius:16,padding:28,boxShadow:"0 20px 60px rgba(6,25,20,0.25)"}},[
         React.createElement("div",{key:"h",style:{display:"flex",alignItems:"center",gap:12,marginBottom:6}},[
-          React.createElement("div",{key:"i",style:{width:40,height:40,borderRadius:10,background:COLORS.redBg,color:COLORS.red,display:"flex",alignItems:"center",justifyContent:"center",fontSize:19,flexShrink:0}},"âš "),
+          React.createElement("div",{key:"i",style:{width:40,height:40,borderRadius:10,background:COLORS.redBg,color:COLORS.red,display:"flex",alignItems:"center",justifyContent:"center",fontSize:19,flexShrink:0}},"⚠"),
           React.createElement("div",{key:"t",style:{fontSize:17,fontWeight:800}},"Log Damaged Stock"),
         ]),
-        React.createElement("div",{key:"d",style:{fontSize:12,color:COLORS.textSoft,marginBottom:20,paddingLeft:52}},"Select the item and quantity affected â€” this will immediately deduct from sellable inventory and log to the Write-Off trail."),
+        React.createElement("div",{key:"d",style:{fontSize:12,color:COLORS.textSoft,marginBottom:20,paddingLeft:52}},"Select the item and quantity affected — this will immediately deduct from sellable inventory and log to the Write-Off trail."),
         React.createElement("div",{key:"pickerWrap",style:{position:"relative",marginBottom:16}},[
           React.createElement("label",{key:"l",style:{fontSize:12,fontWeight:700,color:COLORS.textSoft,display:"block",marginBottom:6}},"Item"),
           React.createElement("div",{key:"btn",onClick:this.toggleDamagePicker,style:{padding:"11px 14px",border:"1px solid "+COLORS.border,borderRadius:9,cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",background:"#fff"}},[
-            React.createElement("span",{key:"v",style:{fontSize:14,color:selected?COLORS.text:COLORS.textMuted,fontWeight:selected?600:400}},selected?selected.name:"Select itemâ€¦"),
-            React.createElement("span",{key:"c",style:{color:COLORS.textMuted}},"â–¾"),
+            React.createElement("span",{key:"v",style:{fontSize:14,color:selected?COLORS.text:COLORS.textMuted,fontWeight:selected?600:400}},selected?selected.name:"Select item…"),
+            React.createElement("span",{key:"c",style:{color:COLORS.textMuted}},"▾"),
           ]),
           damagePickerOpen?React.createElement("div",{key:"panel",style:{position:"absolute",top:"100%",left:0,right:0,marginTop:6,background:"#fff",border:"1px solid "+COLORS.border,borderRadius:10,boxShadow:"0 12px 30px rgba(6,25,20,0.16)",zIndex:30,maxHeight:320,display:"flex",flexDirection:"column"}},[
-            React.createElement("input",{key:"s",autoFocus:true,value:damagePickerSearch,onChange:this.setDamagePickerSearch,placeholder:"Search item or categoryâ€¦",style:{margin:10,padding:9,border:"1px solid "+COLORS.border,borderRadius:7,fontSize:13}}),
+            React.createElement("input",{key:"s",autoFocus:true,value:damagePickerSearch,onChange:this.setDamagePickerSearch,placeholder:"Search item or category…",style:{margin:10,padding:9,border:"1px solid "+COLORS.border,borderRadius:7,fontSize:13}}),
             React.createElement("div",{key:"rows",style:{overflowY:"auto",flex:1}},
               filtered.length===0?React.createElement("div",{style:{padding:16,textAlign:"center",fontSize:13,color:COLORS.textMuted}},"No items match."):
               filtered.map(p=>{ const low=p.stock<=p.minStock;
                 return React.createElement("div",{key:p.id,onClick:this.selectDamageProduct(p.id),style:{display:"grid",gridTemplateColumns:"minmax(0,1fr) auto auto",gap:10,alignItems:"center",padding:"9px 12px",cursor:"pointer",background:low?COLORS.redBg:"#fff",borderBottom:"1px solid #eef1f6"}},[
-                  React.createElement("span",{key:"n",style:{fontSize:13,fontWeight:600,color:low?COLORS.red:COLORS.text}},(low?"âš  ":"")+p.name),
+                  React.createElement("span",{key:"n",style:{fontSize:13,fontWeight:600,color:low?COLORS.red:COLORS.text}},(low?"⚠ ":"")+p.name),
                   React.createElement("span",{key:"c",style:{fontSize:11,fontWeight:700,color:COLORS.textMuted,background:"#f0f3f9",padding:"2px 8px",borderRadius:6}},p.category),
                   React.createElement("span",{key:"s",style:{fontSize:12,fontWeight:700,color:low?COLORS.red:COLORS.textSoft}},p.stock+" in stock"),
                 ]);
@@ -2363,13 +2377,13 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
         React.createElement("div",{key:"qtyWrap",style:{marginBottom:8}},[
           React.createElement("label",{key:"l",style:{fontSize:12,fontWeight:700,color:COLORS.textSoft,display:"block",marginBottom:6}},"Quantity Damaged"),
           React.createElement("div",{key:"stepper",style:{display:"flex",alignItems:"center",gap:10}},[
-            React.createElement("button",{key:"m",onClick:this.stepDamageQty(-1),style:{width:36,height:36,borderRadius:8,border:"1px solid "+COLORS.border,background:"#fff",fontWeight:800,fontSize:16,cursor:"pointer"}},"âˆ’"),
+            React.createElement("button",{key:"m",onClick:this.stepDamageQty(-1),style:{width:36,height:36,borderRadius:8,border:"1px solid "+COLORS.border,background:"#fff",fontWeight:800,fontSize:16,cursor:"pointer"}},"−"),
             React.createElement("input",{key:"i",type:"number",min:1,value:addDamageForm.qty,onChange:this.setAddDamageField("qty"),style:{width:80,textAlign:"center",padding:9,border:"1px solid "+COLORS.border,borderRadius:8,fontSize:15,fontWeight:700}}),
             React.createElement("button",{key:"p",onClick:this.stepDamageQty(1),style:{width:36,height:36,borderRadius:8,border:"1px solid "+COLORS.border,background:"#fff",fontWeight:800,fontSize:16,cursor:"pointer"}},"+"),
           ]),
         ]),
-        selected?React.createElement("div",{key:"preview",style:{fontSize:13,fontWeight:700,color:exceeds?COLORS.red:COLORS.textSoft,marginBottom:8}},`Current: ${selected.stock} â†’ After Damage: ${exceeds?"â€”":selected.stock-q}`):null,
-        exceeds?React.createElement("div",{key:"err",style:{fontSize:12,color:COLORS.red,background:COLORS.redBg,padding:"8px 10px",borderRadius:8,fontWeight:600,marginBottom:16}},`Cannot exceed current stock (${selected.stock}) â€” negative inventory is blocked.`):React.createElement("div",{key:"sp",style:{marginBottom:16}}),
+        selected?React.createElement("div",{key:"preview",style:{fontSize:13,fontWeight:700,color:exceeds?COLORS.red:COLORS.textSoft,marginBottom:8}},`Current: ${selected.stock} → After Damage: ${exceeds?"—":selected.stock-q}`):null,
+        exceeds?React.createElement("div",{key:"err",style:{fontSize:12,color:COLORS.red,background:COLORS.redBg,padding:"8px 10px",borderRadius:8,fontWeight:600,marginBottom:16}},`Cannot exceed current stock (${selected.stock}) — negative inventory is blocked.`):React.createElement("div",{key:"sp",style:{marginBottom:16}}),
         React.createElement("div",{key:"a",style:{display:"flex",gap:10}},[
           React.createElement("button",{key:"c",onClick:this.closeAddDamage,style:{flex:1,padding:12,background:"#f7f9fc",border:"none",borderRadius:9,fontWeight:700,cursor:"pointer",fontSize:14}},"Cancel"),
           React.createElement("button",{key:"s",onClick:this.confirmAddDamage,disabled:!selected||exceeds,style:{flex:1,padding:12,background:(!selected||exceeds)?"#f3c9c9":COLORS.red,color:"#fff",border:"none",borderRadius:9,fontWeight:800,cursor:(!selected||exceeds)?"not-allowed":"pointer",fontSize:14}},"Confirm"),
@@ -2626,7 +2640,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     return React.createElement("div",{style:{position:"fixed",inset:0,background:"rgba(15,31,74,0.38)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:50,padding:20}},
       React.createElement("div",{style:{width:520,maxWidth:"92vw",maxHeight:"78vh",background:"#fff",borderRadius:14,padding:20,display:"flex",flexDirection:"column",boxSizing:"border-box"}},[
         React.createElement("div",{key:"t",style:{fontWeight:800,marginBottom:10}},"Select Item(s) for Promotion"),
-        React.createElement("input",{key:"s",value:promoPickerSearch,onChange:this.setPromoPickerSearch,placeholder:"Searchâ€¦",style:{padding:8,border:"1px solid "+COLORS.border,borderRadius:7,marginBottom:10}}),
+        React.createElement("input",{key:"s",value:promoPickerSearch,onChange:this.setPromoPickerSearch,placeholder:"Search…",style:{padding:8,border:"1px solid "+COLORS.border,borderRadius:7,marginBottom:10}}),
         React.createElement("div",{key:"list",style:{flex:1,overflowY:"auto",border:"1px solid "+COLORS.border,borderRadius:8}},
           items.map(p=>React.createElement("label",{key:p.id,style:{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderBottom:"1px solid #eef1f6",cursor:"pointer"}},[
             React.createElement("input",{key:"cb",type:"checkbox",checked:!!promoPickerChecked[p.id],onChange:this.togglePromoPickerCheck(p.id)}),
@@ -2646,7 +2660,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     return React.createElement("div",{style:{position:"fixed",inset:0,background:"rgba(15,31,74,0.38)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:50,padding:20}},
       React.createElement("div",{style:{width:480,maxWidth:"92vw",maxHeight:"78vh",background:"#fff",borderRadius:14,padding:20,display:"flex",flexDirection:"column",boxSizing:"border-box"}},[
         React.createElement("div",{key:"t",style:{fontWeight:800,marginBottom:10}},"Add Products"),
-        React.createElement("input",{key:"s",value:supMgrProductSearch,onChange:this.setSupMgrProductSearch,placeholder:"Searchâ€¦",style:{padding:8,border:"1px solid "+COLORS.border,borderRadius:7,marginBottom:10}}),
+        React.createElement("input",{key:"s",value:supMgrProductSearch,onChange:this.setSupMgrProductSearch,placeholder:"Search…",style:{padding:8,border:"1px solid "+COLORS.border,borderRadius:7,marginBottom:10}}),
         React.createElement("div",{key:"list",style:{flex:1,overflowY:"auto",border:"1px solid "+COLORS.border,borderRadius:8}},items.map(p=>React.createElement("label",{key:p.id,style:{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderBottom:"1px solid #eef1f6",cursor:"pointer"}},[
           React.createElement("input",{key:"cb",type:"checkbox",checked:!!supMgrProductChecked[p.id],onChange:this.toggleSupMgrProductCheck(p.id)}),
           React.createElement("div",{key:"n",style:{flex:1,fontSize:13,fontWeight:600}},p.name),React.createElement("div",{key:"c",style:{fontSize:11,color:COLORS.textMuted}},p.category),
@@ -2687,10 +2701,10 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
           React.createElement("div",{style:{height:10}}),
           sp.products.length===0?card(React.createElement("div",{style:{padding:16,textAlign:"center",color:COLORS.textMuted,fontSize:13}},"No products linked yet.")):
           table(["Product Name","Category","Supplier Cost Price","Preferred","Remove"],sp.products.map((pr,i)=>{ const p=(data.PRODUCTS||[]).find(pp=>pp.id===pr.productId);
-            return tr([td(p?p.name:"â€”"),td(p?p.category:"â€”"),
-              td(React.createElement("input",{type:"number",value:pr.costPrice,onChange:this.setSupMgrProductCost(sp.id,pr.productId),style:{width:90,padding:6,border:"1px solid "+COLORS.border,borderRadius:6}})),
-              td(React.createElement("span",{onClick:this.toggleSupMgrPreferred(sp.id,pr.productId),style:{cursor:"pointer",fontSize:16,color:pr.preferred?COLORS.amber:"#ccc"}},pr.preferred?"â˜…":"â˜†")),
-              td(React.createElement("button",{onClick:this.removeSupMgrProduct(sp.id,pr.productId),style:{color:COLORS.red,background:"none",border:"none",fontWeight:700,cursor:"pointer"}},"âœ•"))],i); })),
+            return tr([td(p?p.name:"—"),td(p?p.category:"—"),
+              td(React.createElement("input",{type:"number",value:pr.costPrice,onChange:this.setSupMgrProductCost(sp.id,pr.productId),onBlur:this.saveSupMgrProductCosts(sp.id),style:{width:90,padding:6,border:"1px solid "+COLORS.border,borderRadius:6}})),
+              td(React.createElement("span",{onClick:this.toggleSupMgrPreferred(sp.id,pr.productId),style:{cursor:"pointer",fontSize:16,color:pr.preferred?COLORS.amber:"#ccc"}},pr.preferred?"★":"☆")),
+              td(React.createElement("button",{onClick:this.removeSupMgrProduct(sp.id,pr.productId),style:{color:COLORS.red,background:"none",border:"none",fontWeight:700,cursor:"pointer"}},"✕"))],i); })),
         ]);
       } else if(supMgrDetailTab==="performance"){
         body=this.buildSupplierPerformance(sp.id);
@@ -2705,7 +2719,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
           ],{marginBottom:10})));
       } else {
         body = sp.callbackLog.length===0 ? card(React.createElement("div",{style:{padding:16,textAlign:"center",color:COLORS.textMuted,fontSize:13}},"No callbacks logged.")) :
-          card(sp.callbackLog.map((c,i)=>React.createElement("div",{key:i,style:{fontSize:13,padding:"6px 0",borderBottom:"1px solid #eef1f6"}},c.date+" â€” "+c.note)));
+          card(sp.callbackLog.map((c,i)=>React.createElement("div",{key:i,style:{fontSize:13,padding:"6px 0",borderBottom:"1px solid #eef1f6"}},c.date+" — "+c.note)));
       }
       return React.createElement("div",null,[
         btn("Back to Suppliers",this.goSupMgrList),
@@ -2715,7 +2729,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
             React.createElement("div",{style:{display:"flex",gap:8}},[badge(sp.status),btn("Edit",this.openSupMgrModal(sp))]),
           ]),
           React.createElement("div",{key:"grid",style:{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:12,fontSize:13}},[
-            ["Contact",sp.contact],["Phone",sp.phone],["Email",sp.email||"â€”"],["Address",sp.address],["Notes",sp.notes||"â€”"],
+            ["Contact",sp.contact],["Phone",sp.phone],["Email",sp.email||"—"],["Address",sp.address],["Notes",sp.notes||"—"],
           ].map(([l,v],i)=>React.createElement("div",{key:i},[React.createElement("div",{style:{fontSize:11,fontWeight:700,color:COLORS.textMuted}},l),React.createElement("div",{style:{marginTop:2}},v)]))),
         ],{marginBottom:16}),
         React.createElement("div",{style:{display:"flex",gap:6,marginBottom:14}},tabs.map(([k,l])=>React.createElement("button",{key:k,onClick:this.setSupMgrDetailTab(k),style:{padding:"8px 14px",borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer",background:supMgrDetailTab===k?COLORS.brand:"#fff",color:supMgrDetailTab===k?"#fff":COLORS.text,border:"1px solid "+(supMgrDetailTab===k?COLORS.brand:COLORS.border)}},l))),
@@ -2730,7 +2744,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     return React.createElement("div",null,[
       React.createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}},[moduleTitle("Supplier"),btn("+ Add Supplier",this.openSupMgrModal(null),"primary")]),
       React.createElement("div",{style:{display:"flex",gap:10,alignItems:"center",marginBottom:12}},[
-        React.createElement("input",{value:supMgrSearch,onChange:this.setSupMgrSearch,placeholder:"Search suppliersâ€¦",style:{padding:8,border:"1px solid "+COLORS.border,borderRadius:7,width:260}}),
+        React.createElement("input",{value:supMgrSearch,onChange:this.setSupMgrSearch,placeholder:"Search suppliers…",style:{padding:8,border:"1px solid "+COLORS.border,borderRadius:7,width:260}}),
         selCount>0?btn(`Move to Archive (${selCount})`,this.moveSupMgrSelectedToArchive,"danger"):null,
       ]),
       this.recordTable("suppliers",["","Supplier Name","Contact Person","Contact Number","Category","Status","Product Count","Action"],list.map(sp=>tr([
@@ -2746,10 +2760,10 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     const pct=parseFloat(promoDiscountPct)||0;
     const selectedProducts = promoType==="Category-Wide" ? data.PRODUCTS.filter(p=>p.category===promoCategory) : promoSelectedItems.map(id=>data.PRODUCTS.find(p=>p.id===id)).filter(Boolean);
     const types=[
-      ["Near-Expiry","Near-Expiry Clearance","â³","For stock nearing its expiration date"],
-      ["Seasonal","Seasonal/Event Promotion","ðŸŽ‰","For planned occasions like Christmas or Back-to-School"],
-      ["Slow-Moving","Slow-Moving Clearance","ðŸ“‰","For items that aren't selling well"],
-      ["Category-Wide","Category-Wide Promotion","ðŸ—‚","Applies one discount across a whole category"],
+      ["Near-Expiry","Near-Expiry Clearance","⏳","For stock nearing its expiration date"],
+      ["Seasonal","Seasonal/Event Promotion","🎉","For planned occasions like Christmas or Back-to-School"],
+      ["Slow-Moving","Slow-Moving Clearance","📉","For items that aren't selling well"],
+      ["Category-Wide","Category-Wide Promotion","🗂","Applies one discount across a whole category"],
     ];
     const today=this.state.data?.BUSINESS_DATE||new Date().toISOString().slice(0,10);
     const activeCount=promotionsLocal.filter(p=>this.promoStatus(p)==="Active").length;
@@ -2768,7 +2782,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
       React.createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"flex-end",flexWrap:"wrap",gap:16,marginBottom:20}},[
         React.createElement("div",{key:"t"},[
           React.createElement("div",{key:"h",style:{fontSize:28,fontWeight:800}},"Promotions"),
-          React.createElement("div",{key:"s",style:{fontSize:15,color:COLORS.textSoft,marginTop:4}},"Manager-configured, time-bound product discounts â€” applied automatically at checkout when active"),
+          React.createElement("div",{key:"s",style:{fontSize:15,color:COLORS.textSoft,marginTop:4}},"Manager-configured, time-bound product discounts — applied automatically at checkout when active"),
         ]),
         React.createElement("div",{key:"kpis",style:{display:"flex",gap:12,flexWrap:"wrap"}},[
           kpi("Active Promotions",activeCount,null,COLORS.green),
@@ -2785,17 +2799,17 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
             React.createElement("button",{key:"b",onClick:this.openPromoPicker,style:{padding:"14px 22px",background:COLORS.brand,color:"#fff",border:"none",borderRadius:10,fontWeight:800,fontSize:15,cursor:"pointer"}},"+ Select Items"),
             React.createElement("div",{key:"chips",style:{display:"flex",gap:10,flexWrap:"wrap",marginTop:14}},promoSelectedItems.map(id=>{ const p=data.PRODUCTS.find(pp=>pp.id===id); if(!p) return null;
               return React.createElement("div",{key:id,style:{width:150,border:"1px solid "+COLORS.border,borderRadius:10,padding:12,background:"#f8faff",position:"relative"}},[
-                React.createElement("span",{key:"x",onClick:this.removePromoSelectedItem(id),style:{position:"absolute",top:6,right:8,cursor:"pointer",color:COLORS.textMuted,fontWeight:700}},"âœ•"),
+                React.createElement("span",{key:"x",onClick:this.removePromoSelectedItem(id),style:{position:"absolute",top:6,right:8,cursor:"pointer",color:COLORS.textMuted,fontWeight:700}},"✕"),
                 React.createElement("div",{key:"n",style:{fontSize:13,fontWeight:700,marginBottom:6,paddingRight:14}},p.name),
                 React.createElement("div",{key:"p",style:{fontSize:13,color:COLORS.textSoft}},peso(p.price)),
               ]);
             })),
-          ]):React.createElement("div",{key:"s1",style:{marginBottom:24,paddingLeft:44}},React.createElement("select",{value:promoCategory,onChange:this.setPromoCategory,style:{width:320,padding:12,border:"1px solid "+COLORS.border,borderRadius:8,fontSize:14}},[React.createElement("option",{key:"-",value:""},"Select categoryâ€¦"),...data.CATEGORIES.filter(c=>c.status==="Active").map(c=>React.createElement("option",{key:c.name,value:c.name},c.name))])),
+          ]):React.createElement("div",{key:"s1",style:{marginBottom:24,paddingLeft:44}},React.createElement("select",{value:promoCategory,onChange:this.setPromoCategory,style:{width:320,padding:12,border:"1px solid "+COLORS.border,borderRadius:8,fontSize:14}},[React.createElement("option",{key:"-",value:""},"Select category…"),...data.CATEGORIES.filter(c=>c.status==="Active").map(c=>React.createElement("option",{key:c.name,value:c.name},c.name))])),
           stepHeader(2,"Select Date Range"),
           React.createElement("div",{key:"s2",style:{marginBottom:24,paddingLeft:44,display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}},[
             React.createElement("div",{key:"picker",style:{display:"flex",alignItems:"center",gap:10,border:"1px solid "+COLORS.border,borderRadius:10,padding:"10px 16px",background:"#fff"}},[
               React.createElement("input",{key:"f",type:"date",min:"2026-07-24",value:promoStartDate,onChange:this.setPromoStartDate,style:{border:"none",fontSize:15,fontWeight:600,outline:"none"}}),
-              React.createElement("span",{key:"dash",style:{color:COLORS.textMuted,fontWeight:700}},"â€”"),
+              React.createElement("span",{key:"dash",style:{color:COLORS.textMuted,fontWeight:700}},"—"),
               React.createElement("input",{key:"t",type:"date",value:promoEndDate,onChange:this.setPromoEndDate,style:{border:"none",fontSize:15,fontWeight:600,outline:"none"}}),
             ]),
             durationDays!=null?React.createElement("span",{key:"dur",style:{fontSize:13,fontWeight:700,color:COLORS.brandDark,background:COLORS.brandBg,padding:"6px 12px",borderRadius:20}},durationDays+" day"+(durationDays===1?"":"s")):null,
@@ -2819,9 +2833,9 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
                 React.createElement("span",{key:"n",style:{fontWeight:600}},p.name),
                 React.createElement("div",{key:"p",style:{display:"flex",alignItems:"center",gap:12}},[
                   React.createElement("span",{key:"o",style:{textDecoration:"line-through",color:COLORS.textMuted}},peso(p.price)),
-                  React.createElement("span",{key:"arrow",style:{color:COLORS.textMuted}},"â†’"),
-                  React.createElement("span",{key:"n2",style:{fontWeight:800,fontSize:16,color:belowCost?COLORS.red:COLORS.green}},pct>0?peso(promoPrice):"â€”"),
-                  belowCost?React.createElement("span",{key:"w",style:{fontSize:12,color:COLORS.red,fontWeight:700}},`Below cost â€” ${peso(p.unitPrice??p.cost)} min`):null,
+                  React.createElement("span",{key:"arrow",style:{color:COLORS.textMuted}},"→"),
+                  React.createElement("span",{key:"n2",style:{fontWeight:800,fontSize:16,color:belowCost?COLORS.red:COLORS.green}},pct>0?peso(promoPrice):"—"),
+                  belowCost?React.createElement("span",{key:"w",style:{fontSize:12,color:COLORS.red,fontWeight:700}},`Below cost — ${peso(p.unitPrice??p.cost)} min`):null,
                 ]),
               ]);
             })):null,
@@ -2833,14 +2847,14 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
             React.createElement("div",{key:"t",style:{fontSize:16,fontWeight:800,marginBottom:12}},"Near-Expiry Items"),
             ...nearExpiry.map(x=>React.createElement("div",{key:x.p.id,style:{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"9px 0",borderBottom:"1px solid #eef1f6"}},[
               React.createElement("div",null,[React.createElement("div",{style:{fontSize:13,fontWeight:600}},x.p.name),React.createElement("div",{style:{fontSize:11,color:x.days<=1?COLORS.red:COLORS.amber,fontWeight:700}},x.days<=0?"Expired - blocked from sale":x.days+" day(s) left")]),
-              React.createElement("button",{onClick:this.quickPromoFromNearExpiry(x.p.id),style:{fontSize:11,fontWeight:700,color:COLORS.brand,background:"none",border:"none",cursor:"pointer"}},"Use This Item â†’"),
+              React.createElement("button",{onClick:this.quickPromoFromNearExpiry(x.p.id),style:{fontSize:11,fontWeight:700,color:COLORS.brand,background:"none",border:"none",cursor:"pointer"}},"Use This Item →"),
             ])),
           ],{padding:18}),
           card([
             React.createElement("div",{key:"t",style:{fontSize:16,fontWeight:800,marginBottom:12}},"Least Sales Items"),
             ...leastSales.map(x=>React.createElement("div",{key:x.p.id,style:{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"9px 0",borderBottom:"1px solid #eef1f6"}},[
               React.createElement("div",null,[React.createElement("div",{style:{fontSize:13,fontWeight:600}},x.p.name),React.createElement("div",{style:{fontSize:11,color:COLORS.textMuted}},peso(x.rev)+" sold")]),
-              React.createElement("button",{onClick:this.quickPromoFromLeastSales(x.p.id),style:{fontSize:11,fontWeight:700,color:COLORS.brand,background:"none",border:"none",cursor:"pointer"}},"Use This Item â†’"),
+              React.createElement("button",{onClick:this.quickPromoFromLeastSales(x.p.id),style:{fontSize:11,fontWeight:700,color:COLORS.brand,background:"none",border:"none",cursor:"pointer"}},"Use This Item →"),
             ])),
           ],{padding:18}),
         ]),
@@ -2851,7 +2865,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
           const prods=p.productIds.map(id=>data.PRODUCTS.find(pp=>pp.id===id)).filter(Boolean);
           const status=this.promoStatus(p); const daysLeft=Math.round((new Date(p.endDate)-new Date(today))/86400000);
           const prod=prods[0];
-          let perf="â€”";
+          let perf="—";
           if(prod){ const inWindow=data.SALES_LOG.filter(t=>t.productId===prod.id && t.date>=p.startDate && t.date<=p.endDate).reduce((s,t)=>s+t.qty,0);
             const outsideLogs=data.SALES_LOG.filter(t=>t.productId===prod.id && !(t.date>=p.startDate && t.date<=p.endDate));
             const outsideDays=new Set(outsideLogs.map(t=>t.date)).size||1;
@@ -2859,12 +2873,12 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
             perf=`${inWindow} in-promo vs ${avgOutside}/day avg`;
           }
           return tr([td(prods.map(pp=>pp.name).join(", ")||p.category),td(p.type),td(p.discountPct+"%"),
-            td(prods.length?prods.map(pp=>peso(pp.price*(1-p.discountPct/100))).join(", "):"â€”"),
-            td(p.startDate+" â†’ "+p.endDate),
-            td(status==="Active"?React.createElement("span",{style:{fontSize:11,fontWeight:700,color:COLORS.purple,background:COLORS.purpleBg,padding:"3px 8px",borderRadius:6}},daysLeft+"d left"):"â€”"),
+            td(prods.length?prods.map(pp=>peso(pp.price*(1-p.discountPct/100))).join(", "):"—"),
+            td(p.startDate+" → "+p.endDate),
+            td(status==="Active"?React.createElement("span",{style:{fontSize:11,fontWeight:700,color:COLORS.purple,background:COLORS.purpleBg,padding:"3px 8px",borderRadius:6}},daysLeft+"d left"):"—"),
             td(badge(status)),
             td(perf,{fontSize:12,color:COLORS.textSoft}),
-            td(status==="Expired"?React.createElement("button",{onClick:this.copyPromotion(p),style:{color:COLORS.brand,background:"none",border:"none",fontWeight:700,cursor:"pointer"}},"Copy"):"â€”")
+            td(status==="Expired"?React.createElement("button",{onClick:this.copyPromotion(p),style:{color:COLORS.brand,background:"none",border:"none",fontWeight:700,cursor:"pointer"}},"Copy"):"—")
           ],p.id);
         })),
       ],{padding:22}),
@@ -2883,11 +2897,11 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     const checkedCount=Object.values(archiveChecked).filter(Boolean).length;
     let rows, headers, keyOf;
     if(archiveTab==="items"){ const list=productsLocal.filter(p=>p.status==="Inactive"); headers=["","Product","Category","Archived On","Archived By"]; keyOf=p=>String(p.id);
-      rows=list.map(p=>tr([td(React.createElement("input",{type:"checkbox",checked:!!archiveChecked[keyOf(p)],onChange:this.toggleArchiveCheck(keyOf(p))})),td(p.name),td(p.category),td(p.archivedAt||"â€”"),td(p.archivedBy||"â€”")],p.id)); }
+      rows=list.map(p=>tr([td(React.createElement("input",{type:"checkbox",checked:!!archiveChecked[keyOf(p)],onChange:this.toggleArchiveCheck(keyOf(p))})),td(p.name),td(p.category),td(p.archivedAt||"—"),td(p.archivedBy||"—")],p.id)); }
     else if(archiveTab==="categories"){ const list=categoriesLocal.filter(c=>c.status==="Inactive"); headers=["","Category","Archived On","Archived By"]; keyOf=c=>c.name;
-      rows=list.map(c=>tr([td(React.createElement("input",{type:"checkbox",checked:!!archiveChecked[keyOf(c)],onChange:this.toggleArchiveCheck(keyOf(c))})),td(c.name),td(c.archivedAt||"â€”"),td(c.archivedBy||"â€”")],c.name)); }
+      rows=list.map(c=>tr([td(React.createElement("input",{type:"checkbox",checked:!!archiveChecked[keyOf(c)],onChange:this.toggleArchiveCheck(keyOf(c))})),td(c.name),td(c.archivedAt||"—"),td(c.archivedBy||"—")],c.name)); }
     else { const list=suppliersLocal.filter(s=>s.status==="Inactive"); headers=["","Supplier","Category","Archived On","Archived By"]; keyOf=s=>String(s.id);
-      rows=list.map(s=>tr([td(React.createElement("input",{type:"checkbox",checked:!!archiveChecked[keyOf(s)],onChange:this.toggleArchiveCheck(keyOf(s))})),td(s.name),td(s.category),td(s.archivedAt||"â€”"),td(s.archivedBy||"â€”")],s.id)); }
+      rows=list.map(s=>tr([td(React.createElement("input",{type:"checkbox",checked:!!archiveChecked[keyOf(s)],onChange:this.toggleArchiveCheck(keyOf(s))})),td(s.name),td(s.category),td(s.archivedAt||"—"),td(s.archivedBy||"—")],s.id)); }
     return React.createElement("div",null,[
       moduleTitle("Archive"),btn("Refresh",()=>this.reloadCatalog().catch(e=>this.toast(e.message,"error"))),
       React.createElement("div",{style:{display:"flex",gap:6,marginBottom:14}},tabs.map(([k,l])=>React.createElement("button",{key:k,onClick:this.setArchiveTab(k),style:{padding:"8px 14px",borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer",background:archiveTab===k?COLORS.brand:"#fff",color:archiveTab===k?"#fff":COLORS.text,border:"1px solid "+(archiveTab===k?COLORS.brand:COLORS.border)}},l))),
@@ -2896,7 +2910,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
       archiveConfirmOpen?React.createElement("div",{style:{position:"fixed",inset:0,background:"rgba(15,31,74,0.38)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:50}},
         React.createElement("div",{style:{width:380,background:"#fff",borderRadius:14,padding:20}},[
           React.createElement("div",{key:"t",style:{fontWeight:800,marginBottom:8,color:COLORS.red}},"Delete Permanently?"),
-          React.createElement("div",{key:"m",style:{fontSize:13,color:COLORS.textSoft,marginBottom:16}},"This is a hard, irreversible removal â€” unlike Archive, it cannot be undone via Restore."),
+          React.createElement("div",{key:"m",style:{fontSize:13,color:COLORS.textSoft,marginBottom:16}},"This is a hard, irreversible removal — unlike Archive, it cannot be undone via Restore."),
           React.createElement("div",{key:"a",style:{display:"flex",gap:8}},[React.createElement("button",{key:"c",onClick:this.closeArchiveConfirm,style:{flex:1,padding:10,background:"#f7f9fc",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer"}},"Cancel"),React.createElement("button",{key:"d",onClick:this.deletePermanently,style:{flex:1,padding:10,background:COLORS.red,color:"#fff",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer"}},"Delete Permanently")]),
         ])):null,
     ]);
@@ -2905,7 +2919,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
   buildAdmInventoryApprovals(){ const {adjustmentsLocal,data}=this.state; if(!adjustmentsLocal) return null;
     return React.createElement("div",null,[moduleTitle("Inventory Adjustment Approvals"),
       ...adjustmentsLocal.map(a=>{ const p=data.PRODUCTS.find(pp=>pp.id===a.productId); return card([
-        React.createElement("div",{key:"h",style:{display:"flex",justifyContent:"space-between"}},[React.createElement("div",null,[React.createElement("div",{style:{fontWeight:700}},a.id+" Â· "+(p?p.name:"â€”")),React.createElement("div",{style:{fontSize:12,color:COLORS.textSoft}},a.reason+" Â· Î”"+a.qtyChange+" Â· "+a.remarks)]),badge(a.status)]),
+        React.createElement("div",{key:"h",style:{display:"flex",justifyContent:"space-between"}},[React.createElement("div",null,[React.createElement("div",{style:{fontWeight:700}},a.id+" · "+(p?p.name:"—")),React.createElement("div",{style:{fontSize:12,color:COLORS.textSoft}},a.reason+" · Δ"+a.qtyChange+" · "+a.remarks)]),badge(a.status)]),
         a.status==="Pending Admin Approval"?React.createElement("div",{key:"btns",style:{display:"flex",gap:8,marginTop:10}},[btn("Approve",this.approveAdjustment(a.id),"green"),btn("Reject",this.rejectAdjustment(a.id),"danger")]):null,
       ],{marginBottom:10}); }),
     ]);
@@ -2916,7 +2930,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
         return React.createElement("div",{key:i,style:{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid #eef1f6"}},[React.createElement("span",{key:"l",style:{color:COLORS.textSoft}},l),React.createElement("span",{key:"v",style:{fontWeight:600}},v)]); });
       infoRows.push(React.createElement("div",{key:"status",style:{display:"flex",justifyContent:"space-between",padding:"6px 0"}},[React.createElement("span",{key:"l",style:{color:COLORS.textSoft}},"Status"),badge(s.status)]));
       const callbackRows = s.callbackLog.length===0 ? [React.createElement("div",{key:"e",style:{fontSize:13,color:COLORS.textMuted}},"No callbacks logged.")]
-        : s.callbackLog.map((c,i)=>React.createElement("div",{key:i,style:{fontSize:13,padding:"6px 0",borderBottom:"1px solid #eef1f6"}},c.date+" â€” "+c.note));
+        : s.callbackLog.map((c,i)=>React.createElement("div",{key:i,style:{fontSize:13,padding:"6px 0",borderBottom:"1px solid #eef1f6"}},c.date+" — "+c.note));
       return React.createElement("div",null,[
         btn("Back to Suppliers",this.closeSupplierDetail),
         sectionTitle(s.name,s.category),this.buildSupplierPerformance(s.id),
@@ -2977,7 +2991,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
           h('span',{className:'report-peak-badge',title:'Two busiest recorded hours; ties use the earlier hour.'},peakLabel),
         ]),
         h('div',{className:'report-peak-scroll'},h('svg',{viewBox:'0 0 1080 340',className:'report-peak-svg',role:'img','aria-label':'Hourly transaction volume. '+peakLabel},[
-          h('title',null,'Distinct transactions per hour. All listed transaction statuses included.'),
+          h('title',null,'Distinct transactions per hour. Includes every transaction status.'),
           ...Array.from({length:5},(_,i)=>{const value=i*step,y=baseline-i*plotHeight/4;return h('g',{key:'tick'+i},[
             h('line',{x1:55,x2:1035,y1:y,y2:y,stroke:i?'#e8eef8':'#7c8798',strokeDasharray:i?'4 4':undefined}),
             h('text',{x:45,y:y+4,textAnchor:'end',fontSize:12,fill:'#667c9c'},value),
@@ -3054,7 +3068,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     return h('div',{className:'reports-page'},[moduleTitle('Reports'),this.reportReceiptDetails(),
       ['purchase_orders','outstanding_orders','purchases','supplier_book','payables'].includes(f.type)?h('label',{className:'purchase-notes'},[f.type==='purchase_orders'?'Received by (exact name)':'Requested / Recorded by (exact name)',h('input',{value:f.manager||'',onChange:e=>this.setReportFilter('manager',e.target.value)})]):null,
       f.type==='expiry'?h('div',{className:'expiry-quick-filters',role:'group','aria-label':'Expiration status filters'},[
-        ...[['','All'],['Nearly expired','Nearly expired'],['Expired','Expired']].map(([value,label])=>h('button',{key:label,type:'button',className:'report-type-button'+((f.expiryStatus||'')===value?' is-selected':''),'aria-pressed':(f.expiryStatus||'')===value,onClick:()=>this.setReportFilter('expiryStatus',value)},label)),
+        ...[['','All'],['Nearly expired','Near Expiry'],['Expired','Expired']].map(([value,label])=>h('button',{key:label,type:'button',className:'report-type-button'+((f.expiryStatus||'')===value?' is-selected':''),'aria-pressed':(f.expiryStatus||'')===value,onClick:()=>this.setReportFilter('expiryStatus',value)},label)),
         null,
       ]):null,
       h('section',{className:'report-filter-bar','aria-label':'Report filters'},[
@@ -3062,7 +3076,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
           h('label',{className:'report-status-filter report-type-filter'},['Report type',h('select',{'aria-label':'Report type',value:f.type,onChange:e=>this.setReportFilter('type',e.target.value)},reportGroups.map(([group,reports])=>h('optgroup',{key:group,label:group},reports.map(([value,label])=>h('option',{key:value,value},label)))))]),
           f.type!=='inventory'?filterButton('date','Date range: '+(f.from||f.to?((f.from||'Any')+' to '+(f.to||'Any')):'All time'),f.from||f.to):null,
           ...facets.filter(([key])=>['category','subcategoryId'].includes(key)).map(([key,label])=>filterButton(key,label+': '+(f[key]?labelFor(facets.find(item=>item[0]===key)[2],f[key]):'All'),!!f[key],key==='subcategoryId'&&!f.category)),
-          ['sales','inventory'].includes(f.type)?h('label',{className:'report-status-filter'},['Status',h('select',{'aria-label':'Report status',value:f.status||'',onChange:e=>this.setReportFilter('status',e.target.value)},['',...(f.type==='sales'?['Completed','Paid','Pending Payment','Partially Refunded','Refunded','Voided','Cancelled','Payment Failed']:f.type==='inventory'?['Active','Inactive']:['Fully Received','Partially Received','Received with Discrepancy'])].map(value=>h('option',{key:value,value},value||'All statuses')))]):null,
+          ['sales','inventory'].includes(f.type)?h('label',{className:'report-status-filter'},['Status',h('select',{'aria-label':'Report status',value:f.status||'',onChange:e=>this.setReportFilter('status',e.target.value)},['',...(f.type==='sales'?['Completed','Paid','Pending Payment','Partially Refunded','Refunded','Voided','Cancelled','Payment Failed']:f.type==='inventory'?['Active','Inactive']:['Fully Received','Partially Received','Received with Discrepancy'])].map(value=>h('option',{key:value,value},value?statusLabel(value):'All Status')))]):null,
           f.type==='receiving'?h('label',{className:'report-status-filter'},['Discrepancy audit',h('select',{'aria-label':'Report discrepancy',value:f.audit||'',onChange:e=>this.setReportFilter('audit',e.target.value)},[['','All'],['missing','Missing'],['damaged','Damaged'],['flagged','Other discrepancies'],['none','No discrepancy']].map(([value,label])=>h('option',{key:value,value},label)))]):null,
           filterButton('more','More filters',!!(f.brandId||f.supplierId||f.productId||f.lowStock||f.expiryStatus)),
           activeCount?h('button',{type:'button',className:'report-clear',onClick:this.resetReportFilters},'Clear all'):null,
@@ -3070,7 +3084,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
           h('label',{className:'report-search'},[h('span',{className:'sr-only'},'Search report records'),h('input',{type:'search',placeholder:'Search transaction, product, category...',value:s.tableViews['generated-report']?.query||'',onChange:e=>this.setTableView('generated-report',{query:e.target.value,page:1})})])
         ]),
         open?h('div',{id:'report-filter-options',className:'report-filter-options',onKeyDown:e=>{if(e.key==='Escape'){this.setState({reportFilterOpen:null});e.currentTarget.parentElement.querySelector('[aria-expanded="true"]')?.focus();}}},[
-          open==='more'?h('div',{className:'report-date-options'},[['receipts','batches','purchase_orders','purchases'].includes(f.type)?h('label',null,['Batch number',h('input',{'aria-label':'Batch number',value:f.batch||'',onChange:e=>this.setReportFilter('batch',e.target.value)})]):null,f.type==='expiry'?h('label',null,['Expiration status',h('select',{'aria-label':'Expiration status',value:f.expiryStatus||'',onChange:e=>this.setReportFilter('expiryStatus',e.target.value)},['','Nearly expired','Expired','Critical','Warning','Good','Unknown'].map(value=>h('option',{key:value,value},value||'All statuses')))]):null,...facets.filter(([key])=>!['category','subcategoryId'].includes(key)).map(([key,label,options])=>h('label',{key},[label,h('select',{value:f[key]||'',onChange:e=>this.setReportFilter(key,e.target.value)},[['','All '+label.toLowerCase()+' options'],...options].map(([value,name])=>h('option',{key:value,value},name)))])),f.type==='inventory'?h('label',null,[h('input',{type:'checkbox',checked:!!f.lowStock,onChange:e=>this.setReportFilter('lowStock',e.target.checked?'1':'')}),'Low stock only']):null]):open==='date'?h('div',{className:'report-date-options'},[
+          open==='more'?h('div',{className:'report-date-options'},[['receipts','batches','purchase_orders','purchases'].includes(f.type)?h('label',null,['Batch number',h('input',{'aria-label':'Batch number',value:f.batch||'',onChange:e=>this.setReportFilter('batch',e.target.value)})]):null,f.type==='expiry'?h('label',null,['Expiration status',h('select',{'aria-label':'Expiration status',value:f.expiryStatus||'',onChange:e=>this.setReportFilter('expiryStatus',e.target.value)},['','Nearly expired','Expired','Critical','Warning','Good','Unknown'].map(value=>h('option',{key:value,value},value?statusLabel(value):'All Status')))]):null,...facets.filter(([key])=>!['category','subcategoryId'].includes(key)).map(([key,label,options])=>h('label',{key},[label,h('select',{value:f[key]||'',onChange:e=>this.setReportFilter(key,e.target.value)},[['','All '+label.toLowerCase()+' options'],...options].map(([value,name])=>h('option',{key:value,value},name)))])),f.type==='inventory'?h('label',null,[h('input',{type:'checkbox',checked:!!f.lowStock,onChange:e=>this.setReportFilter('lowStock',e.target.checked?'1':'')}),'Low stock only']):null]):open==='date'?h('div',{className:'report-date-options'},[
             h('label',null,['From',h('input',{type:'date',value:f.from||'',max:f.to||undefined,onChange:e=>this.setReportFilter('from',e.target.value)})]),
             h('label',null,['To',h('input',{type:'date',value:f.to||'',min:f.from||undefined,onChange:e=>this.setReportFilter('to',e.target.value)})]),
             h('button',{type:'button',className:'report-clear',onClick:this.clearReportDates},'All dates')
@@ -3108,7 +3122,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     return h("div",null,[moduleTitle(title),btn("Create Account",this.openAcctModal("create"),"primary"),
       h("div",{className:"sa-filters"},[
         h("label",null,["Role ",h("select",{value:this.state.acctRoleFilter,onChange:e=>{this.setState({acctRoleFilter:e.target.value});this.setTableView("accounts",{page:1});}},[h("option",{value:""},"All roles"),...roles.map(r=>h("option",{value:r,key:r},r))])]),
-        h("label",null,["Status ",h("select",{value:this.state.acctStatusFilter,onChange:e=>{this.setState({acctStatusFilter:e.target.value});this.setTableView("accounts",{page:1});}},[h("option",{value:""},"All statuses"),...['Active','Inactive'].map(v=>h("option",{value:v,key:v},v))])])
+        h("label",null,["Status ",h("select",{value:this.state.acctStatusFilter,onChange:e=>{this.setState({acctStatusFilter:e.target.value});this.setTableView("accounts",{page:1});}},[h("option",{value:""},"All Status"),...['Active','Inactive'].map(v=>h("option",{value:v,key:v},v))])])
       ]),
       this.recordTable("accounts",["Name",this.state.role==="superadmin"?"Email":"Email / Username","Role","Status","Password Setup","Created","Last OTP login","Actions"],(accountsLocal||[]).filter(a=>(!this.state.acctRoleFilter||a.role===this.state.acctRoleFilter)&&(!this.state.acctStatusFilter||a.status===this.state.acctStatusFilter)).map(a=>tr([td(a.name),td([h("div",null,a.email),this.state.role!=="superadmin"?h("small",null,a.username||""):null]),td(a.role),td(h("span",{className:"sa-status "+(a.status==="Active"?"sa-status--healthy":"sa-status--inactive")},a.status.toUpperCase())),td(a.must_change_password?"Password Change Required":"Password Set"),td(a.dateCreated||"Not recorded"),td(a.lastOtpLogin||"Not recorded"),td([btn("Edit",this.openAcctModal("edit",a)),a.must_change_password?btn("Resend Setup Credentials",()=>this.authPost(`/api/accounts/${encodeURIComponent(a.role)}/${a.id}/resend-setup`,{}).then(r=>this.toast(r.message)).catch(e=>this.toast(e.message,"error"))):btn("Send Password Reset",()=>this.authPost(`/api/accounts/${encodeURIComponent(a.role)}/${a.id}/send-reset`,{}).then(r=>this.toast(r.message)).catch(e=>this.toast(e.message,"error"))),btn(a.status==="Active"?"Deactivate":"Activate",()=>this.changeAccountStatus(a))])],a.role+"-"+a.id))),
       acctModalOpen?h("div",{key:"modal",style:{position:"fixed",inset:0,background:"rgba(15,31,74,0.38)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:50,padding:16}},
@@ -3278,7 +3292,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
         {label:"REPORTS",items:[{key:"admReports",label:"Reports"}]},
         {label:"TEAM & MERCH",items:[{key:"mgrCashiers",label:"Cashier Accounts"},{key:"mgrPromotions",label:"Promotions"},{key:"mgrSupplier",label:"Supplier"}]}],
       admin:[{label:null,items:[{key:"admDashboard",label:"Dashboard/Analytics"}]},
-        {label:"PURCHASING",items:[{key:"admPurchasedOrders",label:"Purchase Orders"},{key:"admForwarded",label:"Forwarded Purchase Requests"},{key:"admDisapproved",label:"Disapproved Purchase Requests"},{key:"admReceivingApprovals",label:"Receiving History"}]},
+        {label:"PURCHASING",items:[{key:"admPurchasedOrders",label:"Purchase Orders"},{key:"admForwarded",label:"Forwarded Purchase Requests"},{key:"admDisapproved",label:"Rejected Purchase Requests"},{key:"admReceivingApprovals",label:"Receiving History"}]},
         {label:"CONTROLS",items:[{key:"mgrCategories",label:"Categories / Brands"},{key:"mgrRegistration",label:"Product Registration"},{key:"mgrInventory",label:"Inventory"},{key:"admInventoryApprovals",label:"Inventory Adjustment Approvals"},{key:"admSuppliers",label:"Supplier Records"},{key:"purchaseOrders",label:"Purchase Orders"},{key:"supplierAccounts",label:"Supplier Accounts"},{key:"admReports",label:"Reports"},{key:"archive",label:"Archive"}]},
         {label:"ADMIN",items:[{key:"admManagers",label:"Manage Accounts"},{key:"admNotifications",label:"Notifications"}]}],
       superadmin:[{label:null,items:[{key:"saDashboard",label:"Dashboard"},{key:"saAdmins",label:"Account Management"},{key:"saRoles",label:"Role and Permission Management"},{key:"saBackup",label:"Database Backup"},{key:"saAudit",label:"Audit Logs"}]}],
@@ -3287,7 +3301,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
       style:{padding:"9px 12px",borderRadius:8,fontSize:13,fontWeight:600,cursor:"pointer",marginBottom:2,background:s.screen===it.key?"rgba(255,255,255,0.14)":"transparent"}}))}));
     const titles={purchaseOrders:"Purchase Orders",supplierAccounts:"Supplier Accounts",pos:"Checkout",refunds:"Refunds / Exchanges / Voids",shift:"My Shift Transactions",mgrDashboard:"Manager Dashboard",mgrRequest:"Create Purchase Order",mgrRequestView:"View Purchase Orders",mgrPurchaseHistory:"Transaction History",mgrPO:"Stock Receiving",
       mgrInventory:"Inventory",mgrCategories:"Categories",mgrRegistration:"Barcode/Item Registration",mgrCashiers:"Cashier Accounts",mgrPromotions:"Promotions",mgrSupplier:"Supplier",archive:"Archive",
-      admDashboard:"Dashboard/Analytics",admPurchasedOrders:"Purchase Orders",admForwarded:"Forwarded Purchase Requests",admDisapproved:"Disapproved Purchase Requests",
+      admDashboard:"Dashboard/Analytics",admPurchasedOrders:"Purchase Orders",admForwarded:"Forwarded Purchase Requests",admDisapproved:"Rejected Purchase Requests",
       admReceivingApprovals:"Receiving History",admInventoryApprovals:"Inventory Adjustment Approvals",admSuppliers:"Supplier Records",admReports:"Reports",admManagers:"Manage Accounts",admNotifications:"Notifications",
       saDashboard:"Dashboard",saAdmins:"Account Management",saRoles:"Roles & Permissions",saBackup:"Database Backup",saAudit:"Audit Logs"};
     let activeScreen=null;

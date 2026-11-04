@@ -100,7 +100,7 @@ if [[ "${LOAD_GROCERY_PRESENTATION:-false}" == 'true' ]]; then
         echo 'Presentation import skipped: set both presentation account emails.' >&2
     else
         echo 'Starting grocery import in background. Service readiness does not mean the import has completed.'
-        gosu www-data php artisan presentation:load-grocery "$PRESENTATION_ADMIN_EMAIL" "$PRESENTATION_MANAGER_EMAIL" --apply &
+        gosu www-data php artisan presentation:load-grocery "$PRESENTATION_ADMIN_EMAIL" "$PRESENTATION_MANAGER_EMAIL" --apply --expand &
         import_pid=$!
     fi
 fi
