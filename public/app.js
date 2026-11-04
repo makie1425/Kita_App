@@ -288,7 +288,7 @@ class Component extends DCLogic {
     itemPickerOpen:false, itemPickerSearch:"", itemPickerFilterCategory:"", itemPickerFilterSupplier:"", itemPickerChecked:{},
     itemRequestsLocal:null, purchaseOrdersLocal:null, receivingLocal:null, adjustmentsLocal:null,
     approvalNoteDraft:{}, rolesMatrix:null, notificationsLocal:null,
-    newAdjForm:{productId:"",qtyChange:"",reason:"Shrinkage",comment:""}, evidenceFilename:null, evidenceSent:false,
+    newAdjForm:{productId:"",qtyChange:"",reason:"Shrinkage",comment:""},
     cashierModalOpen:false, cashierModalMode:"add", cashierForm:{id:null,name:"",username:"",schedule:"",status:"Active"}, cashiersLocal:null,
     productsLocal:null, fieldVersionHistoryLocal:null, categoriesLocal:null, suppliersLocal:null,
     priceEditOpen:false, priceEditTarget:null, priceEditValue:"", priceEditReason:"",
@@ -723,17 +723,6 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     }catch(e){this.toast(e.message,'error');}finally{this.overrideDeclining=false;this.setState({overrideDeclining:false});}
   };
 
-  chooseAdjustmentEvidence=async e=>{
-    const file=e.target.files?.[0];
-    this.setState({adjustmentEvidence:null});
-    if(!file)return;
-    if(!['image/jpeg','image/png','image/webp'].includes(file.type)||file.size>2*1024*1024){this.toast('Choose a PNG, JPEG or WebP image up to 2 MB.','error');e.target.value='';return;}
-    this.setState({evidenceReading:true});
-    try{const value=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error('Could not read image.'));reader.readAsDataURL(file);});this.setState({adjustmentEvidence:value});}
-    catch(error){this.toast(error.message,'error');}finally{this.setState({evidenceReading:false});}
-  };
-  evidenceLink=id=>React.createElement('a',{href:'/api/inventory/adjustments/'+encodeURIComponent(id)+'/evidence',target:'_blank',rel:'noopener'},'View photo');
-
   saveExpiryWindow=async()=>{
     const days=Number(this.state.expiryAlertDays??this.state.data?.EXPIRY_ALERT_DAYS??7);
     try{const r=await this.authPost('/api/inventory/expiry-settings',{days},'PATCH');await this.reloadCatalog();this.setState({expiryDays:days});this.toast(r.message);}catch(e){this.toast(e.message,'error');}
@@ -868,11 +857,10 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
   rejectAdjustment=id=>()=>{ this.authPost(`/api/inventory/adjustments/${encodeURIComponent(id)}`,{status:"Rejected"},"PATCH").then(()=>{ this.setState(s=>({adjustmentsLocal:s.adjustmentsLocal.map(a=>a.id===id?{...a,status:"Rejected"}:a)})); this.pushMgrNotification("Adjustment Rejected",`Inventory Adjustment ${id} was Rejected by Admin`,"Critical",null); }).catch(error=>this.toast("Adjustment rejection could not be saved: "+error.message,"error")); };
   setNewAdjField=field=>e=>this.setState(s=>({newAdjForm:{...s.newAdjForm,[field]:e.target.value}}));
   submitAdjustment=()=>{
-    if(this.state.evidenceReading){this.toast("Wait for the photo to finish loading.","error");return;}
     const f=this.state.newAdjForm,q=Number(f.qtyChange);
     if(!f.productId||!Number.isInteger(q)||q<=0||!f.comment.trim()||!f.reason.trim()){this.toast("Select an item, positive whole quantity, reason, and comment.","error");return;}
-    this.authPost("/api/inventory/adjustments",{productId:Number(f.productId),qtyChange:-q,reason:f.reason,comment:f.comment,evidence:this.state.adjustmentEvidence||null})
-      .then(res=>{this.setState({adjustmentEvidence:null,newAdjForm:{productId:"",qtyChange:"",reason:"Shrinkage",comment:""}});this.toast(res.message);return this.reloadCatalog();}).catch(error=>this.toast(error.message,"error"));
+    this.authPost("/api/inventory/adjustments",{productId:Number(f.productId),qtyChange:-q,reason:f.reason,comment:f.comment})
+      .then(res=>{this.setState({newAdjForm:{productId:"",qtyChange:"",reason:"Shrinkage",comment:""}});this.toast(res.message);return this.reloadCatalog();}).catch(error=>this.toast(error.message,"error"));
   };
   openCashierModal=(mode,cashier)=>this.openAcctModal(mode==="add"?"create":"edit",cashier);
   closeCashierModal=this.closeAcctModal;
@@ -2045,18 +2033,19 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
   };
   buildPurchaseTracking(order,request=null){
     const h=React.createElement,r=request||order,raw=String(r.status||'');
+    const cancelled=['Cancelled','Canceled','Cancel'].includes(String(order.status||''))||['Cancelled','Canceled','Cancel'].includes(raw);
     const rejected=['Declined','Rejected','Disapproved'].includes(raw);
     const approved=!rejected&&(!!r.poId||!!r.approved_at||['Approved','Approved / Waiting for Delivery','Completed','Partially Received','Fully Received','Received with Discrepancy','Closed'].includes(raw));
     const review=!approved&&!rejected&&(raw==='Review'||raw==='Under Review'||raw==='Proceed to Purchase'||Number(r.revision)>0);
-    const current=rejected?'Rejected':approved?'Approved':review?'Review':'Pending',index=approved||rejected?2:review?1:0;
-    const date=index===2?(r.approved_at||r.reviewed_at):index===0?(r.requested_at||r.dateRequested||r.created):null;
-    const descriptions={Pending:'Purchase order submitted and awaiting evaluation.',Review:'Purchase order is being reviewed; comments or corrections may be provided.',Approved:'Purchase order has been approved.',Rejected:'Purchase order has been declined.'};
+    const current=cancelled?'Cancel':rejected?'Rejected':approved?'Approved':review?'Review':'Pending',index=cancelled||approved||rejected?2:review?1:0;
+    const date=cancelled?(order.cancelled_at||null):index===2?(r.approved_at||r.reviewed_at):index===0?(r.requested_at||r.dateRequested||r.created):null;
+    const descriptions={Cancel:'Purchase order has been cancelled.',Pending:'Purchase order submitted and awaiting evaluation.',Review:'Purchase order is being reviewed; comments or corrections may be provided.',Approved:'Purchase order has been approved.',Rejected:'Purchase order has been declined.'};
     return h('section',{className:'po-tracking','aria-label':'Purchase order approval tracking'},[
       h('h3',null,'Order Status'),
-      h('ol',{className:'po-tracking-steps'},['Pending','Review',rejected?'Rejected':'Approved'].map((label,i)=>h('li',{key:label,className:i<=index?'is-active':'','aria-current':i===index?'step':undefined},[h('span',{className:'po-tracking-dot','aria-hidden':true},String(i+1)),h('strong',null,label)]))),
+      h('ol',{className:'po-tracking-steps'},['Pending','Review',cancelled?'Cancel':rejected?'Rejected':'Approved'].map((label,i)=>h('li',{key:label,className:i<=index?'is-active':'','aria-current':i===index?'step':undefined},[h('span',{className:'po-tracking-dot','aria-hidden':true},String(i+1)),h('strong',null,label)]))),
       h('section',{className:'po-tracking-details'},[h('h3',null,'Status Details'),h('div',{className:'po-tracking-heading'},[h('strong',null,current),h('span',{className:'po-tracking-badge'},'Current Status')]),
         h('p',{className:'po-tracking-date'},date?String(date):'Status date not recorded'),h('p',null,descriptions[current]),
-        h('h4',null,'Remarks / Comments'),h('p',{className:'po-tracking-remarks'},(rejected?r.disapprovalReason||r.adminNote:r.adminNote||r.notes)||(rejected?'No rejection remarks recorded.':'No remarks recorded.')),
+        h('h4',null,'Remarks / Comments'),h('p',{className:'po-tracking-remarks'},(cancelled?order.cancellationReason||(typeof order.supplierCallback==='string'?order.supplierCallback:order.supplierCallback?.reason)||r.adminNote:rejected?r.disapprovalReason||r.adminNote:r.adminNote||r.notes)||(rejected?'No rejection remarks recorded.':'No remarks recorded.')),
         order!==r||['Cancelled','Draft'].includes(raw)?h('p',{className:'po-tracking-date'},'Order / delivery status: '+order.status):null])
     ]);
   }
@@ -2268,7 +2257,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     const tabs=[["table","Stock Balance"],["adjustments","Stock Adjustments"],["writeoffs","Stock Issues / Returns"],["recall","Batch Recall"],["reconciliation","Stock Count"],["expiry","Expiry Monitoring"],["categories","Item Groups"]];
     let body;
     if(invTab==="adjustments"){
-      const {newAdjForm,evidenceFilename,evidenceSent}=this.state;
+      const {newAdjForm}=this.state;
       const formReady=true;
       body=React.createElement("div",null,[
         card([
@@ -2282,17 +2271,11 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
               React.createElement("select",{key:"r",value:newAdjForm.reason,onChange:this.setNewAdjField("reason"),style:{padding:8,border:"1px solid "+COLORS.border,borderRadius:7}},["Shrinkage","Damaged","Lost","Expired","Count correction"].map(o=>React.createElement("option",{key:o},o))),
             ]),
             React.createElement("textarea",{key:"c",value:newAdjForm.comment,onChange:this.setNewAdjField("comment"),placeholder:"Comment (required)",style:{width:"100%",padding:8,border:"1px solid "+COLORS.border,borderRadius:7,minHeight:50,marginBottom:10}}),
-            React.createElement("div",{key:"evidence",className:"adjustment-evidence"},[
-              React.createElement("label",{htmlFor:"adjustment-evidence-file"},"Photo evidence"),
-              React.createElement("input",{id:"adjustment-evidence-file",type:"file",accept:"image/png,image/jpeg,image/webp","aria-describedby":"adjustment-evidence-help",onChange:this.chooseAdjustmentEvidence}),
-              React.createElement("small",{id:"adjustment-evidence-help"},"Optional. PNG, JPEG or WebP, up to 2 MB."),
-              this.state.adjustmentEvidence?React.createElement("img",{src:this.state.adjustmentEvidence,alt:"Adjustment evidence preview"}):null,
-            ]),
             btn("Submit Adjustment",this.submitAdjustment,"primary"),
           ]),
         ],{marginBottom:16}),
-        this.recordTable("adjustments",["Ref","Product","Qty Î”","Reason","Remarks","Evidence","Status"],adjustmentsLocal.map((a,i)=>{ const p=data.PRODUCTS.find(pp=>pp.id===a.productId);
-          return tr([td(a.id,{fontFamily:"'JetBrains Mono',monospace"}),td(p?p.name:"â€”"),td(a.qtyChange,{color:COLORS.red,fontWeight:700}),td(a.reason),td(a.remarks,{fontSize:12,color:COLORS.textSoft}),td(a.photo?this.evidenceLink(a.id):'-'),td(badge(a.status))],i); })),
+        this.recordTable("adjustments",["Ref","Product","Qty Î”","Reason","Remarks","Status"],adjustmentsLocal.map((a,i)=>{ const p=data.PRODUCTS.find(pp=>pp.id===a.productId);
+          return tr([td(a.id,{fontFamily:"'JetBrains Mono',monospace"}),td(p?p.name:"â€”"),td(a.qtyChange,{color:COLORS.red,fontWeight:700}),td(a.reason),td(a.remarks,{fontSize:12,color:COLORS.textSoft}),td(badge(a.status))],i); })),
       ]);
     } else if(['writeoffs','recall','reconciliation','expiry'].includes(invTab)){
       body=this.buildInventoryWorkflows(invTab);
@@ -2918,7 +2901,6 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     return React.createElement("div",null,[moduleTitle("Inventory Adjustment Approvals"),
       ...adjustmentsLocal.map(a=>{ const p=data.PRODUCTS.find(pp=>pp.id===a.productId); return card([
         React.createElement("div",{key:"h",style:{display:"flex",justifyContent:"space-between"}},[React.createElement("div",null,[React.createElement("div",{style:{fontWeight:700}},a.id+" Â· "+(p?p.name:"â€”")),React.createElement("div",{style:{fontSize:12,color:COLORS.textSoft}},a.reason+" Â· Î”"+a.qtyChange+" Â· "+a.remarks)]),badge(a.status)]),
-        a.photo?this.evidenceLink(a.id):null,
         a.status==="Pending Admin Approval"?React.createElement("div",{key:"btns",style:{display:"flex",gap:8,marginTop:10}},[btn("Approve",this.approveAdjustment(a.id),"green"),btn("Reject",this.rejectAdjustment(a.id),"danger")]):null,
       ],{marginBottom:10}); }),
     ]);
@@ -3031,7 +3013,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     const normalizeFilters=filters=>JSON.stringify(Object.entries(filters||{type:'sales'}).filter(([,value])=>value).sort(([a],[b])=>a.localeCompare(b)));
     const pendingFilters=!!loaded&&normalizeFilters(f)!==normalizeFilters(s.reportAppliedFilters);
     const common={'Product':'product','Category':'category','Brand':'brand','Subcategory':'subcategory'};
-    const schemas={
+    const schemas={general:{'Section':'section','Metric':'metric','Value':'value'},
       receiving:{'PO Number':'reportPo','Receipt ID':'reference','Supplier':'supplier','Product':'product','Remarks':'remarks','Discrepancy':'discrepancyType','Condition':'condition','Received':'quantity'},
       expiry:{'Product ID':'code','Batch':'batch','Product name':'product','Category':'category','Manufacturer':'manufacturer','Expiration date':'expiryDate','Stock remaining':'remaining','Unit':'unit','Expiration status':'status'},
       sales:{'Transaction No.':'reference','Sale date':'date',...common,'Status':'status','Quantity':'quantity','Line total (PHP)':'amount','Refunded (PHP)':'refunded'},
@@ -3050,13 +3032,14 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     const appliedLabels=Object.entries(r?.labels||{}).filter(([key])=>key!=='Type').map(([key,value])=>key+': '+value).join(', ');
     const emptyMessage=h('div',{className:'report-table-message',role:s.reportError?'alert':'status','aria-live':'polite'},s.reportLoading?'Loading report records. Please wait...':s.reportError?'Unable to update the report. '+s.reportError:!loaded?'Choose your filters, then click Refresh to load the report.':'No results found'+(appliedLabels?' for '+appliedLabels:'')+'. Change or clear the filters and try again.');
     const reportGroups=[
+      ['Overview',[['general','General','Combined sales, inventory, and purchases summary.']]],
       ['Sales',[['sales','Sales details','View sold items, sales amounts, and transaction status.']]],
       ['Inventory',[['batches','Batches',''],['inventory','Stock on hand','Check current quantities and stock availability.'],['receipts','Stock received','See products received, with supplier and batch details.'],['movements','Stock changes','Track stock added, removed, or adjusted.'],['expiry','Expiring products','Check expiration dates and print a monitoring report.']]],
       ['Purchasing',[['purchase_orders','Purchase orders','Review orders placed with suppliers and their status.'],['outstanding_orders','Pending deliveries','Find ordered items that still need to be received.'],['receiving','Delivery discrepancies','Review missing, damaged, and other flagged deliveries.'],['purchases','Purchase history','Review recorded purchases and their costs.']]],
       ['Suppliers & payments',[['supplier_book','Supplier records','Review purchasing records by supplier.'],['payables','Supplier balances','Check amounts owed to suppliers.']]],
     ];
     const products=d.PRODUCTS.filter(p=>(!f.category||p.category===f.category)&&(!f.subcategoryId||String(p.subcategoryId)===String(f.subcategoryId))&&(!f.brandId||String(p.brandId)===String(f.brandId))&&(['receipts','batches','purchases','receiving','expiry'].includes(f.type)||!f.supplierId||String(p.supplierId)===String(f.supplierId)));
-    const facets=[['category','Category',d.CATEGORIES.map(c=>[c.name,c.name])],['subcategoryId','Subcategory',this.subcategoriesFor(f.category,true).map(c=>[c.id,c.name])],['brandId','Brand',(d.BRANDS||[]).map(b=>[b.id,b.name])],['supplierId','Supplier',d.SUPPLIERS.map(p=>[p.id,p.name])],['productId','Product',products.map(p=>[p.id,this.productLabel(p)+' #'+p.id])]].filter(([key])=>!['supplier_book','payables'].includes(f.type)||key==='supplierId');
+    const facets=[['category','Category',d.CATEGORIES.map(c=>[c.name,c.name])],['subcategoryId','Subcategory',this.subcategoriesFor(f.category,true).map(c=>[c.id,c.name])],['brandId','Brand',(d.BRANDS||[]).map(b=>[b.id,b.name])],['supplierId','Supplier',d.SUPPLIERS.map(p=>[p.id,p.name])],['productId','Product',products.map(p=>[p.id,this.productLabel(p)+' #'+p.id])]].filter(([key])=>f.type!=='general'&&(!['supplier_book','payables'].includes(f.type)||key==='supplierId'));
     const selected=facets.filter(([key])=>f[key]);
     const activeCount=selected.length+(f.status?1:0)+(f.audit?1:0)+(f.expiryStatus?1:0)+(f.lowStock?1:0)+(f.from||f.to?1:0)+(f.batch?1:0)+(f.manager?1:0);
     const open=s.reportFilterOpen,facet=facets.find(([key])=>key===open);

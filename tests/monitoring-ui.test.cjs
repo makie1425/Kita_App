@@ -87,3 +87,8 @@ test('purchase tracking has three steps and replaces approved with rejected',()=
   if(status==='Rejected'){assert.ok(!tree.includes('"Approved"'));assert.ok(tree.includes('Budget exceeded'));}
  }
 });
+
+test('cancelled order replaces the approved endpoint even with an approved request',()=>{
+ const {app}=setup();const tree=JSON.stringify(app.buildPurchaseTracking({status:'Cancelled',supplierCallback:{reason:'Supplier cancelled'}},{status:'Approved',poId:'PO1'}));
+ assert.equal((tree.match(/"tag":"li"/g)||[]).length,3);assert.ok(tree.includes('"Cancel"'));assert.ok(!tree.includes('"Approved"'));assert.ok(tree.includes('Supplier cancelled'));
+});

@@ -47,6 +47,22 @@ class ReportsTest extends TestCase
         }
     }
 
+    public function test_general_summary_matches_scoped_component_reports_and_exports(): void
+    {
+        DB::table('products')->insert(['id'=>999,'name'=>'Unowned','stock'=>9999]);
+        $dates='&from=2026-10-06&to=2026-10-06';
+        $general=$this->getJson('/reports/data?type=general'.$dates)->assertOk()->json();
+        foreach (['sales'=>'Sales','inventory'=>'Current Inventory','purchases'=>'Purchases'] as $type=>$section) {
+            $part=$this->getJson('/reports/data?type='.$type.($type==='inventory'?'':$dates))->assertOk()->json();
+            $actual=collect($general['rows'])->where('section',$section)->pluck('value','metric')->all();
+            $this->assertSame($part['summary'],$actual);
+        }
+        $this->get('/reports/data?type=general'.$dates.'&format=print')->assertOk()->assertSee('General Report');
+        $csv=$this->get('/reports/data?type=general'.$dates.'&format=csv')->assertOk()->streamedContent();
+        $this->assertStringContainsString('Current Inventory',$csv);
+        $this->actingAs(User::factory()->create(['role'=>'cashier']))->getJson('/reports/data?type=general')->assertForbidden();
+    }
+
     public function test_current_inventory_filter_and_admin_access(): void
     {
         $this->actingAs($this->assignMember(User::factory()->create(['role' => 'admin', 'status' => 'Active'])));

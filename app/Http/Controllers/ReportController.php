@@ -17,7 +17,7 @@ class ReportController extends Controller
     {
         InventoryRules::authorize($request, ['manager', 'admin']);
         $filters = $request->validate([
-            'type' => ['required', Rule::in(['inventory', 'sales', 'receipts', 'batches', 'movements', 'expiry', 'receiving', ...\App\Services\PurchasingReports::TYPES])],
+            'type' => ['required', Rule::in(['general', 'inventory', 'sales', 'receipts', 'batches', 'movements', 'expiry', 'receiving', ...\App\Services\PurchasingReports::TYPES])],
             'format' => ['nullable', Rule::in(['json', 'print', 'csv', 'pdf'])],
             'from' => ['nullable', 'date_format:Y-m-d'],
             'to' => ['nullable', 'date_format:Y-m-d', ...($request->filled('from') ? ['after_or_equal:from'] : [])],
@@ -34,6 +34,27 @@ class ReportController extends Controller
             'expiryStatus' => ['nullable', Rule::in(['Nearly expired', 'Expired', 'Critical', 'Warning', 'Good', 'Unknown'])],
         ]);
         $type = $filters['type'];
+        if ($type === 'general') {
+            $rows = collect();
+            foreach (['sales'=>'Sales', 'inventory'=>'Current Inventory', 'purchases'=>'Purchases'] as $component=>$section) {
+                $query = ['type'=>$component, 'format'=>'json'];
+                if ($component !== 'inventory') $query += $request->only(['from','to']);
+                $part = $request->duplicate($query);
+                $part->setUserResolver($request->getUserResolver());
+                $result = $this->__invoke($part)->getData(true);
+                foreach ($result['summary'] as $metric=>$value) {
+                    $rows->push((object)compact('section','metric','value'));
+                }
+            }
+            return $this->respond($request, $type, [
+                'title'=>'General Report', 'columns'=>['Section'=>'section','Metric'=>'metric','Value'=>'value'],
+                'rows'=>$rows, 'summary'=>[], 'moneyKeys'=>[], 'numericKeys'=>[],
+                'note'=>'Sales and purchases use the selected dates. Inventory is current, not a historical balance. Totals follow the same definitions as the individual reports.',
+                'labels'=>['Type'=>'General'] + array_filter(['From'=>$request->input('from'),'To'=>$request->input('to')]),
+                'generated'=>now()->timezone('Asia/Manila')->format('Y-m-d H:i:s').' Asia/Manila',
+                'preparedBy'=>$request->user()->name,
+            ]);
+        }
         if (in_array($type, \App\Services\PurchasingReports::TYPES)) {
             return $this->respond($request, $type, \App\Services\PurchasingReports::data($request));
         }
