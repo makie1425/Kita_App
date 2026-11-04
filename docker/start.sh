@@ -38,6 +38,9 @@ fi
 # Explicit opt-in only. Never run migrations concurrently across replicas.
 if [[ "${RUN_MIGRATIONS:-false}" == 'true' ]]; then
     artisan migrate --force
+else
+    # Checkout writes these columns; apply only this additive migration before serving requests.
+    artisan migrate --force --path=database/migrations/2026_11_04_000003_record_sale_entry_method.php
 fi
 if [[ "${SEED_DEMO_USERS:-false}" == 'true' ]]; then
     artisan accounts:seed-demo

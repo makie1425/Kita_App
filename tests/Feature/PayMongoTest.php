@@ -87,12 +87,13 @@ class PayMongoTest extends TestCase
         Http::fake(['*/checkout_sessions' => Http::response(['data' => ['id' => 'cs_qr', 'attributes' => ['checkout_url' => 'https://checkout.paymongo.com/qr']]])]);
         $this->postJson('/api/payments/paymongo/checkout', [
             'uuid' => 'TXN-qr', 'provider' => 'QR Ph', 'total' => 1,
-            'stockItems' => [['productId' => 1, 'qty' => 2]],
+            'stockItems' => [['productId' => 1, 'qty' => 2, 'manualLookupQty' => 2]],
         ])->assertOk()->assertJsonPath('checkoutUrl', 'https://checkout.paymongo.com/qr');
         Http::assertSent(fn ($r) => $r['data']['attributes']['payment_method_types'] === ['qrph']
             && $r['data']['attributes']['line_items'][0]['amount'] === 24690
             && $r['data']['attributes']['line_items'][0]['quantity'] === 1);
         $this->assertDatabaseHas('transactions', ['uuid' => 'TXN-qr', 'paymentMode' => 'QR Ph', 'total' => 246.90, 'paid' => 0, 'status' => 'Pending Payment']);
+        $this->assertDatabaseHas('transaction_lines', ['transaction_uuid' => 'TXN-qr', 'entryMethod' => 'Manual lookup', 'manualLookupQty' => 2]);
         $this->assertDatabaseHas('products', ['id' => 1, 'stock' => 3]);
         $this->assertDatabaseCount('sales_log', 0);
         $session = ['id' => 'cs_qr', 'attributes' => ['metadata' => ['transaction_uuid' => 'TXN-qr'], 'livemode' => false,

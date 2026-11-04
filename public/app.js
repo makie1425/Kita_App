@@ -545,10 +545,10 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     if(p.status!=="Active"||this.sellableStock(p)<=0){ this.toast(`"${p.name}" has no sellable stock. ${(p.exclusionReasons||[]).join('; ')}`,"error"); return; }
     const existing=this.state.cart.find(l=>l.productId===p.id);
     if(existing && existing.qty>=this.sellableStock(p)){ this.toast(`Only ${this.sellableStock(p)} units of ${p.name} are available.`,"error"); return; }
-    if(existing){ this.setState(s=>({cart:s.cart.map(l=>l.productId===p.id?{...l,qty:l.qty+1,pulse:true}:l)})); this.toast(`Added 1 more "${p.name}".`);
+    if(existing){ this.setState(s=>({cart:s.cart.map(l=>l.productId===p.id?{...l,qty:l.qty+1,manualQty:(l.manualQty||0)+(manual?1:0),manual:!!(l.manualQty||manual),lastEntryMethod:manual?"Manual lookup":"Barcode",pulse:true}:l)})); this.toast(`Added 1 more "${p.name}".`);
       setTimeout(()=>this.setState(s=>({cart:s.cart.map(l=>l.productId===p.id?{...l,pulse:false}:l)})),900); return; }
     const promo=this.activePromo(p.id);
-    this.setState(s=>({cart:[...s.cart,{lineId:Date.now()+Math.random(),productId:p.id,name:this.productLabel(p),qty:1,unitPrice:p.price,originalPrice:p.price,vatClass:p.vatClass,manual:!!manual,
+    this.setState(s=>({cart:[...s.cart,{lineId:Date.now()+Math.random(),productId:p.id,name:this.productLabel(p),qty:1,unitPrice:p.price,originalPrice:p.price,vatClass:p.vatClass,manual:!!manual,manualQty:manual?1:0,lastEntryMethod:manual?"Manual lookup":"Barcode",
       overridden:false,overrideReason:"",overrideApprover:"",promo,pulse:false}]}));
     this.toast(`Added "${p.name}"${manual?" (Manual Entry)":""}${promo?" — promo "+promo.name+" applied":""}.`);
   };
@@ -558,7 +558,14 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     const product=delta>0?(await this.refreshStockAvailability(line.productId,line.qty+delta))[0]:(this.state.productsLocal||this.state.data?.PRODUCTS||[]).find(p=>p.id===line.productId);
     if(!current())return;
     if(delta>0 && (!product || line.qty+delta>this.sellableStock(product))){ this.toast(`Only ${this.sellableStock(product)} units of ${line.name} are available.`,"error"); return; }
-    this.setState(s=>({cart:s.cart.map(l=>l.lineId!==lineId?l:{...l,qty:Math.max(1,l.qty+delta)})}));
+    this.setState(s=>({cart:s.cart.map(l=>{
+      if(l.lineId!==lineId)return l;
+      const qty=Math.max(1,l.qty+delta),change=qty-l.qty;
+      let manualQty=l.manualQty||0;
+      if(change>0&&l.lastEntryMethod==="Manual lookup")manualQty+=change;
+      if(change<0&&(l.lastEntryMethod==="Manual lookup"?manualQty>0:l.qty===manualQty))manualQty+=change;
+      return {...l,qty,manualQty,manual:manualQty>0};
+    })}));
   });
   removeLine=lineId=>()=>this.setState(s=>({cart:s.cart.filter(l=>l.lineId!==lineId)}));
   openManualLookup=()=>this.setState({manualLookupOpen:true,manualSearch:"",manualCategory:"",manualSubcategoryId:""});
@@ -640,7 +647,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
       total,
       provider:this.state.ewalletProvider,
       items:[{name:"KITA purchase",qty:1,amount:total}],
-      stockItems:this.state.cart.map(l=>({productId:l.productId,qty:l.qty,overridden:!!l.overridden})),
+      stockItems:this.state.cart.map(l=>({productId:l.productId,qty:l.qty,manualLookupQty:l.manualQty||0,overridden:!!l.overridden})),
     }).then(response=>{
       if(!response.checkoutUrl) throw new Error("PayMongo did not return a checkout URL.");
       window.location.assign(response.checkoutUrl);
@@ -673,7 +680,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
 
     this.authPost((window.KITA_AUTH&&window.KITA_AUTH.transactionUrl)||"/api/transactions",{
       ...this.discountApprovalPayload(),
-      items:result.cart.map(l=>({productId:l.productId,qty:l.qty,overridden:!!l.overridden})),
+      items:result.cart.map(l=>({productId:l.productId,qty:l.qty,manualLookupQty:l.manualQty||0,overridden:!!l.overridden})),
       uuid:result.uuid,status:result.status,cashier:result.cashier,total:Number(result.totals.grandTotal.toFixed(2)),
       paymentMode:result.paymentMode,tendered:result.tendered,paid:result.paid,change:result.change,referenceNo:result.referenceNo,
     }).then(response=>{
@@ -1176,7 +1183,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
       td(React.createElement("div",null,[
         React.createElement("div",{key:"n",style:{fontWeight:700}},l.name),
         l.qty>this.sellableStock((this.state.productsLocal||data.PRODUCTS).find(p=>p.id===l.productId))?React.createElement("div",{key:"stock-warning",role:"alert",style:{color:COLORS.red}},"Requested quantity exceeds current sellable stock. Update or remove this item."):null,
-        l.manual?React.createElement("span",{key:"m",style:{fontSize:10,fontWeight:700,color:COLORS.blue,background:COLORS.blueBg,padding:"2px 6px",borderRadius:6,marginRight:6}},"Manual Entry"):null,
+        l.manualQty?React.createElement("span",{key:"m",style:{fontSize:10,fontWeight:700,color:COLORS.blue,background:COLORS.blueBg,padding:"2px 6px",borderRadius:6,marginRight:6}},l.manualQty===l.qty?"Manual lookup":"Manual lookup "+l.manualQty+" / "+l.qty):null,
         l.overridden?React.createElement("span",{key:"o",title:`Approved by ${l.overrideApprover} — ${l.overrideReason}`,style:{fontSize:10,fontWeight:700,color:COLORS.amber,background:COLORS.amberBg,padding:"2px 6px",borderRadius:6,marginRight:6}},"Overridden"):null,
         (l.promo && !employeeDiscount && !seniorApplied)?React.createElement("span",{key:"p",style:{fontSize:10,fontWeight:700,color:COLORS.purple,background:COLORS.purpleBg,padding:"2px 6px",borderRadius:6}},"Promo: "+l.promo.name):null,
       ])),
@@ -3041,7 +3048,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     const schemas={general:{'Section':'section','Record':'record','Field / Metric':'metric','Value':'value'},
       receiving:{'PO Number':'reportPo','Receipt ID':'reference','Supplier':'supplier','Product':'product','Remarks':'remarks','Discrepancy':'discrepancyType','Condition':'condition','Received':'quantity'},
       expiry:{'Product ID':'code','Batch':'batch','Product name':'product','Category':'category','Manufacturer':'manufacturer','Expiration date':'expiryDate','Stock remaining':'remaining','Unit':'unit','Expiration status':'status'},
-      sales:{'Transaction No.':'reference','Sale date':'date',...common,'Status':'status','Quantity':'quantity','Line total (PHP)':'amount','Refunded (PHP)':'refunded'},
+      sales:{'Transaction No.':'reference','Sale date':'date',...common,'Status':'status','Quantity':'quantity','Entry method':'entryMethod','Manual lookup qty':'manualLookupQty','Line total (PHP)':'amount','Refunded (PHP)':'refunded'},
       inventory:{...common,'Item Code':'id','Barcode':'barcode','Stock Unit':'unit','Qty on Hand':'stockOnHand','Available Qty':'sellableStock','Expired Qty':'expiredStock','Recalled Qty':'recalledStock','Reserved Qty':'reservedStock','Availability Remarks':'exclusionReason','Minimum Stock':'minimum','Stock Condition':'stockCondition','Inventory Value (PHP)':'inventoryValue','Valuation Basis':'valuationBasis','Selling Price (PHP)':'price','Item Status':'status'},
       receipts:{...common,'Product ID':'productId','Manufacturer':'manufacturer','PO Number':'poId','Received date':'date','Receipt':'reference','Supplier':'supplier','Quantity received':'quantity','Remaining now':'remaining','Unit cost (PHP)':'cost','Batch':'batch','Manufactured':'manufacturedDate','Expiry':'expiryDate'},
       movements:{...common,'Recorded at':'date','Type':'movement','Reference':'reference','Change':'change','Before':'before','After':'after'}

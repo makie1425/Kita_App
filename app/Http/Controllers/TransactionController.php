@@ -228,6 +228,7 @@ class TransactionController extends Controller
                     'subtotal' => $replacementCents, 'total' => $replacementCents, 'discount' => 0, 'discountType' => 'none', 'approval' => null,
                     'lines' => [['productId' => $replacement->id, 'name' => $replacement->name, 'stockId' => (string) $replacement->id,
                         'unit' => $replacement->stockUnit ?? $replacement->unit, 'qty' => 1, 'unitPrice' => $replacementCents / 100,
+                        'manualLookupQty' => null, 'entryMethod' => 'Exchange',
                         'discountAmount' => 0, 'lineTotal' => $replacementCents / 100, 'stockBefore' => (int) $replacement->stock]],
                 ], 'Unused', 'Cash', $exchangeTendered + $refundCents, $uuid, $refundCents);
             }

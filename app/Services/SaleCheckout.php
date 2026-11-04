@@ -15,6 +15,7 @@ class SaleCheckout
             $itemsKey => ['required', 'array', 'min:1', 'max:500'],
             $itemsKey.'.*.productId' => ['required', 'integer', 'min:1', 'distinct'],
             $itemsKey.'.*.qty' => ['required', 'integer', 'min:1', 'max:1000000'],
+            $itemsKey.'.*.manualLookupQty' => ['sometimes', 'required', 'integer', 'min:0'],
             $itemsKey.'.*.overridden' => ['sometimes', 'boolean'],
             'discountType' => ['sometimes', 'in:none,employee,senior'],
             // Display totals are optional; reject malformed values but never trust them.
@@ -44,6 +45,10 @@ class SaleCheckout
         $lines = [];
         $subtotal = $total = 0;
         foreach (collect($data[$itemsKey])->sortBy('productId') as $item) {
+            $manualLookupQty = array_key_exists('manualLookupQty', $item) ? (int) $item['manualLookupQty'] : null;
+            if ($manualLookupQty !== null && $manualLookupQty > $item['qty']) {
+                throw ValidationException::withMessages([$itemsKey => 'Manual lookup quantity cannot exceed the sold quantity.']);
+            }
             $product = WorkspaceRead::table('products')->where('id', $item['productId'])->lockForUpdate()->first();
             if (! $product || $product->status !== 'Active' || $product->archivedAt !== null
                 || ! WorkspaceRead::table('categories')->where('name', $product->category)->where('status', 'Active')->whereNull('archivedAt')->exists()) {
@@ -80,6 +85,8 @@ class SaleCheckout
             $lines[] = ['productId' => $product->id, 'name' => InventoryRules::productLabel($product),
                 'stockId' => (string) $product->id, 'unit' => $product->stockUnit ?? $product->unit,
                 'qty' => (int) $item['qty'], 'unitPrice' => $unitPrice / 100,
+                'manualLookupQty' => $manualLookupQty,
+                'entryMethod' => $manualLookupQty === null ? null : ($manualLookupQty === 0 ? 'Barcode' : ($manualLookupQty === (int) $item['qty'] ? 'Manual lookup' : 'Mixed')),
                 'discountAmount' => ($base - $net) / 100, 'lineTotal' => $net / 100, 'stockBefore' => (int) $product->stock];
         }
         $approval = DiscountApproval::verify($request, $subtotal - $total);

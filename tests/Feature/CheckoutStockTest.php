@@ -56,6 +56,36 @@ class CheckoutStockTest extends TestCase
         $this->assertDatabaseHas('transaction_numbers', ['transaction_uuid' => 'TXN-test']);
     }
 
+    public function test_checkout_records_manual_lookup_and_barcode_quantities_without_guessing_legacy_sales(): void
+    {
+        $body = $this->sale(3);
+        $body['items'][0]['manualLookupQty'] = 1;
+        $this->postJson('/api/transactions', $body)->assertCreated()
+            ->assertJsonPath('transaction.lines.0.entryMethod', 'Mixed')
+            ->assertJsonPath('transaction.lines.0.manualLookupQty', 1);
+        $this->assertDatabaseHas('transaction_lines', ['transaction_uuid' => 'TXN-test', 'qty' => 3, 'manualLookupQty' => 1, 'entryMethod' => 'Mixed']);
+        $this->getJson('/api/kita-data')->assertOk()->assertJsonPath('TRANSACTIONS.0.lines.0.entryMethod', 'Mixed');
+        $this->actingAs($this->manager)->getJson('/reports/data?type=sales')->assertOk()
+            ->assertJsonPath('rows.0.entryMethod', 'Mixed')->assertJsonPath('rows.0.manualLookupQty', 1);
+        $this->actingAs($this->cashier);
+        $this->postJson('/api/transactions', $this->sale(1, 'TXN-unknown'))->assertCreated();
+        $this->assertDatabaseHas('transaction_lines', ['transaction_uuid' => 'TXN-unknown', 'manualLookupQty' => null, 'entryMethod' => null]);
+        $barcode = $this->sale(1, 'TXN-barcode');
+        $barcode['items'][0]['manualLookupQty'] = 0;
+        $this->postJson('/api/transactions', $barcode)->assertCreated();
+        $this->assertDatabaseHas('transaction_lines', ['transaction_uuid' => 'TXN-barcode', 'manualLookupQty' => 0, 'entryMethod' => 'Barcode']);
+        $this->actingAs($this->manager)->getJson('/reports/data?type=sales')->assertOk()
+            ->assertJsonFragment(['entryMethod' => 'Unknown', 'manualLookupQty' => null]);
+    }
+
+    public function test_checkout_rejects_manual_lookup_count_above_sold_quantity(): void
+    {
+        $body = $this->sale();
+        $body['items'][0]['manualLookupQty'] = 2;
+        $this->postJson('/api/transactions', $body)->assertUnprocessable()->assertJsonValidationErrors('items');
+        $this->assertDatabaseCount('transactions', 0);
+    }
+
     public function test_invalid_quantities_unavailable_products_and_insufficient_stock_fail(): void
     {
         foreach ([0, -1, 1.5, 'bad', 6] as $qty) {

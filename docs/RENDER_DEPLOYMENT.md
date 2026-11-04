@@ -123,7 +123,7 @@ Do not set `DB_URL` or `DB_SOCKET` unless intentional: they can override/interfe
 
 8. Verify login/OTP, role permissions, inventory, purchasing/receiving, payments/webhooks, reports and printing against staging, then production. `/up` confirms PHP/Laravel boot only, not database or mail availability.
 
-There is no automatic seeding, `migrate:fresh`, `db:wipe`, reset or key generation. Leave `RUN_MIGRATIONS=false` for routine deploys. Only use its opt-in on a single instance after review. For first-time account provisioning, the existing interactive `php artisan accounts:superadmin your-email@example.com` command is available; imported databases should retain their existing administrator.
+There is no automatic seeding, `migrate:fresh`, `db:wipe`, reset or key generation. Leave `RUN_MIGRATIONS=false` for routine deploys. The sale entry method migration (`2026_11_04_000003_record_sale_entry_method.php`) is a scoped exception: startup applies it before serving requests because checkout writes its new columns. Only use the general migration opt-in on a single instance after review. For first-time account provisioning, the existing interactive `php artisan accounts:superadmin your-email@example.com` command is available; imported databases should retain their existing administrator.
 
 ## Storage and scaling
 
