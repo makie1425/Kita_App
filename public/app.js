@@ -379,7 +379,49 @@ class Component extends DCLogic {
     const compact=window.matchMedia("(max-width: 1023px)").matches;
     this.setState({compactNavigation:compact,...(!compact?{sidebarOpen:false}:{})});
   };
+  sessionFetch=async(url,options)=>{
+    const generation=this.sessionGeneration||0,authenticated=this.state.authStep==='in';
+    const response=await fetch(url,options);
+    const valid=()=>{if(authenticated&&generation!==(this.sessionGeneration||0))throw new Error('Session changed. Please sign in again.');};
+    valid();
+    const json=response.json.bind(response);
+    response.json=async()=>{
+      const body=await json();valid();
+      if(authenticated&&[401,419].includes(response.status)){
+        this.handleSessionResponse(response,body);
+        throw new Error(body.message||'Please sign in again.');
+      }
+      return body;
+    };
+    return response;
+  };
+  startSessionWatch=()=>{
+    clearInterval(this.sessionTimer);
+    this.sessionTimer=setInterval(()=>{if(!document.hidden)this.checkSession();},30000);
+  };
+  checkSession=async()=>{
+    if(this.state.authStep!=='in'||this.sessionChecking)return;
+    this.sessionChecking=true;
+    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),10000);
+    try{const response=await this.sessionFetch('/auth/session',{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'},signal:controller.signal});await response.json();}
+    catch(error){/* A network outage is not proof that the account was deactivated. */}
+    finally{clearTimeout(timer);this.sessionChecking=false;}
+  };
+  onSessionVisible=()=>{if(!document.hidden)this.checkSession();};
+  endClientSession=(message,csrfToken)=>{
+    this.sessionGeneration=(this.sessionGeneration||0)+1;
+    clearInterval(this.sessionTimer);
+    this.reportRequestId=(this.reportRequestId||0)+1;this.reportController?.abort();
+    this.purchaseLoadId=(this.purchaseLoadId||0)+1;this.stockRequestId=(this.stockRequestId||0)+1;
+    this.cartGeneration=(this.cartGeneration||0)+1;
+    this.confirmationResolve?.(false);this.confirmationResolve=null;
+    if(window.KITA_AUTH){window.KITA_AUTH.user=null;if(csrfToken)window.KITA_AUTH.csrfToken=csrfToken;}
+    this.setState({...this.emptySessionState,authStep:'login',role:null,screen:null,authenticatedUser:null,data:null,cart:[],newReqCart:[],accountsLocal:null,purchaseData:null,supplierAccountsData:null,inventoryHistory:null,reportResult:null,saDashboard:null,confirmation:null,manualLookupOpen:false,seniorPwdOpen:false,overrideLine:null,acctModalOpen:false,discountManagerPin:'',approvalPin:'',approvalManagerId:'',currentApprovalPin:'',newApprovalPin:'',confirmApprovalPin:'',loginUsername:'',loginPassword:'',otpEmail:'',otpCode:'',mgrNotificationsLocal:[],notificationUnread:0,mgrNotifOpen:false,toasts:[],loginError:message||'Please sign in again.'});
+  };
   componentDidMount() {
+    this.emptySessionState={...this.state};
+    window.addEventListener("online",this.checkSession);
+    document.addEventListener("visibilitychange",this.onSessionVisible);
     this.monitoringTimer=setInterval(()=>{if(!document.hidden&&this.state.role==='superadmin'&&this.state.screen==='saDashboard')this.reloadSaDashboard();},30000);
     if(window.KITA_AUTH?.user?.role==='admin')this.loadWorkspaces();
     this.previousAppState=this.state;
@@ -390,12 +432,12 @@ class Component extends DCLogic {
     if(sessionUser) this.enterApp(sessionUser.role,null,sessionUser);
 
   }
-  componentWillUnmount(){this.confirmationResolve?.(false);this.confirmationResolve=null; clearInterval(this.monitoringTimer); window.removeEventListener("resize",this.syncNavigationViewport); }
+  componentWillUnmount(){clearInterval(this.sessionTimer);window.removeEventListener("online",this.checkSession);document.removeEventListener?.("visibilitychange",this.onSessionVisible);this.sessionGeneration=(this.sessionGeneration||0)+1;this.confirmationResolve?.(false);this.confirmationResolve=null; clearInterval(this.monitoringTimer); window.removeEventListener("resize",this.syncNavigationViewport); }
   trackLoad=async work=>{
     this.setState(s=>({pendingLoads:(s.pendingLoads||0)+1}));
     try{return await work();}finally{this.setState(s=>({pendingLoads:Math.max(0,(s.pendingLoads||1)-1)}));}
   };
-  reloadCatalog=()=>this.trackLoad(()=>fetch(window.KITA_DATA_URL||'/api/kita-data',{headers:{Accept:"application/json"},credentials:"same-origin"}).then(async r=>{
+  reloadCatalog=()=>this.trackLoad(()=>this.sessionFetch(window.KITA_DATA_URL||'/api/kita-data',{headers:{Accept:"application/json"},credentials:"same-origin"}).then(async r=>{
     const m=await r.json(); this.handleSessionResponse(r,m); if(!r.ok||m.error) throw new Error(m.message||"Could not load data."); return m;
   }).then(m=>new Promise(resolve=>this.setState({
     data:m,dataError:"",productsLocal:m.PRODUCTS.map(p=>({...p})),categoriesLocal:m.CATEGORIES,
@@ -404,7 +446,7 @@ class Component extends DCLogic {
     fieldVersionHistoryLocal:m.FIELD_VERSION_HISTORY,suppliersLocal:m.SUPPLIERS,promotionsLocal:m.PROMOTIONS,checkoutPromotions:m.PROMOTIONS,
     rolesMatrix:this.state.rolesMatrix||this.defaultRolesMatrix(),mgrNotificationsLocal:this.state.mgrNotificationsLocal||[],
   },()=>resolve(m)))));
-  loadWorkspaces=()=>fetch('/api/workspaces',{credentials:'same-origin',headers:{Accept:'application/json'}}).then(async r=>{
+  loadWorkspaces=()=>this.sessionFetch('/api/workspaces',{credentials:'same-origin',headers:{Accept:'application/json'}}).then(async r=>{
     const body=await r.json();if(!r.ok)throw new Error(body.message||'Could not load workspaces.');
     this.setState({assignedWorkspaces:body.workspaces,currentWorkspace:body.current});
   }).catch(e=>this.toast(e.message,'error'));
@@ -413,7 +455,7 @@ class Component extends DCLogic {
     try{await this.authPost('/api/workspaces/select',{workspace_id});window.location.reload();}
     catch(error){this.toast(error.message,'error');}
   };
-  reloadAccounts=()=>this.trackLoad(()=>fetch("/api/accounts",{headers:{Accept:"application/json"},credentials:"same-origin"}).then(async r=>{
+  reloadAccounts=()=>this.trackLoad(()=>this.sessionFetch("/api/accounts",{headers:{Accept:"application/json"},credentials:"same-origin"}).then(async r=>{
     const body=await r.json(); this.handleSessionResponse(r,body); if(!r.ok) throw new Error(body.message||"Could not load accounts.");
       this.setState({accountsLocal:body.accounts}); if(this.state.role==='admin')this.loadWorkspaces(); return body.accounts;
   }));
@@ -438,9 +480,9 @@ class Component extends DCLogic {
     if(!e.repeat) this.doLogin();
   };
   backToPortalSelect=()=>this.setState({authStep:"login",pendingRole:null,loginUsername:"",loginPassword:"",loginError:""});
-  authPost=(url,payload,method="POST",signal,retried=false)=>this.trackLoad(()=>fetch(url,{method,signal,headers:{"Content-Type":"application/json","Accept":"application/json","X-CSRF-TOKEN":(window.KITA_AUTH&&window.KITA_AUTH.csrfToken)||document.querySelector('meta[name="csrf-token"]')?.content||""},credentials:"same-origin",body:JSON.stringify(payload)}).then(async r=>{
+  authPost=(url,payload,method="POST",signal,retried=false)=>this.trackLoad(()=>this.sessionFetch(url,{method,signal,headers:{"Content-Type":"application/json","Accept":"application/json","X-CSRF-TOKEN":(window.KITA_AUTH&&window.KITA_AUTH.csrfToken)||document.querySelector('meta[name="csrf-token"]')?.content||""},credentials:"same-origin",body:JSON.stringify(payload)}).then(async r=>{
     if(r.status===419&&!retried&&url===((window.KITA_AUTH&&window.KITA_AUTH.loginUrl)||'/login')){
-      const refresh=await fetch('/auth/csrf-token',{signal,credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}});
+      const refresh=await this.sessionFetch('/auth/csrf-token',{signal,credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}});
       const token=await refresh.json();
       if(!refresh.ok||!token.csrf_token)throw new Error('Your session expired. Refresh this page and sign in again.');
       window.KITA_AUTH=window.KITA_AUTH||{};window.KITA_AUTH.csrfToken=token.csrf_token;
@@ -487,13 +529,16 @@ class Component extends DCLogic {
   };
   backToPassword=()=>this.setState({authStep:"login",otpCode:"",otpEmail:"",loginError:""});
   enterApp=(role,dashboard,user)=>{
+    this.emptySessionState??={...this.state};
+    this.sessionGeneration=(this.sessionGeneration||0)+1;
+    this.startSessionWatch();
     if(user?.password_setup_required){window.location.assign("/password/setup");return;}
     role=String(role||"").toLowerCase().replace(/[ _-]/g,"");
     const d={cashier:"pos",manager:"mgrDashboard",admin:"admDashboard",superadmin:"saDashboard"}[role];
     if(!d || !user?.name){ this.setState({authStep:"login",role:null,screen:null,loginError:"Your session could not be loaded. Refresh the page and sign in again."}); return; }
 this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificationsLocal:[],notificationUnread:0,notificationNext:null,mgrNotifOpen:false},()=>{this.reloadNotifications();this.reloadCatalog().catch(error=>this.setState({dataError:error.message}));if(role==="superadmin")this.reloadSaDashboard();if(["manager","admin"].includes(role))this.reloadPurchasing().catch(()=>{});if(role!=="cashier") this.reloadAccounts().catch(error=>this.toast(error.message,"error"));});
   };
-  logout=()=>{ this.authPost((window.KITA_AUTH&&window.KITA_AUTH.logoutUrl)||"/logout",{}).then(res=>{ if(window.KITA_AUTH) window.KITA_AUTH.csrfToken=res.csrf_token; this.newSale(); this.setState({role:null,authenticatedUser:null,mgrNotificationsLocal:[],notificationUnread:0,mgrNotifOpen:false,data:null,accountsLocal:null,purchaseData:null,purchaseReceivingId:null,purchaseRequestDetail:null,newReqCart:[],cart:[],discountManagerPin:"",approvalPin:"",approvalManagerId:"",newApprovalPin:"",confirmApprovalPin:"",currentApprovalPin:"",refundTxn:null,authStep:"login",screen:null,pendingRole:null,loginUsername:"",loginPassword:"",otpEmail:"",loginError:""}); }).catch(error=>this.toast(error.message,"error")); };
+  logout=()=>{ this.authPost((window.KITA_AUTH&&window.KITA_AUTH.logoutUrl)||"/logout",{}).then(res=>{ if(window.KITA_AUTH) window.KITA_AUTH.csrfToken=res.csrf_token; this.endClientSession('',res.csrf_token); this.newSale(); this.setState({role:null,authenticatedUser:null,mgrNotificationsLocal:[],notificationUnread:0,mgrNotifOpen:false,data:null,accountsLocal:null,purchaseData:null,purchaseReceivingId:null,purchaseRequestDetail:null,newReqCart:[],cart:[],discountManagerPin:"",approvalPin:"",approvalManagerId:"",newApprovalPin:"",confirmApprovalPin:"",currentApprovalPin:"",refundTxn:null,authStep:"login",screen:null,pendingRole:null,loginUsername:"",loginPassword:"",otpEmail:"",loginError:""}); }).catch(error=>this.toast(error.message,"error")); };
   toggleSidebar=()=>this.setState(s=>({sidebarOpen:!s.sidebarOpen}),()=>{
     if(this.state.sidebarOpen && typeof document!=="undefined")document.querySelector("#app-sidebar .drawer-close")?.focus();
   });
@@ -539,7 +584,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),30000);
     try{
       const suffix=productId?'?'+new URLSearchParams({productId,quantity}):'';
-      const response=await fetch('/api/inventory/availability'+suffix,{headers:{Accept:'application/json'},credentials:'same-origin',cache:'no-store',signal:controller.signal});
+      const response=await this.sessionFetch('/api/inventory/availability'+suffix,{headers:{Accept:'application/json'},credentials:'same-origin',cache:'no-store',signal:controller.signal});
       const body=await response.json();this.handleSessionResponse(response,body);
       if(!response.ok)throw new Error(Object.values(body.errors||{})[0]?.[0]||body.message||'Cannot verify sellable stock. Try again.');
       if(actor!==this.state.authenticatedUser)throw new Error('Session changed. Select the product again.');
@@ -772,7 +817,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     this.setState({recallTraceError:'',recallTrace:null});
     try{
       const query=batchId?'batchId='+batchId:'search='+encodeURIComponent(this.state.recallSearch||'');
-      const r=await fetch('/api/inventory/recall-trace?'+query,{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}});
+      const r=await this.sessionFetch('/api/inventory/recall-trace?'+query,{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}});
       const data=await r.json();this.handleSessionResponse(r,data);if(!r.ok)throw new Error(data.message||'Trace could not be loaded.');this.setState({recallTrace:data});
     }catch(e){this.setState({recallTraceError:e.message});}
   };
@@ -855,7 +900,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     const actor=this.state.authenticatedUser;
     this.notificationsBusy=true;this.setState({notificationLoading:true,notificationError:''});
     try{
-      const response=await fetch('/api/notifications'+(append&&this.state.notificationNext?'?before='+this.state.notificationNext:''),{headers:{Accept:'application/json'},credentials:'same-origin'});
+      const response=await this.sessionFetch('/api/notifications'+(append&&this.state.notificationNext?'?before='+this.state.notificationNext:''),{headers:{Accept:'application/json'},credentials:'same-origin'});
       const body=await response.json();this.handleSessionResponse(response,body);
       if(!response.ok)throw new Error(body.message||'Unable to load notifications.');
       if(this.state.authenticatedUser!==actor||!this.state.role)return;
@@ -1581,7 +1626,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     const requestId=(this.purchaseLoadId||0)+1;this.purchaseLoadId=requestId;
     this.setState({purchaseLoading:true,purchaseError:""});
     try{
-      const response=await fetch('/api/purchasing',{headers:{Accept:'application/json'},credentials:'same-origin'});
+      const response=await this.sessionFetch('/api/purchasing',{headers:{Accept:'application/json'},credentials:'same-origin'});
       if(!(response.headers.get('content-type')||'').includes('application/json')){
         if([502,503,504].includes(response.status))throw new Error('The server is taking too long to load purchase records. Please retry in a moment.');
         throw new Error('Unable to load purchase records (HTTP '+response.status+'). Please refresh and try again.');
@@ -2156,7 +2201,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
   }
   loadSupplierAccounts=async()=>{
     this.setState({supplierAccountsLoading:true,supplierAccountsError:''});
-    try{const r=await fetch('/api/supplier-accounts',{headers:{Accept:'application/json'},cache:'no-store'});const body=await r.json();if(!r.ok)throw Error(body.message||'Unable to load supplier accounts.');this.setState({supplierAccountsData:body});}catch(e){this.setState({supplierAccountsError:e.message});}finally{this.setState({supplierAccountsLoading:false});}
+    try{const r=await this.sessionFetch('/api/supplier-accounts',{headers:{Accept:'application/json'},cache:'no-store'});const body=await r.json();if(!r.ok)throw Error(body.message||'Unable to load supplier accounts.');this.setState({supplierAccountsData:body});}catch(e){this.setState({supplierAccountsError:e.message});}finally{this.setState({supplierAccountsLoading:false});}
   };
   buildSupplierAccounts(){
     const h=React.createElement,s=this.state,d=s.supplierAccountsData;
@@ -2237,7 +2282,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
   buildMgrPO(){ return this.buildPurchaseReceiving(); }
   loadInventoryWorkflows=async()=>{
     this.setState({workflowLoading:true,workflowError:''});
-    try{const r=await fetch('/api/inventory/workflows',{headers:{Accept:'application/json'}});const body=await r.json();if(!r.ok)throw new Error(body.message||'Could not load inventory workflows');this.setState({inventoryWorkflows:body});}
+    try{const r=await this.sessionFetch('/api/inventory/workflows',{headers:{Accept:'application/json'}});const body=await r.json();if(!r.ok)throw new Error(body.message||'Could not load inventory workflows');this.setState({inventoryWorkflows:body});}
     catch(e){this.setState({workflowError:e.message});}finally{this.setState({workflowLoading:false});}
   };
   saveInventoryWorkflow=async(path,payload)=>{
@@ -2521,7 +2566,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     const requestId=(this.inventoryLoadId||0)+1;this.inventoryLoadId=requestId;
     this.inventoryController?.abort();const controller=new AbortController();this.inventoryController=controller;
     this.setState({inventoryHistoryLoading:true,inventoryHistoryError:''});
-    try{const query=new URLSearchParams(Object.entries(filters).filter(([,v])=>v));const r=await fetch('/api/inventory-history?'+query,{headers:{Accept:'application/json'},signal:controller.signal});const body=await r.json();if(!r.ok)throw new Error(body.message||'Could not load inventory records.');if(this.inventoryLoadId===requestId)this.setState({inventoryHistory:body,inventoryLoadedFilters:{...filters}});}
+    try{const query=new URLSearchParams(Object.entries(filters).filter(([,v])=>v));const r=await this.sessionFetch('/api/inventory-history?'+query,{headers:{Accept:'application/json'},signal:controller.signal});const body=await r.json();if(!r.ok)throw new Error(body.message||'Could not load inventory records.');if(this.inventoryLoadId===requestId)this.setState({inventoryHistory:body,inventoryLoadedFilters:{...filters}});}
     catch(e){if(this.inventoryLoadId===requestId)this.setState({inventoryHistoryError:e.message});}finally{if(this.inventoryLoadId===requestId)this.setState({inventoryHistoryLoading:false});}
   };
   setInventoryHistoryFilter=(key,value)=>{
@@ -3017,7 +3062,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     const timeout=setTimeout(()=>controller.abort(),90000);
     this.setState({reportLoading:true,reportError:''});
     try{
-      const response=await fetch('/reports/data?'+new URLSearchParams(Object.entries(filters).filter(([,v])=>v)),{headers:{Accept:'application/json'},signal:controller.signal,cache:'no-store'});
+      const response=await this.sessionFetch('/reports/data?'+new URLSearchParams(Object.entries(filters).filter(([,v])=>v)),{headers:{Accept:'application/json'},signal:controller.signal,cache:'no-store'});
       const body=await response.json();if(!response.ok)throw new Error(body.message||'Could not load report.');
       if(!Array.isArray(body.rows)||!body.columns||typeof body.columns!=='object')throw new Error('The report response was incomplete. Please retry.');
       if(this.reportRequestId===requestId)this.setState(s=>({reportLoading:false,reportResult:body,reportAppliedFilters:filters,tableViews:{...s.tableViews,'generated-report':{...s.tableViews?.['generated-report'],page:1,query:''}}}));
@@ -3236,10 +3281,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
 
   // ---- Super Admin screens ----
   handleSessionResponse=(response,body)=>{
-    if(response.status===401 && body.deactivated){
-      if(window.KITA_AUTH){window.KITA_AUTH.user=null;window.KITA_AUTH.csrfToken=body.csrf_token;}
-      this.setState({authStep:"login",role:null,screen:null,authenticatedUser:null,mgrNotificationsLocal:[],notificationUnread:0,mgrNotifOpen:false,data:null,accountsLocal:null,purchaseData:null,purchaseReceivingId:null,newReqCart:[],saDashboard:null,loginPassword:"",otpCode:"",loginError:body.message});
-    }
+    if(this.state.authStep==='in'&&[401,419].includes(response.status))this.endClientSession(body?.deactivated?body.message:'Your session has ended. Please sign in again.',body?.csrf_token);
   };
   confirmAccountStatus=account=>this.requestConfirmation(`${account.status==="Inactive"?"Deactivate":"Activate"} Account?\n\nAre you sure you want to ${account.status==="Inactive"?"deactivate":"reactivate"} ${account.name}?${account.status==="Inactive"?"\n\nThis user will no longer be able to log in to KITA until their account is reactivated.":""}`);
   changeAccountStatus=async account=>{
@@ -3256,7 +3298,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     this.monitoringBusy=true;
     this.setState({saLoading:true,saError:""});
     try{
-      const response=await fetch("/api/super-admin/dashboard",{headers:{Accept:"application/json"},credentials:"same-origin"});
+      const response=await this.sessionFetch("/api/super-admin/dashboard",{headers:{Accept:"application/json"},credentials:"same-origin"});
       const body=await response.json();this.handleSessionResponse(response,body);
       if(!response.ok)throw new Error(body.message||"Unable to retrieve system performance information.");
       if(this.state.role==="superadmin")this.setState({saDashboard:body});
@@ -3264,7 +3306,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
       finally{this.monitoringBusy=false;this.setState({saLoading:false});}
   };
   monitoringDetail=async id=>{
-    try{const r=await fetch('/api/super-admin/errors/'+id,{credentials:'same-origin',headers:{Accept:'application/json'}});
+    try{const r=await this.sessionFetch('/api/super-admin/errors/'+id,{credentials:'same-origin',headers:{Accept:'application/json'}});
       const body=await r.json();this.handleSessionResponse(r,body);if(!r.ok)throw new Error(body.message||'Unable to load error.');
       this.setState({monitoringError:body.error});
     }catch(e){this.toast(e.message,'error');}
@@ -3330,7 +3372,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
   loadSaRecords=async(kind)=>{
     this.setState({saRecordsError:'',saRecordsBusy:true});
     try { const query=kind==='audit'?'?'+new URLSearchParams(this.state.auditFilters||{}):'';
-      const r=await fetch(kind==='audit'?'/api/super-admin/audit'+query:'/api/backups',{credentials:'same-origin',headers:{Accept:'application/json'}});
+      const r=await this.sessionFetch(kind==='audit'?'/api/super-admin/audit'+query:'/api/backups',{credentials:'same-origin',headers:{Accept:'application/json'}});
       const body=await r.json();this.handleSessionResponse(r,body);if(!r.ok)throw new Error(body.message||'Unable to load records.');
       this.setState(kind==='audit'?{saAuditData:body}:{saBackupData:body,saBackupTime:body.schedule,saBackupRetention:String(body.retention_days)});
     }catch(e){this.setState({saRecordsError:e.message});}finally{this.setState({saRecordsBusy:false});}

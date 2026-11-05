@@ -122,6 +122,10 @@ class AccountController extends Controller
                 if (empty($data['password'])) {
                     unset($data['password']);
                 }
+                if ($deactivating && $user->isActive()) {
+                    $user->forceFill(['credential_version'=>(int)$user->credential_version+1, 'remember_token'=>\Illuminate\Support\Str::random(60)]);
+                    DB::table('login_otps')->where('email',$user->email)->whereNull('used_at')->update(['used_at'=>now()]);
+                }
                 $user->fill($data)->save();
                 $this->audit($request, $user, 'Updated account', $before, $this->account($user));
 

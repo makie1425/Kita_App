@@ -69,6 +69,10 @@ Route::view('/payment/success', 'payment-success')->name('payment.success');
 Route::view('/payment/cancelled', 'payment-cancelled')->name('payment.cancelled');
 
 Route::post('/login', [OtpLoginController::class, 'login'])->middleware('guest')->name('login');
+Route::get('/auth/session', function (\Illuminate\Http\Request $request) {
+    if (!$request->user()) return response()->json(['message'=>'Please sign in again.'],401)->header('Cache-Control','private, no-store');
+    return response()->json(['active'=>true])->header('Cache-Control','private, no-store');
+});
 Route::get('/auth/csrf-token', function () {
     return response()->json(['csrf_token' => csrf_token()])->header('Cache-Control', 'private, no-store');
 })->middleware('throttle:30,1');

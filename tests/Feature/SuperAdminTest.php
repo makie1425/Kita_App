@@ -60,6 +60,28 @@ class SuperAdminTest extends TestCase
         $this->assertGuest(); // Password authentication still requires the email OTP.
     }
 
+    public function test_deactivate_then_reactivate_does_not_restore_old_sessions(): void
+    {
+        $super=User::factory()->create(['role'=>'superadmin']);
+        $user=User::factory()->create(['role'=>'admin']);
+        $this->assignWorkspace(User::factory()->create(['role'=>'manager']),$super,$user);
+        $version=(int)$user->credential_version;
+        $this->actingAs($super)->patchJson('/api/accounts/admin/'.$user->id,['status'=>'Inactive'])->assertOk();
+        $this->assertSame($version+1,(int)$user->fresh()->credential_version);
+        $this->patchJson('/api/accounts/admin/'.$user->id,['status'=>'Active'])->assertOk();
+        $this->actingAs($user->fresh())->withSession(['credential_version'=>$version])->getJson('/auth/session')->assertUnauthorized()->assertJsonPath('session_revoked',true);
+        $this->assertGuest();
+        $this->actingAs($user->fresh())->withSession(['credential_version'=>$version+1])->getJson('/auth/session')->assertOk()->assertJsonPath('active',true)->assertHeader('Cache-Control','no-store, private');
+    }
+
+    public function test_session_probe_rejects_guests_and_inactive_accounts(): void
+    {
+        $this->getJson('/auth/session')->assertUnauthorized();
+        $user=User::factory()->create(['status'=>'Inactive']);
+        $this->actingAs($user)->getJson('/auth/session')->assertUnauthorized()->assertJsonPath('deactivated',true);
+        $this->assertGuest();
+    }
+
     public function test_revoked_session_is_logged_out_for_api_and_page_requests(): void
     {
         $user = User::factory()->create(['status' => 'Active']);

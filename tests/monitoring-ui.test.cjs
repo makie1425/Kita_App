@@ -4,7 +4,7 @@ const fs=require('node:fs');
 const vm=require('node:vm');
 const source=fs.readFileSync('public/app.js','utf8');
 function setup(){
- const context={React:{createElement:(tag,props,...children)=>({tag,props,children})},DCLogic:class{},window:{},document:{hidden:false},console,URLSearchParams,setTimeout,clearTimeout,setInterval,clearInterval};
+ const context={React:{createElement:(tag,props,...children)=>({tag,props,children})},DCLogic:class{},window:{},document:{hidden:false},console,AbortController,URLSearchParams,setTimeout,clearTimeout,setInterval,clearInterval};
  vm.createContext(context);vm.runInContext(source+'\nglobalThis.App=Component;',context);
  const app=new context.App();app.setState=function(value){Object.assign(this.state,typeof value==='function'?value(this.state):value);};
  return {app,context};
@@ -192,4 +192,25 @@ test('Admin and Manager navigation distinguish requests, orders and supplier bal
   assert.ok(items.some(i=>i.label==='Supplier Balances'));assert.ok(items.some(i=>i.label==='Suppliers'));
   if(role==='manager')assert.ok(items.some(i=>i.label==='Create Purchase Request'));
  }
+});
+
+test('session failure clears cart and secrets but ordinary permission errors do not log out',()=>{
+ const {app,context}=setup();context.window.KITA_AUTH={user:{name:'Cashier'}};
+ Object.assign(app.state,{authStep:'in',role:'cashier',cart:[{productId:1}],discountManagerPin:'1234',purchaseData:{secret:true}});
+ app.handleSessionResponse({status:403},{message:'Forbidden'});assert.equal(app.state.authStep,'in');
+ app.handleSessionResponse({status:401},{deactivated:true,message:'Account deactivated',csrf_token:'new'});
+ assert.equal(app.state.authStep,'login');assert.equal(app.state.cart.length,0);assert.equal(app.state.discountManagerPin,'');assert.equal(app.state.purchaseData,null);assert.equal(context.window.KITA_AUTH.user,null);
+});
+test('late responses cannot restore data after session revocation',async()=>{
+ const {app,context}=setup();app.state.authStep='in';let resolve;
+ context.fetch=()=>new Promise(r=>resolve=r);
+ const request=app.sessionFetch('/api/kita-data');
+ app.endClientSession('Signed out');resolve({status:200,json:async()=>({secret:true})});
+ await assert.rejects(request,/Session changed/);
+});
+test('session check ignores network outages and detects unauthorized reconnect',async()=>{
+ const {app,context}=setup();app.state.authStep='in';
+ context.fetch=async()=>{throw Error('offline');};await app.checkSession();assert.equal(app.state.authStep,'in');
+ context.fetch=async()=>({status:401,json:async()=>({deactivated:true,message:'Account deactivated'})});
+ await app.checkSession();assert.equal(app.state.authStep,'login');assert.equal(app.state.loginError,'Account deactivated');
 });
