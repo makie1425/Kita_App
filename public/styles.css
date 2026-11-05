@@ -1947,3 +1947,15 @@ body:has(.inventory-batch-dialog[open]){overflow:hidden}
 .po-low-stock-list{display:grid;gap:6px;max-height:150px;overflow-y:auto;margin-top:8px}
 .po-low-stock-list button{display:grid;gap:4px;padding:10px;text-align:left;border:1px solid #fecdca;border-radius:8px;background:#fff;color:#b42318;cursor:pointer;font:inherit}
 .po-low-stock-list button:hover,.po-low-stock-list button:focus-visible{background:#fee4e2;outline:2px solid #b42318;outline-offset:-2px}
+
+/* Supplier records: stable columns, readable amounts and compact remarks. */
+.supplier-records-page .record-list table { min-width: 1350px; }
+.supplier-records-page .record-list th { text-align: left; white-space: nowrap; }
+.supplier-records-page .record-list th:nth-child(7),
+.supplier-records-page .record-list th:nth-child(8) { text-align: right; }
+.supplier-records-page .record-list th:last-child { text-align: center; }
+.supplier-records-page .record-list td:first-child { min-width: 160px; max-width: 220px; overflow-wrap: anywhere; }
+.supplier-records-page .record-list td:nth-child(6) { min-width: 130px; max-width: 180px; overflow-wrap: anywhere; }
+.supplier-records-page .record-list td:last-child .kita-button { padding: 8px 16px; white-space: nowrap; }
+.supplier-record-remarks { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; min-width: 200px; max-width: 280px; }
+.supplier-record-full-remarks { white-space: pre-wrap; overflow-wrap: anywhere; }

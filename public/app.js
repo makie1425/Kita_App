@@ -3024,6 +3024,16 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
       ]),
     ]);
   }
+  supplierRecordDetails(){
+    const h=React.createElement,row=this.state.supplierRecordDetail;if(!row)return null;
+    const close=()=>this.setState({supplierRecordDetail:null});
+    return h('dialog',{className:'purchase-details-dialog po-order-dialog','aria-labelledby':'supplier-record-title',ref:node=>{if(node&&!node.open)node.showModal();},onCancel:e=>{e.preventDefault();close();}},[
+      h('header',{className:'po-dialog-header'},[h('h2',{id:'supplier-record-title'},'Supplier Record'),btn('Close',close)]),
+      h('div',{className:'po-dialog-body'},[
+        table(['Field','Details'],Object.entries({'Supplier Name':row.supplier,'PO Number':row.reportPo,'Receipt ID':row.receiptId,'Type':row.kind,'Entry Date':row.date,'Recorded By':row.manager,'Document / Reference':row.reference,'Purchase Value (PHP)':peso(row.debit||0),'Historical Payment / Credit (PHP)':peso(row.credit||0)}).map(([label,value])=>tr([td(label),td(value||'-')],label))),
+        h('h3',null,'Remarks'),h('p',{className:'supplier-record-full-remarks'},row.remarks||'No remarks.'),h('p',null,'The receipt report includes the item details.')]),
+      h('footer',{className:'dialog-actions'},[row.receiptId?h('a',{className:'kita-button',href:'/receipts/'+encodeURIComponent(row.receiptId)+'/report',target:'_blank',rel:'noopener'},'Print Report'):null,btn('Close',close)])]);
+  }
   reportReceiptDetails(){
     const h=React.createElement,row=this.state.reportReceiptDetail;if(!row)return null;
     const close=()=>this.setState({reportReceiptDetail:null});
@@ -3052,9 +3062,10 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     schemas.outstanding_orders=schemas.purchase_orders;
     schemas.purchase_orders={'PO Number':'reportPo','Batch':'batch','Receipt ID':'receivingId','Item Code':'productId','Item':'name','Stock Unit':'unit','Received Qty':'deliveredQty','Unit Cost (PHP)':'unitCost','Total Cost (PHP)':'amount','Supplier':'supplier','Received By':'manager','Date Received':'date','Inspection Remarks':'remarks'};
     schemas.purchases={'Receipt Date':'date','PO Number':'reportPo','Receipt ID':'receivingId','Supplier':'supplier','Item':'name','Accepted Qty':'deliveredQty','Batch':'batchNumber'};
-    schemas.supplier_book={'Entry Date':'date','Supplier':'supplier','Type':'kind','PO Number':'reportPo','Document / Reference':'reference','Purchase Debit (PHP)':'debit','Payment / Credit (PHP)':'credit'};
+    schemas.supplier_book={'Supplier Name':'supplier','PO Number':'reportPo','Receipt ID':'receiptId','Type':'kind','Entry Date':'date','Recorded By':'manager','Purchase Value (PHP)':'debit','Historical Payment / Credit (PHP)':'credit','Remarks':'remarks'};
     schemas.payables={'Receipt Date':'date','PO Number':'reportPo','Supplier':'supplier','Item':'name','Missing Qty':'missingQty','Damaged Qty':'damagedQty','Supplier Balance (PHP)':'balance','Status':'status'};
     const r=loaded||{title:'Report results',columns:schemas[f.type]||{'PO Number':'reportPo','Supplier':'supplier','Item':'name','Ordered Qty':'orderedQty','Outstanding Qty':'outstandingQty'},rows:[],labels:{},summary:{}};
+    const displayColumns=resultType==='supplier_book'?schemas.supplier_book:r.columns;
     const appliedLabels=Object.entries(r?.labels||{}).filter(([key])=>key!=='Type').map(([key,value])=>key+': '+value).join(', ');
     const emptyMessage=h('div',{className:'report-table-message',role:s.reportError?'alert':'status','aria-live':'polite'},s.reportLoading?'Loading report records. Please wait...':s.reportError?'Unable to update the report. '+s.reportError:!loaded?'Choose your filters, then click Refresh to load the report.':'No results found'+(appliedLabels?' for '+appliedLabels:'')+'. Change or clear the filters and try again.');
     const reportGroups=[
@@ -3072,7 +3083,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     const labelFor=(options,value)=>options.find(([id])=>String(id)===String(value))?.[1]||value;
     const url=format=>'/reports/data?'+new URLSearchParams({...Object.fromEntries(Object.entries(s.reportAppliedFilters||{}).filter(([,v])=>v)),format});
     const filterButton=(key,label,active,disabled=false)=>h('button',{key,type:'button',className:'report-filter-button'+(active?' is-selected':''),'aria-expanded':open===key,'aria-controls':'report-filter-options',disabled,onClick:()=>this.setState({reportFilterOpen:open===key?null:key}),title:disabled?'Choose a category first':undefined},[label,h('span',{'aria-hidden':true},open===key?'\u25b4':'\u25be')]);
-    return h('div',{className:'reports-page'},[moduleTitle('Reports'),this.reportReceiptDetails(),
+    return h('div',{className:'reports-page'+(resultType==='supplier_book'?' supplier-records-page':'')},[moduleTitle('Reports'),this.reportReceiptDetails(),this.supplierRecordDetails(),
       ['purchase_orders','outstanding_orders','purchases','supplier_book','payables'].includes(f.type)?h('label',{className:'purchase-notes'},[f.type==='purchase_orders'?'Received by (exact name)':'Requested / Recorded by (exact name)',h('input',{value:f.manager||'',onChange:e=>this.setReportFilter('manager',e.target.value)})]):null,
       f.type==='expiry'?h('div',{className:'expiry-quick-filters',role:'group','aria-label':'Expiration status filters'},[
         ...[['','All'],['Nearly expired','Near Expiry'],['Expired','Expired']].map(([value,label])=>h('button',{key:label,type:'button',className:'report-type-button'+((f.expiryStatus||'')===value?' is-selected':''),'aria-pressed':(f.expiryStatus||'')===value,onClick:()=>this.setReportFilter('expiryStatus',value)},label)),
@@ -3114,7 +3125,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
         h('p',{className:'report-filter-hint'},Object.entries(r.labels||{}).map(([key,value])=>key+': '+value).join(' | ')),
         h('div',{className:'report-summary'},Object.entries(r.summary||{}).map(([label,value])=>h('div',{key:label,className:'report-metric'},[h('span',null,label),h('strong',null,value)]))),
         loaded&&(s.reportAppliedFilters?.type||f.type)==='sales'?this.buildReportCharts(r.rows):null,
-        this.recordTable('generated-report',[...Object.keys(r.columns),...(resultType==='purchase_orders'?['Actions']:[])],r.rows.map((row,i)=>tr([...Object.values(r.columns).map(key=>td(row[key]==null?'-':['reportPo','poId'].includes(key)?(resultType==='purchase_orders'?row[key]:this.purchaseReportLink(row[key])):key==='status'?((s.reportAppliedFilters?.type||f.type)==='expiry'?h('span',{className:'expiry-status expiry-status--'+String(row[key]).toLowerCase()},row[key]):badge(row[key])):(r.moneyKeys||[]).includes(key)?Number(row[key]).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}):row[key],(r.numericKeys||[]).includes(key)?{textAlign:'right',fontVariantNumeric:'tabular-nums'}:key==='reference'?{fontFamily:'monospace'}:{})),...(resultType==='purchase_orders'?[td(btn('View',()=>this.setState({reportReceiptDetail:row})))]:[])],i)),{emptyMessage,externalSearch:true}),
+        this.recordTable('generated-report',[...Object.keys(displayColumns),...(['purchase_orders','supplier_book'].includes(resultType)?['Actions']:[])],r.rows.map((row,i)=>tr([...Object.values(displayColumns).map(key=>td(row[key]==null?'-':resultType==='supplier_book'&&key==='remarks'?h('span',{className:'supplier-record-remarks',title:row[key]},row[key]):['reportPo','poId'].includes(key)?(['purchase_orders','supplier_book'].includes(resultType)?row[key]:this.purchaseReportLink(row[key])):key==='status'?(resultType==='expiry'?h('span',{className:'expiry-status expiry-status--'+String(row[key]).toLowerCase()},row[key]):badge(row[key])):(r.moneyKeys||[]).includes(key)?Number(row[key]).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}):row[key],{...((r.numericKeys||[]).includes(key)?{textAlign:'right',fontVariantNumeric:'tabular-nums'}:{}),...(resultType==='supplier_book'&&['reportPo','receiptId','date'].includes(key)?{whiteSpace:'nowrap'}:{})})),...(['purchase_orders','supplier_book'].includes(resultType)?[td(btn('View',()=>this.setState(resultType==='supplier_book'?{supplierRecordDetail:row}:{reportReceiptDetail:row})),{textAlign:'center'})]:[])],i)),{emptyMessage,externalSearch:true}),
         !r.rows.length&&activeCount?h('div',{className:'action-group'},[h('span',null,'Try removing a filter to see more records.'),btn('Clear all filters',this.resetReportFilters)]):null,
 
         h('p',{className:'report-filter-hint'},r.note)
