@@ -81,7 +81,7 @@
         <div class="nav-group">
           <sc-if value="{{ grp.label }}"><div class="nav-group__label">{{ grp.label }}</div></sc-if>
           <sc-for list="{{ grp.items }}" as="it" hint-placeholder-count="2">
-            <button type="button" class="{{ it.className }}" aria-current="{{ it.current }}" onClick="{{ it.go }}"><span class="nav-icon">{{ it.icon }}</span><span>{{ it.label }}</span></button>
+            <button type="button" class="{{ it.className }}" aria-current="{{ it.current }}" onClick="{{ it.go }}"><span class="nav-icon" aria-hidden="true">{{ it.icon }}</span><span class="nav-label">{{ it.label }}</span></button>
           </sc-for>
         </div>
       </sc-for>

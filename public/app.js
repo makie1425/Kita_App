@@ -165,10 +165,39 @@ function td(children, style){ return React.createElement("td",{style:Object.assi
 function tr(children,key){ return React.createElement("tr",{key},children); }
 function uiIcon(name){
   const paths={grid:"M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z",box:"M3 7l9-4 9 4v10l-9 4-9-4z M3 7l9 4 9-4 M12 11v10",cart:"M3 3h2l3 12h10l3-8H6 M9 20h.01 M18 20h.01",users:"M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8 M17 4a4 4 0 0 1 0 8 M22 21v-2a4 4 0 0 0-3-4",file:"M14 2H5v20h14V7z M14 2v6h5 M8 12h8 M8 16h6",chart:"M4 3v17h17 M8 15v-4 M13 15V7 M18 15V4",shield:"M12 3l8 3v6c0 5-8 9-8 9s-8-4-8-9V6z M8 12l3 3 5-6",tag:"M3 3h8l10 10-8 8L3 11z M7 7h.01",search:"M21 21l-5-5 M10 3a7 7 0 1 0 0 14 7 7 0 0 0 0-14",clock:"M12 8v5l3 2 M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18"};
+  Object.assign(paths,{
+    clipboard:'M9 3H6a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2h-3 M9 2h6v4H9z M8 11h8 M8 15h8 M8 19h5',
+    clipboardCheck:'M9 3H6a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2h-3 M9 2h6v4H9z M8 14l3 3 5-6',
+    clipboardX:'M9 3H6a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2h-3 M9 2h6v4H9z M9 11l6 6 M15 11l-6 6',
+    filePlus:'M14 2H5v20h14V7z M14 2v6h5 M8 14h8 M12 10v8',
+    receiving:'M3 8l9-4 9 4v12H3z M3 8l9 4 9-4 M12 12v8 M12 1v7 M9 5l3 3 3-3',
+    building:'M4 22V5l8-3 8 3v17 M2 22h20 M8 7h2 M14 7h2 M8 11h2 M14 11h2 M8 15h2 M14 15h2 M10 22v-4h4v4',
+    wallet:'M3 6V4h16v4 M3 6v14h18V8H5a2 2 0 0 1-2-2 M21 12h-6v4h6 M17 14h.01',
+    receipt:'M5 2l2 2 2-2 3 2 3-2 2 2 2-2v20l-2-2-2 2-3-2-3 2-2-2-2 2z M8 8h8 M8 12h8 M8 16h5',
+    refund:'M8 3H3v5 M3 3l5 5 M4 13a8 8 0 1 0 8-9 M9 12h6 M9 16h4',
+    barcode:'M3 3v18 M6 3v18 M10 3v18 M12 3v18 M16 3v18 M19 3v18 M21 3v18',
+    archive:'M3 3h18v5H3z M5 8v13h14V8 M10 12h4',
+    report:'M14 2H5v20h14V7z M14 2v6h5 M8 18v-4 M12 18v-7 M16 18v-5',
+    bell:'M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9 M10 21h4',
+    database:'M3 6a9 4 0 1 0 18 0 9 4 0 1 0-18 0 M3 6v12c0 5 18 5 18 0V6 M3 12c0 5 18 5 18 0',
+    activity:'M3 12h4l3-8 4 16 3-8h4'
+  });
   return React.createElement("svg",{className:"ui-icon",width:20,height:20,viewBox:"0 0 24 24",fill:"none",stroke:"currentColor",strokeWidth:1.7,strokeLinecap:"round",strokeLinejoin:"round","aria-hidden":true,focusable:false},React.createElement("path",{d:paths[name]||paths.file}));
 }
 function navigationIcon(key){
-  return uiIcon(/Dashboard|Reports/.test(key)?"chart":/Account|Cashiers|Managers|Admins|Supplier/.test(key)?"users":/Security|Roles/.test(key)?"shield":/Categories|Promotions/.test(key)?"tag":/Inventory|Registration|archive|PO|Receiving/.test(key)?"box":/pos|Request|Purchased/.test(key)?"cart":/shift|Backup/.test(key)?"clock":"file");
+  const icons={
+    pos:'cart',refunds:'refund',shift:'receipt',
+    mgrDashboard:'grid',admDashboard:'grid',saDashboard:'grid',
+    mgrRequest:'filePlus',mgrRequestView:'clipboard',admPurchasedOrders:'clipboard',
+    admForwarded:'clipboardCheck',admDisapproved:'clipboardX',purchaseOrders:'file',
+    mgrPO:'receiving',admReceivingApprovals:'receiving',
+    supplierAccounts:'wallet',mgrSupplier:'building',admSuppliers:'building',mgrPurchaseHistory:'receipt',
+    mgrInventory:'box',mgrCategories:'tag',mgrRegistration:'barcode',archive:'archive',
+    admReports:'report',mgrCashiers:'users',admManagers:'users',saAdmins:'users',
+    mgrPromotions:'tag',admInventoryApprovals:'clipboardCheck',admNotifications:'bell',
+    saRoles:'shield',saBackup:'database',saAudit:'activity'
+  };
+  return uiIcon(icons[key]||'file');
 }
 function kpi(label, value, sub, color, tooltip){
   return React.createElement("div",{className:"kita-card kpi-card"},[
