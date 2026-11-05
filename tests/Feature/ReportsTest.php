@@ -82,8 +82,12 @@ class ReportsTest extends TestCase
         $this->assertStringNotContainsString('Unowned',json_encode($general));
         $this->get('/reports/data?type=general'.$dates.'&format=print')->assertOk()->assertSee('General Report');
         $archive=$this->get('/reports/data?type=general'.$dates.'&format=csv')->assertOk();
-        $zip=new \ZipArchive;$zip->open($archive->baseResponse->getFile()->getPathname());
-        $this->assertSame(12,$zip->numFiles);$this->assertStringContainsString('Transaction No.',$zip->getFromName('sales.csv'));$zip->close();
+        $archive->assertHeader('Content-Type','text/csv; charset=UTF-8');
+        $csv=file_get_contents($archive->baseResponse->getFile()->getPathname());
+        $this->assertStringContainsString('Transaction No.',$csv);
+        $this->assertStringContainsString('Current Inventory',$csv);
+        $this->assertStringNotContainsString('Unowned',$csv);
+        $this->assertStringContainsString('2026-10-06',$csv);
         $excel=$this->get('/reports/data?type=general'.$dates.'&format=xlsx')->assertOk();
         $zip=new \ZipArchive;$zip->open($excel->baseResponse->getFile()->getPathname());
         $this->assertSame(12,substr_count($zip->getFromName('xl/workbook.xml'),'<sheet '));$zip->close();

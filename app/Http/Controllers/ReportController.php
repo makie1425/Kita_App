@@ -264,7 +264,7 @@ class ReportController extends Controller
     {
         extract($data);
         if (!empty($data['sections']) && $request->input('format') === 'csv') {
-            return response()->download(\App\Services\GeneralReportExport::csv($data), 'kita-general.zip', ['Content-Type'=>'application/zip','Cache-Control'=>'no-store'])->deleteFileAfterSend(true);
+            return response()->download(\App\Services\GeneralReportExport::csv($data), 'kita-general-'.now()->timezone('Asia/Manila')->format('Y-m-d').'.csv', ['Content-Type'=>'text/csv; charset=UTF-8','Cache-Control'=>'no-store'])->deleteFileAfterSend(true);
         }
         if ($request->input('format') === 'xlsx') {
             return response()->download((!empty($data['sections']) ? \App\Services\GeneralReportExport::excel($data) : ExcelReport::create($data)), 'kita-'.$type.'-'.now()->timezone('Asia/Manila')->format('Y-m-d').'.xlsx', [
@@ -285,7 +285,7 @@ class ReportController extends Controller
                     }, array_values($columns)));
                 }
                 fclose($out);
-            }, 'kita-'.$type.'-'.now()->format('Y-m-d').'.csv', ['Content-Type' => 'text/csv; charset=UTF-8', 'Cache-Control' => 'no-store']);
+            }, 'kita-'.$type.'-'.now()->timezone('Asia/Manila')->format('Y-m-d').'.csv', ['Content-Type' => 'text/csv; charset=UTF-8', 'Cache-Control' => 'no-store']);
         }
         $data = compact('title', 'columns', 'rows', 'note', 'generated', 'labels', 'summary', 'moneyKeys', 'numericKeys', 'preparedBy') + ['sections'=>$sections ?? []];
         if ($request->input('format') === 'pdf') {

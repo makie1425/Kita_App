@@ -4,7 +4,7 @@ const fs=require('node:fs');
 const vm=require('node:vm');
 const source=fs.readFileSync('public/app.js','utf8');
 function setup(){
- const context={React:{createElement:(tag,props,...children)=>({tag,props,children})},DCLogic:class{},window:{},document:{hidden:false},console,setTimeout,clearTimeout,setInterval,clearInterval};
+ const context={React:{createElement:(tag,props,...children)=>({tag,props,children})},DCLogic:class{},window:{},document:{hidden:false},console,URLSearchParams,setTimeout,clearTimeout,setInterval,clearInterval};
  vm.createContext(context);vm.runInContext(source+'\nglobalThis.App=Component;',context);
  const app=new context.App();app.setState=function(value){Object.assign(this.state,typeof value==='function'?value(this.state):value);};
  return {app,context};
@@ -149,4 +149,16 @@ test('General report renders separate original-column tables including empty sec
  assert.equal(result.length,2);assert.deepEqual(Array.from(calls[0].headers),['Transaction No.','Line total (PHP)']);
  assert.equal(calls[0].key,'general-sales');assert.equal(calls[1].key,'general-inventory');assert.equal(calls[1].options.emptyMessage,'No records for the selected filters.');
  assert.ok(JSON.stringify(calls[0].rows).includes('1,234.50'));
+});
+
+test('report downloads use applied dates and cannot run with stale filters',()=>{
+ const {app}=setup();app.state.data={PRODUCTS:[],CATEGORIES:[],SUPPLIERS:[],BRANDS:[],SUBCATEGORIES:[]};
+ app.state.reportFilters={type:'sales',from:'2026-10-06',to:'2026-10-06'};app.state.reportAppliedFilters={...app.state.reportFilters};
+ app.state.reportResult={title:'Sales',columns:{Amount:'amount'},rows:[],summary:{},labels:{},moneyKeys:['amount'],numericKeys:['amount']};
+ const nodes=value=>!value?[]:Array.isArray(value)?value.flatMap(nodes):typeof value==='object'?[value,...nodes(value.children)]:[];
+ let links=nodes(app.buildAdmReports()).filter(n=>n.tag==='a'&&n.props?.download);
+ assert.equal(links.length,3);assert.deepEqual(links.map(n=>n.children.flat().join('')),['Download PDF','Download Excel','Download CSV']);
+ for(const link of links){assert.ok(link.props.href.includes('type=sales'));assert.ok(link.props.href.includes('from=2026-10-06'));assert.ok(link.props.href.includes('to=2026-10-06'));}
+ app.state.reportFilters.from='2026-10-07';links=nodes(app.buildAdmReports()).filter(n=>n.tag==='a'&&n.props?.download);
+ for(const link of links){assert.equal(link.props.href,undefined);assert.equal(link.props['aria-disabled'],true);}
 });

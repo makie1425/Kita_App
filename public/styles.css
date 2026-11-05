@@ -1969,3 +1969,5 @@ body:has(.inventory-batch-dialog[open]){overflow:hidden}
 
 .general-report-section { margin-top: 28px; padding-top: 24px; border-top: 1px solid #dce6f7; }
 .general-report-section h2 { color: #143c60; margin-bottom: 16px; }
+
+.report-results-header a[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }

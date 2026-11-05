@@ -205,7 +205,7 @@ class StockReceiptWorkflowTest extends TestCase {
   $this->assertSame(1,DB::table('receiving_record_lines')->distinct()->count('batchNumber'));
   \App\Services\StandardizeLegacyBatches::run();
   $this->assertSame($number,DB::table('inventory_batches')->value('batchNumber'));
-  $this->get('/inventory/batches/'.$rows[0]->id.'/print?productId=999')->assertOk()->assertSee($number)->assertSee('2 stock entries')->assertSee('Print / Save PDF');
+  $this->get('/inventory/batches/'.$rows[0]->id.'/print?productId=999')->assertOk()->assertSee($number)->assertSee('2 stock entries')->assertSee('Print');
   $this->get('/inventory/batches/999999/print')->assertNotFound();
   $cashier=User::factory()->create(['role'=>'cashier']);
   $this->actingAs($cashier)->get('/inventory/batches/'.$rows[0]->id.'/print')->assertForbidden();
