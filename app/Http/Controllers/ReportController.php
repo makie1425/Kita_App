@@ -37,7 +37,7 @@ class ReportController extends Controller
         $type = $filters['type'];
         if ($type === 'general') {
             $rows = collect();
-            foreach (['sales'=>'Sales', 'inventory'=>'Current Inventory', 'receipts'=>'Receipts', 'batches'=>'Inventory Batches', 'movements'=>'Stock Movements', 'expiry'=>'Expiry', 'receiving'=>'Receiving Audit', 'purchase_orders'=>'Purchase Orders', 'outstanding_orders'=>'Outstanding Deliveries', 'purchases'=>'Purchases', 'supplier_book'=>'Supplier Book', 'payables'=>'Accounts Payable'] as $component=>$section) {
+            foreach (['sales'=>'Sales', 'inventory'=>'Current Inventory', 'receipts'=>'Receipts', 'batches'=>'Inventory Batches', 'movements'=>'Stock Movements', 'expiry'=>'Expiry', 'receiving'=>'Receiving Audit', 'purchase_orders'=>'Purchase Orders', 'outstanding_orders'=>'Outstanding Deliveries', 'purchases'=>'Purchases', 'supplier_book'=>'Supplier Book', 'payables'=>'Supplier Balance'] as $component=>$section) {
                 $query = ['type'=>$component, 'format'=>'json'];
                 if ($component !== 'inventory') $query += $request->only(['from','to']);
                 $part = $request->duplicate($query);

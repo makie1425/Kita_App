@@ -12,11 +12,11 @@ class PurchasingReports
     public static function data(Request $request): array
     {
         $type = $request->input('type');
-        $titles = ['purchase_orders'=>'Purchase Orders', 'outstanding_orders'=>'Outstanding Deliveries', 'purchases'=>'Purchase Receipt Detail', 'supplier_book'=>'Supplier Book', 'payables'=>'Accounts Payable'];
+        $titles = ['purchase_orders'=>'Purchase Orders', 'outstanding_orders'=>'Outstanding Deliveries', 'purchases'=>'Purchase Receipt Detail', 'supplier_book'=>'Supplier Book', 'payables'=>'Supplier Balance'];
         $title = $titles[$type];
         $moneyKeys = ['unitCost','amount','receivedValue','payments','credits','balance','debit','credit'];
-        $numericKeys = array_merge($moneyKeys, ['orderedQty','deliveredQty','resolvedQty','outstandingQty','quantity']);
-        $note = 'Only accepted receipts increase inventory and supplier payable. Orders and undelivered or damaged quantities do not create a payable.';
+        $numericKeys = array_merge($moneyKeys, ['orderedQty','deliveredQty','resolvedQty','outstandingQty','quantity','missingQty','damagedQty']);
+        $note = 'Accepted stock is treated as paid on receipt. Supplier Balance represents goods owed for receiving shortages and damage.';
         $labels = ['Type'=>$title];
         $dateColumn = 'date';
         if ($type === 'outstanding_orders') {
@@ -50,9 +50,9 @@ class PurchasingReports
         } else {
             $receipts = SupplierAccounts::receipts()->get()->map(fn ($r)=>SupplierAccounts::describe($r));
             if ($type === 'payables') {
-                $rows = $receipts->map(function ($r) { $r->reportPo=$r->poId; $r->supplier=$r->supplierName; $r->manager=$r->receivedBy; return $r; });
-                $columns = ['Receipt Date'=>'date','PO Number'=>'reportPo','Receipt ID'=>'id','Supplier'=>'supplier','Supplier Document'=>'supplierDocument','Received By'=>'manager','Due Date'=>'paymentDueDate','Accepted Value (PHP)'=>'receivedValue','Payments (PHP)'=>'payments','Credits (PHP)'=>'credits','Unpaid Balance (PHP)'=>'balance','Account Remark'=>'accountRemark'];
-                $note .= ' All receipt balances are shown, including settled receipts. Date filters select receipts; payments and credits include all posted dates. Missing due dates are not treated as overdue. Legacy payments or unknown costs require reconciliation and are excluded from unpaid totals.';
+                $rows = SupplierAccounts::balances();
+                $columns = ['Receipt Date'=>'date','PO Number'=>'reportPo','Supplier'=>'supplier','Item'=>'name','Missing Qty'=>'missingQty','Damaged Qty'=>'damagedQty','Stock Unit'=>'unit','Unit Cost (PHP)'=>'unitCost','Supplier Balance (PHP)'=>'balance','Status'=>'status','Remarks'=>'remarks'];
+                $note .= ' Current obligations at original PO cost, excluding duplicate carryovers. Date filters select initial receipt dates. Unknown ownership or costs must be reviewed; unknown values are not zero.';
             } else {
                 $rows = collect();
                 $settlements = WorkspaceRead::table('supplier_settlements')->orderBy('id')->get()->groupBy('receiptId');
@@ -62,7 +62,7 @@ class PurchasingReports
                     foreach ($settlements->get($r->id, collect()) as $entry) $rows->push((object) ($base + ['date'=>$entry->date,'kind'=>$entry->kind,'reference'=>$entry->reference,'manager'=>$entry->actor,'debit'=>0,'credit'=>$entry->voidedAt ? 0 : (float)$entry->amount,'remarks'=>$entry->voidedAt ? 'Voided: '.$entry->voidReason : $entry->notes]));
                 }
                 $columns = ['Entry Date'=>'date','Supplier'=>'supplier','Type'=>'kind','PO Number'=>'reportPo','Receipt ID'=>'receiptId','Document / Reference'=>'reference','Recorded By'=>'manager','Purchase Debit (PHP)'=>'debit','Payment / Credit (PHP)'=>'credit','Remarks'=>'remarks'];
-                $note .= ' Date filters select entry dates. Period debits minus credits are period activity, not the closing balance; use Accounts Payable for current unpaid balances. Voided entries remain visible with zero effect.';
+                $note .= ' Date filters select entry dates. Period debits minus credits are period activity, not the closing balance; use Supplier Balance for goods owed by suppliers. Voided entries remain visible with zero effect.';
             }
         }
         foreach (['supplierId','productId','category','brandId','subcategoryId','manager'] as $key) {
@@ -76,9 +76,8 @@ class PurchasingReports
         $summary=['Records'=>number_format($rows->count())];
         if (in_array($type, ['purchase_orders','purchases'])) $summary['Accepted purchases (PHP)']=number_format($rows->sum('amount'),2);
         if ($type==='payables') {
-            $summary['Unpaid balance (PHP)']=number_format($rows->sum('balance'),2);
-            $summary['Overdue balance (PHP)']=number_format($rows->where('accountRemark','Overdue')->sum('balance'),2);
-            $summary['Receipts needing review']=number_format($rows->where('accountRemark','Review legacy costs / payments')->count());
+            $summary['Supplier balance (PHP)']=number_format($rows->sum('balance'),2);
+            $summary['Items needing review']=number_format($rows->where('status','Needs Review')->count());
         }
         if ($type==='supplier_book') { $summary['Period purchases (PHP)']=number_format($rows->sum('debit'),2); $summary['Period payments / credits (PHP)']=number_format($rows->sum('credit'),2); }
         $preparedBy=$request->user()->name;

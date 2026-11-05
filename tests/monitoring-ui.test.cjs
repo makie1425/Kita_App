@@ -138,5 +138,5 @@ test('cashier accounts hide role selector and suppliers use labeled boxed naviga
  app.state.supplierDetailId=1;app.buildSupplierPerformance=()=>null;
  tree=JSON.stringify(app.buildAdmSuppliers());assert.ok(tree.includes('Back to Suppliers'));
  app.state.supplierAccountsData={receipts:[],settlements:[]};app.state.settlementForm=null;
- tree=JSON.stringify(app.buildSupplierAccounts());assert.ok(!tree.includes('Unpaid Balance'));assert.ok(tree.includes('Recorded Payments'));
+ tree=JSON.stringify(app.buildSupplierAccounts());assert.ok(!tree.includes('Unpaid Balance'));assert.ok(tree.includes('Supplier Balance'));assert.ok(tree.includes('Historical payment and credit entries'));
 });

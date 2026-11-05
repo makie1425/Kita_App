@@ -6,6 +6,35 @@ use Illuminate\Support\Facades\DB;
 
 class SupplierAccounts
 {
+    /** Current goods owed by suppliers, counted once under the original PO. */
+    public static function balances()
+    {
+        $orders = WorkspaceRead::table('purchase_orders')->get()->keyBy('id');
+        $received = WorkspaceRead::table('receiving_records')->orderBy('date')->orderBy('id')->get()->groupBy('poId');
+        $events = WorkspaceRead::table('receiving_obligation_events')->orderBy('id')->get()->groupBy('orderLine');
+        $incoming = WorkspaceRead::table('receiving_carryovers')->get()->groupBy('targetLine');
+        return WorkspaceRead::table('purchase_order_lines')->get()->filter(fn ($line) => $orders->has($line->poId) && $received->has($line->poId))->map(function ($line) use ($orders, $received, $events, $incoming) {
+            $po = $orders[$line->poId];
+            $history = $events->get($line->id, collect());
+            $copies = $incoming->get($line->id, collect())->sum(fn ($r) => $r->quantity - $r->receivedQty - $r->releasedQty);
+            $remaining = max(0, ReceivingCarryover::remaining($line) - $copies);
+            $damaged = min($remaining, (int) ($line->damageOutstanding ?? 0));
+            $review = $line->unitCost === null || ($remaining > 0 && ($line->damageOutstanding === null || in_array($po->status, ['Cancelled', 'Closed'])));
+            $replaced = $history->whereIn('type', ['missing', 'damaged', 'outstanding'])->sum('accepted');
+            $status = $review ? 'Needs Review' : ($remaining ? ($replaced > 0 || $line->resolvedQty > 0 ? 'Partially Replaced' : 'Replacement Pending') : ($replaced > 0 || $line->resolvedQty > 0 || $history->sum('damaged') > 0 ? 'Fully Replaced' : 'No Balance'));
+            return (object) [
+                'id'=>$line->id, 'reportPo'=>$po->id, 'supplierId'=>$po->supplierId, 'supplier'=>$po->supplierName,
+                'date'=>$received[$po->id]->first()->date, 'manager'=>$received[$po->id]->first()->receivedBy,
+                'productId'=>$line->productId, 'name'=>$line->name, 'unit'=>$line->unit,
+                'missingQty'=>$review ? null : $remaining-$damaged, 'damagedQty'=>$review ? null : $damaged,
+                'outstandingQty'=>$remaining, 'unitCost'=>$line->unitCost,
+                'balance'=>$review ? null : round($remaining * $line->unitCost, 2), 'status'=>$status,
+                'remarks'=>$review ? 'Verify historical quantities and original purchase cost.' : 'Goods owed by supplier; replacements are received through Stock Receiving.',
+                'history'=>$history->values(),
+            ];
+        })->values();
+    }
+
     public static function ready(): bool
     {
         return \Illuminate\Support\Facades\Schema::hasTable('supplier_settlements');
@@ -31,8 +60,9 @@ class SupplierAccounts
 
     public static function describe($row)
     {
-        $row->balance = round(max(0, (float) $row->receivedValue - (float) $row->payments - (float) $row->credits), 2);
-        $row->accountRemark = $row->unknownCosts || $row->legacyPaidValue > 0 ? 'Review legacy costs / payments' : ($row->balance <= 0 ? 'Settled' : ($row->paymentDueDate && $row->paymentDueDate < now()->toDateString() ? 'Overdue' : 'Unpaid'));
+        // Receipt settlement is separate from supplier replacement obligations.
+        $row->balance = $row->unknownCosts ? null : 0;
+        $row->accountRemark = $row->unknownCosts ? 'Review legacy costs / payments' : 'Paid on Receipt';
         $row->remarks = ReceivingRemarks::forReceipt($row);
         if ($row->accountRemark === 'Review legacy costs / payments') $row->balance = null;
         if ($row->unknownCosts) $row->receivedValue = null;

@@ -72,7 +72,7 @@ class ReportsTest extends TestCase
         DB::table('products')->insert(['id'=>999,'name'=>'Unowned','stock'=>9999]);
         $dates='&from=2026-10-06&to=2026-10-06';
         $general=$this->getJson('/reports/data?type=general'.$dates)->assertOk()->json();
-        foreach (['sales'=>'Sales','inventory'=>'Current Inventory','receipts'=>'Receipts','batches'=>'Inventory Batches','movements'=>'Stock Movements','expiry'=>'Expiry','receiving'=>'Receiving Audit','purchase_orders'=>'Purchase Orders','outstanding_orders'=>'Outstanding Deliveries','purchases'=>'Purchases','supplier_book'=>'Supplier Book','payables'=>'Accounts Payable'] as $type=>$section) {
+        foreach (['sales'=>'Sales','inventory'=>'Current Inventory','receipts'=>'Receipts','batches'=>'Inventory Batches','movements'=>'Stock Movements','expiry'=>'Expiry','receiving'=>'Receiving Audit','purchase_orders'=>'Purchase Orders','outstanding_orders'=>'Outstanding Deliveries','purchases'=>'Purchases','supplier_book'=>'Supplier Book','payables'=>'Supplier Balance'] as $type=>$section) {
             $part=$this->getJson('/reports/data?type='.$type.($type==='inventory'?'':$dates))->assertOk()->json();
             $actual=collect($general['rows'])->where('section',$section)->where('record','Summary')->pluck('value','metric')->all();
             $this->assertSame($part['summary'],$actual);

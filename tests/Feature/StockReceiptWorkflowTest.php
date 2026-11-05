@@ -27,6 +27,21 @@ class StockReceiptWorkflowTest extends TestCase {
   return ['poId'=>$po,'version'=>$version,'productId'=>$this->product,'type'=>$type,'delivered'=>$delivered,'damaged'=>$damaged,'damageReason'=>$damaged?'Crushed packaging':null,'disposition'=>'return','unitCost'=>100,'lots'=>$delivered>$damaged?[['quantity'=>$delivered-$damaged,'supplierLot'=>'SUP-123','manufacturedDate'=>now()->subDays(10)->toDateString(),'noExpiry'=>true]]:[]];
  }
  private function body($po,$entries) {return ['requestKey'=>(string)Str::uuid(),'primaryPo'=>$po,'supplierId'=>$this->supplier,'deliveryDate'=>now()->toDateString(),'supplierReference'=>'INV-TEST','notes'=>'No remarks','entries'=>$entries];}
+ public function test_supplier_balance_tracks_goods_not_payments_and_stays_scoped():void {
+  $po=$this->order(50);
+  $this->getJson('/api/supplier-accounts')->assertOk()->assertJsonCount(0,'balances');
+  $this->postJson('/api/stock-receipts',$this->body($po,[$this->entry($po,45,5)]))->assertCreated();
+  $this->getJson('/api/supplier-accounts')->assertOk()->assertJsonPath('balances.0.balance',1000)->assertJsonPath('balances.0.missingQty',5)->assertJsonPath('balances.0.damagedQty',5);
+  $this->actingAs($this->admin)->postJson('/api/purchase-orders/'.$po.'/cancel-remainder',['reason'=>'Cancel'])->assertUnprocessable();
+  $this->getJson('/reports/data?type=payables')->assertOk()->assertJsonPath('summary.Supplier balance (PHP)','1,000.00');
+  $this->actingAs($this->manager);
+  $this->postJson('/api/stock-receipts',$this->body($po,[$this->entry($po,5,0,1,'missing')]))->assertCreated();
+  $this->getJson('/api/supplier-accounts')->assertOk()->assertJsonPath('balances.0.balance',500)->assertJsonPath('balances.0.status','Partially Replaced');
+  $this->postJson('/api/stock-receipts',$this->body($po,[$this->entry($po,5,0,2,'damaged')]))->assertCreated();
+  $this->getJson('/api/supplier-accounts')->assertOk()->assertJsonPath('balances.0.balance',0)->assertJsonPath('balances.0.status','Fully Replaced');
+  $other=User::factory()->create(['role'=>'manager']);$this->assignWorkspace($other);
+  $this->actingAs($other)->getJson('/api/supplier-accounts')->assertOk()->assertJsonCount(0,'balances');
+ }
  public function test_purchasing_listing_batches_database_reads():void {
   $old=$this->order(50);
   $this->postJson('/api/stock-receipts',$this->body($old,[$this->entry($old,45,5)]))->assertCreated();

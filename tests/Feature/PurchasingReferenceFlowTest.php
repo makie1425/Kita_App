@@ -50,27 +50,22 @@ class PurchasingReferenceFlowTest extends TestCase
         $this->get('/purchase-orders/'.$this->po.'/order')->assertOk()->assertSee('2,000.00')->assertSee('Water Supplier');
         $first=$this->receive(60,0,5);
         $this->assertDatabaseHas('products',['id'=>$this->product,'stock'=>60]);
-        $this->getJson('/api/supplier-accounts')->assertOk()->assertJsonPath('receipts.0.balance',1200)->assertJsonPath('receipts.0.accountRemark','Unpaid')->assertJsonMissingPath('receipts.0.payloadHash');
+        $this->getJson('/api/supplier-accounts')->assertOk()->assertJsonPath('receipts.0.balance',0)->assertJsonPath('receipts.0.accountRemark','Paid on Receipt')->assertJsonMissingPath('receipts.0.payloadHash');
         $this->getJson('/reports/data?type=outstanding_orders')->assertOk()->assertJsonPath('rows.0.outstandingQty',40);
         $this->getJson('/reports/data?type=purchases&manager=Receiving%20Manager')->assertOk()->assertJsonPath('rows.0.amount',1200);
         $payment=['requestKey'=>(string)Str::uuid(),'kind'=>'Payment','date'=>now()->toDateString(),'amount'=>200,'reference'=>'BANK-001'];
         $this->postJson('/api/receipts/'.$first.'/settlements',$payment)->assertForbidden();
-        $this->actingAs($this->admin)->postJson('/api/receipts/'.$first.'/settlements',$payment)->assertCreated();
-        $this->postJson('/api/receipts/'.$first.'/settlements',$payment)->assertOk();
-        $this->postJson('/api/receipts/'.$first.'/settlements',array_replace($payment,['amount'=>201]))->assertConflict();
-        $this->postJson('/api/receipts/'.$first.'/settlements',array_replace($payment,['requestKey'=>(string)Str::uuid(),'amount'=>2000,'reference'=>'TOO-MUCH']))->assertUnprocessable();
-        $credit=array_replace($payment,['requestKey'=>(string)Str::uuid(),'kind'=>'Credit note','amount'=>100,'reference'=>'CREDIT-001']);
-        $this->postJson('/api/receipts/'.$first.'/settlements',$credit)->assertCreated();
+        $this->actingAs($this->admin)->postJson('/api/receipts/'.$first.'/settlements',$payment)->assertUnprocessable();
         $second=$this->receive(40,1);
         $this->assertNotSame($first,$second);
         $this->assertDatabaseCount('purchase_orders',1);
         $this->assertDatabaseCount('receiving_records',2);
-        $this->assertDatabaseCount('supplier_settlements',2);
+        $this->assertDatabaseCount('supplier_settlements',0);
         $this->assertDatabaseHas('purchase_orders',['id'=>$this->po,'status'=>'Fully Received']);
         $this->assertDatabaseHas('products',['id'=>$this->product,'stock'=>100]);
-        $this->getJson('/reports/data?type=payables')->assertOk()->assertJsonPath('summary.Unpaid balance (PHP)','1,700.00');
+        $this->getJson('/reports/data?type=payables')->assertOk()->assertJsonPath('summary.Supplier balance (PHP)','0.00');
         $this->getJson('/reports/data?type=outstanding_orders')->assertOk()->assertJsonCount(0,'rows');
-        $this->getJson('/reports/data?type=supplier_book')->assertOk()->assertJsonCount(4,'rows')->assertJsonPath('summary.Period purchases (PHP)','2,000.00');
+        $this->getJson('/reports/data?type=supplier_book')->assertOk()->assertJsonCount(2,'rows')->assertJsonPath('summary.Period purchases (PHP)','2,000.00');
         $this->get('/receipts/'.$first.'/report')->assertOk()->assertSee('35 missing')->assertDontSee($second);
         foreach (['purchase_orders','outstanding_orders','purchases','supplier_book','payables'] as $type) {
             $this->get('/reports/data?type='.$type.'&format=csv')->assertOk();
@@ -80,22 +75,12 @@ class PurchasingReferenceFlowTest extends TestCase
         $this->getJson('/reports/data?type=purchases&manager=Nobody')->assertOk()->assertJsonCount(0,'rows');
     }
 
-    public function test_admin_can_void_entry_and_cancel_only_the_remaining_purchase(): void
+    public function test_received_shortages_cannot_be_erased_by_cancellation(): void
     {
-        $receipt=$this->receive(60);
-        $body=['requestKey'=>(string)Str::uuid(),'kind'=>'Payment','date'=>now()->toDateString(),'amount'=>1200,'reference'=>'CASH-001'];
-        $entry=$this->actingAs($this->admin)->postJson('/api/receipts/'.$receipt.'/settlements',$body)->assertCreated()->json('id');
-        $this->getJson('/reports/data?type=payables')->assertOk()->assertJsonPath('rows.0.balance',0);
-        $this->postJson('/api/supplier-settlements/'.$entry.'/void',['reason'=>'Wrong payment receipt'])->assertOk();
-        $this->postJson('/api/supplier-settlements/'.$entry.'/void',['reason'=>'Wrong payment receipt'])->assertOk();
-        $this->getJson('/reports/data?type=payables')->assertOk()->assertJsonPath('rows.0.balance',1200);
-        $this->actingAs($this->manager)->postJson('/api/purchase-orders/'.$this->po.'/cancel-remainder',['reason'=>'Supplier cannot deliver'])->assertForbidden();
-        $this->actingAs($this->admin)->postJson('/api/purchase-orders/'.$this->po.'/cancel-remainder',['reason'=>'Supplier cannot deliver'])->assertOk();
-        $this->getJson('/reports/data?type=outstanding_orders')->assertOk()->assertJsonCount(0,'rows');
-        $this->getJson('/reports/data?type=payables')->assertOk()->assertJsonPath('rows.0.balance',1200);
+        $this->receive(60);
+        $this->actingAs($this->admin)->postJson('/api/purchase-orders/'.$this->po.'/cancel-remainder',['reason'=>'Supplier cannot deliver'])->assertUnprocessable();
         $this->assertDatabaseHas('products',['id'=>$this->product,'stock'=>60]);
-        $this->assertDatabaseHas('purchase_orders',['id'=>$this->po,'status'=>'Cancelled','cancelledValue'=>800]);
-        $this->actingAs($this->manager)->postJson('/api/purchase-orders/'.$this->po.'/receive',['idempotencyKey'=>(string)Str::uuid(),'version'=>2,'receivedDate'=>now()->toDateString(),'lines'=>[['productId'=>$this->product,'qty'=>40]]])->assertConflict();
+        $this->getJson('/reports/data?type=payables')->assertOk()->assertJsonPath('rows.0.status','Needs Review')->assertJsonPath('rows.0.balance',null);
     }
 
     public function test_old_completed_shortage_can_receive_remaining_on_original_po(): void
@@ -125,8 +110,8 @@ class PurchasingReferenceFlowTest extends TestCase
     {
         $receipt=$this->receive(60);
         DB::table('purchase_orders')->where('id',$this->po)->update(['paidValue'=>100]);
-        $this->getJson('/api/supplier-accounts')->assertOk()->assertJsonPath('receipts.0.accountRemark','Review legacy costs / payments')->assertJsonPath('receipts.0.balance',null);
-        $this->actingAs($this->admin)->postJson('/api/receipts/'.$receipt.'/settlements',['requestKey'=>(string)Str::uuid(),'kind'=>'Payment','date'=>now()->toDateString(),'amount'=>50,'reference'=>'UNKNOWN'])->assertConflict();
+        $this->getJson('/api/supplier-accounts')->assertOk()->assertJsonPath('receipts.0.accountRemark','Paid on Receipt')->assertJsonPath('receipts.0.balance',0);
+        $this->actingAs($this->admin)->postJson('/api/receipts/'.$receipt.'/settlements',['requestKey'=>(string)Str::uuid(),'kind'=>'Payment','date'=>now()->toDateString(),'amount'=>50,'reference'=>'UNKNOWN'])->assertUnprocessable();
         $this->assertDatabaseCount('supplier_settlements',0);
     }
 }
