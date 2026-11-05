@@ -1971,3 +1971,29 @@ body:has(.inventory-batch-dialog[open]){overflow:hidden}
 .general-report-section h2 { color: #143c60; margin-bottom: 16px; }
 
 .report-results-header a[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
+
+/* Action labels must never split inside a word. Let their containers wrap instead. */
+button, .primary-button, .kita-button,
+.content-area .kita-button, .kita-modal-overlay .kita-button {
+  overflow-wrap: normal; word-break: normal; hyphens: none;
+}
+:is(.purchase-filters,.po-filter-actions,.inventory-view-tabs,.action-group,.dialog-actions,.po-dialog-header,.po-dialog-footer,.report-results-header,.archive-toolbar) > :is(button,.kita-button) {
+  flex-shrink: 0; white-space: nowrap;
+}
+.po-filter-bottom { flex-wrap: wrap; }
+.po-filter-bottom > input { flex: 1 1 260px; min-width: 0; width: auto; max-width: none; }
+.po-filter-actions { flex: 0 0 auto; flex-wrap: wrap; gap: 8px; }
+.content-area .po-filter-actions .kita-button { white-space: nowrap; min-width: 96px; }
+.action-group, .dialog-actions { flex-wrap: wrap; gap: 10px; }
+.report-results-header { flex-wrap: wrap; gap: 16px; }
+.archive-toolbar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; margin-bottom: 20px; }
+.archive-toolbar > :first-child { margin-bottom: 0; }
+.archive-toolbar > .kita-button { margin: 0; }
+.archive-tabs { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 20px; }
+.archive-tabs > button { white-space: nowrap; flex-shrink: 0; }
+@media (max-width: 600px) {
+  .po-filter-bottom > input { flex-basis: 100%; width: 100%; }
+  .po-filter-actions { width: 100%; }
+  .content-area .po-filter-actions .kita-button { flex: 1 0 auto; }
+  .report-results-header .action-group { width: 100%; }
+}

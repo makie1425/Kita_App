@@ -2739,7 +2739,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
             ["Contact",sp.contact],["Phone",sp.phone],["Email",sp.email||"—"],["Address",sp.address],["Notes",sp.notes||"—"],
           ].map(([l,v],i)=>React.createElement("div",{key:i},[React.createElement("div",{style:{fontSize:11,fontWeight:700,color:COLORS.textMuted}},l),React.createElement("div",{style:{marginTop:2}},v)]))),
         ],{marginBottom:16}),
-        React.createElement("div",{style:{display:"flex",gap:6,marginBottom:14}},tabs.map(([k,l])=>React.createElement("button",{key:k,onClick:this.setSupMgrDetailTab(k),style:{padding:"8px 14px",borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer",background:supMgrDetailTab===k?COLORS.brand:"#fff",color:supMgrDetailTab===k?"#fff":COLORS.text,border:"1px solid "+(supMgrDetailTab===k?COLORS.brand:COLORS.border)}},l))),
+        React.createElement("div",{className:"archive-tabs"},tabs.map(([k,l])=>React.createElement("button",{key:k,onClick:this.setSupMgrDetailTab(k),style:{padding:"8px 14px",borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer",background:supMgrDetailTab===k?COLORS.brand:"#fff",color:supMgrDetailTab===k?"#fff":COLORS.text,border:"1px solid "+(supMgrDetailTab===k?COLORS.brand:COLORS.border)}},l))),
         body,
         supMgrProductPickerOpen?this.buildMgrSupplierProductPicker():null,
         supMgrModalOpen?this.buildMgrSupplierModal():null,
@@ -2910,9 +2910,9 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     else { const list=suppliersLocal.filter(s=>s.status==="Inactive"); headers=["","Supplier","Category","Archived On","Archived By"]; keyOf=s=>String(s.id);
       rows=list.map(s=>tr([td(React.createElement("input",{type:"checkbox",checked:!!archiveChecked[keyOf(s)],onChange:this.toggleArchiveCheck(keyOf(s))})),td(s.name),td(s.category),td(s.archivedAt||"—"),td(s.archivedBy||"—")],s.id)); }
     return React.createElement("div",null,[
-      moduleTitle("Archive"),btn("Refresh",()=>this.reloadCatalog().catch(e=>this.toast(e.message,"error"))),
-      React.createElement("div",{style:{display:"flex",gap:6,marginBottom:14}},tabs.map(([k,l])=>React.createElement("button",{key:k,onClick:this.setArchiveTab(k),style:{padding:"8px 14px",borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer",background:archiveTab===k?COLORS.brand:"#fff",color:archiveTab===k?"#fff":COLORS.text,border:"1px solid "+(archiveTab===k?COLORS.brand:COLORS.border)}},l))),
-      checkedCount?React.createElement("div",{style:{display:"flex",gap:8,alignItems:"center",marginBottom:10}},[React.createElement("span",{style:{fontSize:12,fontWeight:700,color:COLORS.textSoft}},checkedCount+" selected"),btn("Restore",this.restoreArchived,"green"),btn("Delete Permanently",this.openArchiveConfirm,"danger")]):null,
+      React.createElement("div",{className:"archive-toolbar"},[moduleTitle("Archive"),btn("Refresh",()=>this.reloadCatalog().catch(e=>this.toast(e.message,"error")))]),
+      React.createElement("div",{className:"archive-tabs"},tabs.map(([k,l])=>React.createElement("button",{key:k,onClick:this.setArchiveTab(k),style:{padding:"8px 14px",borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer",background:archiveTab===k?COLORS.brand:"#fff",color:archiveTab===k?"#fff":COLORS.text,border:"1px solid "+(archiveTab===k?COLORS.brand:COLORS.border)}},l))),
+      checkedCount?React.createElement("div",{style:{display:"flex",flexWrap:"wrap",gap:8,alignItems:"center",marginBottom:10}},[React.createElement("span",{style:{fontSize:12,fontWeight:700,color:COLORS.textSoft}},checkedCount+" selected"),btn("Restore",this.restoreArchived,"green"),btn("Delete Permanently",this.openArchiveConfirm,"danger")]):null,
       rows.length===0?card(React.createElement("div",{style:{padding:20,textAlign:"center",color:COLORS.textMuted,fontSize:13}},"Nothing archived in this category.")):this.recordTable("archive-"+archiveTab,headers,rows),
       archiveConfirmOpen?React.createElement("div",{style:{position:"fixed",inset:0,background:"rgba(15,31,74,0.38)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:50}},
         React.createElement("div",{style:{width:380,background:"#fff",borderRadius:14,padding:20}},[
