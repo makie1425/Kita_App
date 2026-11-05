@@ -51,7 +51,7 @@ class PurchasingReports
             $receipts = SupplierAccounts::receipts()->get()->map(fn ($r)=>SupplierAccounts::describe($r));
             if ($type === 'payables') {
                 $rows = SupplierAccounts::balances();
-                $columns = ['Receipt Date'=>'date','PO Number'=>'reportPo','Supplier'=>'supplier','Item'=>'name','Missing Qty'=>'missingQty','Damaged Qty'=>'damagedQty','Stock Unit'=>'unit','Unit Cost (PHP)'=>'unitCost','Supplier Balance (PHP)'=>'balance','Status'=>'status','Remarks'=>'remarks'];
+                $columns = ['Supplier Name'=>'supplier','PO Number'=>'reportPo','Receipt Date'=>'date','Item'=>'name','Missing Qty'=>'missingQty','Damaged Qty'=>'damagedQty','Stock Unit'=>'unit','Unit Cost (PHP)'=>'unitCost','Supplier Balance (PHP)'=>'balance','Status'=>'status','Remarks'=>'remarks'];
                 $note .= ' Current obligations at original PO cost, excluding duplicate carryovers. Date filters select initial receipt dates. Unknown ownership or costs must be reviewed; unknown values are not zero.';
             } else {
                 $rows = collect();
@@ -61,7 +61,7 @@ class PurchasingReports
                     $rows->push((object) ($base + ['date'=>$r->date,'kind'=>'Purchase receipt','reference'=>$r->supplierDocument ?: $r->id,'manager'=>$r->receivedBy,'debit'=>(float)$r->receivedValue,'credit'=>0,'remarks'=>$r->accountRemark === 'Review legacy costs / payments' ? $r->accountRemark : $r->remarks]));
                     foreach ($settlements->get($r->id, collect()) as $entry) $rows->push((object) ($base + ['date'=>$entry->date,'kind'=>$entry->kind,'reference'=>$entry->reference,'manager'=>$entry->actor,'debit'=>0,'credit'=>$entry->voidedAt ? 0 : (float)$entry->amount,'remarks'=>$entry->voidedAt ? 'Voided: '.$entry->voidReason : $entry->notes]));
                 }
-                $columns = ['Entry Date'=>'date','Supplier'=>'supplier','Type'=>'kind','PO Number'=>'reportPo','Receipt ID'=>'receiptId','Document / Reference'=>'reference','Recorded By'=>'manager','Purchase Debit (PHP)'=>'debit','Payment / Credit (PHP)'=>'credit','Remarks'=>'remarks'];
+                $columns = ['Supplier Name'=>'supplier','PO Number'=>'reportPo','Receipt ID'=>'receiptId','Type'=>'kind','Entry Date'=>'date','Recorded By'=>'manager','Purchase Value (PHP)'=>'debit','Historical Payment / Credit (PHP)'=>'credit','Remarks'=>'remarks'];
                 $note .= ' Date filters select entry dates. Period debits minus credits are period activity, not the closing balance; use Supplier Balance for goods owed by suppliers. Voided entries remain visible with zero effect.';
             }
         }

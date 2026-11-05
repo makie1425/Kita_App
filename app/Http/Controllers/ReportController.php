@@ -36,31 +36,23 @@ class ReportController extends Controller
         ]);
         $type = $filters['type'];
         if ($type === 'general') {
-            $rows = collect();
-            foreach (['sales'=>'Sales', 'inventory'=>'Current Inventory', 'receipts'=>'Receipts', 'batches'=>'Inventory Batches', 'movements'=>'Stock Movements', 'expiry'=>'Expiry', 'receiving'=>'Receiving Audit', 'purchase_orders'=>'Purchase Orders', 'outstanding_orders'=>'Outstanding Deliveries', 'purchases'=>'Purchases', 'supplier_book'=>'Supplier Book', 'payables'=>'Supplier Balance'] as $component=>$section) {
-                $query = ['type'=>$component, 'format'=>'json'];
-                if ($component !== 'inventory') $query += $request->only(['from','to']);
-                $part = $request->duplicate($query);
+            $sections = [];
+            foreach (['sales','batches','inventory','receipts','movements','expiry','purchase_orders','outstanding_orders','receiving','purchases','supplier_book','payables'] as $component) {
+                $query = $request->except(['type','format']);
+                $query['type']=$component; $query['format']='json';
+                if ($component === 'inventory') unset($query['from'], $query['to']);
+                $part=$request->duplicate($query);
                 $part->setUserResolver($request->getUserResolver());
-                $result = $this->__invoke($part)->getData(true);
-                foreach ($result['summary'] as $metric=>$value) {
-                    $rows->push((object)(compact('section','metric','value') + ['record'=>'Summary']));
-                }
-                $rows->push((object)['section'=>$section, 'record'=>'Scope', 'metric'=>'Notes', 'value'=>$result['note']]);
-                foreach ($result['rows'] as $index=>$detail) {
-                    foreach ($result['columns'] as $metric=>$key) {
-                        $value = $detail[$key] ?? '';
-                        if (is_array($value)) $value = json_encode($value, JSON_UNESCAPED_UNICODE);
-                        $rows->push((object)['section'=>$section, 'record'=>'Record '.($index+1), 'metric'=>$metric, 'value'=>$value]);
-                    }
-                }
-                if (!$result['rows']) $rows->push((object)['section'=>$section, 'record'=>'Details', 'metric'=>'Records', 'value'=>'No records for the selected scope.']);
+                $result=$this->__invoke($part)->getData(true);
+                $result['type']=$component;
+                $result['rows']=collect($result['rows'])->map(fn ($row)=>(object)$row);
+                $sections[]=$result;
             }
             return $this->respond($request, $type, [
-                'title'=>'General Report', 'columns'=>['Section'=>'section','Record'=>'record','Field / Metric'=>'metric','Value'=>'value'],
-                'rows'=>$rows, 'summary'=>[], 'moneyKeys'=>[], 'numericKeys'=>[],
-                'note'=>'All available report types, including summaries and record details. Date handling and current balances follow each section?s notes. Sections overlap; do not add their totals together.',
-                'labels'=>['Type'=>'General'] + array_filter(['From'=>$request->input('from'),'To'=>$request->input('to')]),
+                'title'=>'General Report','columns'=>[],'rows'=>collect(),'sections'=>$sections,
+                'summary'=>['Report types'=>count($sections)],'moneyKeys'=>[],'numericKeys'=>[],
+                'note'=>'Each section uses its individual report columns and calculations. Sections overlap; do not add their totals together.',
+                'labels'=>['Type'=>'General'] + array_filter($request->except(['type','format'])),
                 'generated'=>now()->timezone('Asia/Manila')->format('Y-m-d H:i:s').' Asia/Manila',
                 'preparedBy'=>$request->user()->name,
             ]);
@@ -271,8 +263,11 @@ class ReportController extends Controller
     public function respond(Request $request, string $type, array $data)
     {
         extract($data);
+        if (!empty($data['sections']) && $request->input('format') === 'csv') {
+            return response()->download(\App\Services\GeneralReportExport::csv($data), 'kita-general.zip', ['Content-Type'=>'application/zip','Cache-Control'=>'no-store'])->deleteFileAfterSend(true);
+        }
         if ($request->input('format') === 'xlsx') {
-            return response()->download(ExcelReport::create($data), 'kita-'.$type.'-'.now()->timezone('Asia/Manila')->format('Y-m-d').'.xlsx', [
+            return response()->download((!empty($data['sections']) ? \App\Services\GeneralReportExport::excel($data) : ExcelReport::create($data)), 'kita-'.$type.'-'.now()->timezone('Asia/Manila')->format('Y-m-d').'.xlsx', [
                 'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                 'Cache-Control' => 'private, no-store',
             ])->deleteFileAfterSend(true);
@@ -292,7 +287,7 @@ class ReportController extends Controller
                 fclose($out);
             }, 'kita-'.$type.'-'.now()->format('Y-m-d').'.csv', ['Content-Type' => 'text/csv; charset=UTF-8', 'Cache-Control' => 'no-store']);
         }
-        $data = compact('title', 'columns', 'rows', 'note', 'generated', 'labels', 'summary', 'moneyKeys', 'numericKeys', 'preparedBy');
+        $data = compact('title', 'columns', 'rows', 'note', 'generated', 'labels', 'summary', 'moneyKeys', 'numericKeys', 'preparedBy') + ['sections'=>$sections ?? []];
         if ($request->input('format') === 'pdf') {
             $options = new Options;
             $options->set('isRemoteEnabled', false);
@@ -302,7 +297,7 @@ class ReportController extends Controller
             $options->set('fontCache', storage_path('framework/cache'));
             $options->set('tempDir', storage_path('framework/cache'));
             $pdf = new Dompdf($options);
-            $pdf->loadHtml(view('reports.pdf', $data)->render());
+            $pdf->loadHtml(view(!empty($sections) ? 'reports.general' : 'reports.pdf', $data)->render());
             $pdf->setPaper('A4', 'landscape');
             $pdf->render();
             $pdf->getCanvas()->page_text(715, 565, 'Page {PAGE_NUM} of {PAGE_COUNT}', $pdf->getFontMetrics()->getFont('DejaVu Sans'), 8, [0.35, 0.4, 0.45]);
@@ -314,7 +309,7 @@ class ReportController extends Controller
             ]);
         }
         if ($request->input('format') === 'print') {
-            return response()->view('reports.print', $data)->header('Cache-Control', 'no-store');
+            return response()->view(!empty($sections) ? 'reports.general' : 'reports.print', $data)->header('Cache-Control', 'no-store');
         }
 
         return response()->json($data)->header('Cache-Control', 'no-store');

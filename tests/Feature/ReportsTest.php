@@ -74,18 +74,20 @@ class ReportsTest extends TestCase
         $general=$this->getJson('/reports/data?type=general'.$dates)->assertOk()->json();
         foreach (['sales'=>'Sales','inventory'=>'Current Inventory','receipts'=>'Receipts','batches'=>'Inventory Batches','movements'=>'Stock Movements','expiry'=>'Expiry','receiving'=>'Receiving Audit','purchase_orders'=>'Purchase Orders','outstanding_orders'=>'Outstanding Deliveries','purchases'=>'Purchases','supplier_book'=>'Supplier Book','payables'=>'Supplier Balance'] as $type=>$section) {
             $part=$this->getJson('/reports/data?type='.$type.($type==='inventory'?'':$dates))->assertOk()->json();
-            $actual=collect($general['rows'])->where('section',$section)->where('record','Summary')->pluck('value','metric')->all();
-            $this->assertSame($part['summary'],$actual);
-            foreach ($part['rows'] as $index=>$row) {
-                $details=collect($general['rows'])->where('section',$section)->where('record','Record '.($index+1))->pluck('value','metric')->all();
-                foreach ($part['columns'] as $label=>$key) $this->assertEquals($row[$key]??'', $details[$label]);
-            }
-            $this->assertNotEmpty(collect($general['rows'])->where('section',$section));
+            $actual=collect($general['sections'])->firstWhere('type',$type);
+            $this->assertSame($part['summary'],$actual['summary']);
+            $this->assertSame($part['columns'],$actual['columns']);
+            $this->assertSame($part['rows'],$actual['rows']);
         }
         $this->assertStringNotContainsString('Unowned',json_encode($general));
         $this->get('/reports/data?type=general'.$dates.'&format=print')->assertOk()->assertSee('General Report');
-        $csv=$this->get('/reports/data?type=general'.$dates.'&format=csv')->assertOk()->streamedContent();
-        $this->assertStringContainsString('Current Inventory',$csv);
+        $archive=$this->get('/reports/data?type=general'.$dates.'&format=csv')->assertOk();
+        $zip=new \ZipArchive;$zip->open($archive->baseResponse->getFile()->getPathname());
+        $this->assertSame(12,$zip->numFiles);$this->assertStringContainsString('Transaction No.',$zip->getFromName('sales.csv'));$zip->close();
+        $excel=$this->get('/reports/data?type=general'.$dates.'&format=xlsx')->assertOk();
+        $zip=new \ZipArchive;$zip->open($excel->baseResponse->getFile()->getPathname());
+        $this->assertSame(12,substr_count($zip->getFromName('xl/workbook.xml'),'<sheet '));$zip->close();
+        $this->get('/reports/data?type=general'.$dates.'&format=pdf')->assertOk()->assertHeader('Content-Type','application/pdf');
         $this->actingAs(User::factory()->create(['role'=>'cashier']))->getJson('/reports/data?type=general')->assertForbidden();
     }
 

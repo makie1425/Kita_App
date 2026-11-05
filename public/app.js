@@ -3024,6 +3024,17 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
       ]),
     ]);
   }
+  generalReportSections(sections){
+    const h=React.createElement;
+    return sections.map(section=>h('section',{key:section.type,className:'general-report-section'},[
+      h('h2',null,section.title),section.type==='inventory'?h('p',null,'Current stock as of '+section.generated):null,
+      h('div',{className:'report-summary'},Object.entries(section.summary||{}).map(([label,value])=>h('div',{key:label,className:'report-metric'},[h('span',null,label),h('strong',null,value)]))),
+      this.recordTable('general-'+section.type,[...Object.keys(section.columns),...(['purchase_orders','supplier_book','payables'].includes(section.type)?['Actions']:[])],section.rows.map((row,i)=>tr([
+        ...Object.values(section.columns).map(key=>td(row[key]==null?'-':(section.moneyKeys||[]).includes(key)?Number(row[key]).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}):row[key],(section.numericKeys||[]).includes(key)?{textAlign:'right'}:{})),
+        ...(['purchase_orders','supplier_book','payables'].includes(section.type)?[td(btn('View',()=>this.setState(section.type==='purchase_orders'?{reportReceiptDetail:row}:{supplierRecordDetail:row})))]:[])
+      ],i)),{emptyMessage:'No records for the selected filters.'}),h('p',{className:'report-filter-hint'},section.note)
+    ]));
+  }
   supplierRecordDetails(){
     const h=React.createElement,row=this.state.supplierRecordDetail;if(!row)return null;
     const close=()=>this.setState({supplierRecordDetail:null});
@@ -3124,15 +3135,15 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
         ]):null,
         f.type==='inventory'?null:null
       ]),
-      h('p',{role:'status','aria-live':'polite',className:'report-filter-hint'},s.reportLoading?'Updating results below...':s.reportError?'Results could not be updated.':pendingFilters?'Updating filtered results...':loaded?r.rows.length+(resultType==='expiry'?' tracked batch items':' matching records'):'Click Refresh to load your report.'),
+      h('p',{role:'status','aria-live':'polite',className:'report-filter-hint'},s.reportLoading?'Updating results below...':s.reportError?'Results could not be updated.':pendingFilters?'Updating filtered results...':loaded?(resultType==='general'?(r.sections||[]).reduce((n,part)=>n+part.rows.length,0):r.rows.length)+(resultType==='expiry'?' tracked batch items':' matching records'):'Click Refresh to load your report.'),
       s.reportError?h('div',{role:'alert'},[s.reportError,btn('Retry',this.generateReport)]):null,
       h('section',{key:'report-results',className:'report-results','aria-label':'Report results','aria-busy':!!s.reportLoading},[
-        h('div',{className:'report-results-header'},[h('h2',null,r.title),loaded?h('div',{className:'action-group'},[h('a',{className:'kita-button',href:url('pdf'),download:true},'Download PDF Summary'),h('a',{className:'kita-button',href:url('xlsx'),download:true},'Export Excel'),h('a',{className:'kita-button',href:url('csv'),download:true},'Export CSV'),h('a',{className:'kita-button',href:url('print'),target:'_blank',rel:'noopener'},resultType==='expiry'?'Print Expiration Report':'Print report')]):null]),
+        h('div',{className:'report-results-header'},[h('h2',null,r.title),loaded?h('div',{className:'action-group'},[h('a',{className:'kita-button',href:url('pdf'),download:true},resultType==='general'?'Download Complete PDF':'Download PDF Summary'),h('a',{className:'kita-button',href:url('xlsx'),download:true},'Export Excel'),h('a',{className:'kita-button',href:url('csv'),download:true},resultType==='general'?'Export CSV ZIP':'Export CSV'),h('a',{className:'kita-button',href:url('print'),target:'_blank',rel:'noopener'},resultType==='expiry'?'Print Expiration Report':'Print report')]):null]),
         loaded?h('p',{className:'report-filter-hint'},(s.reportLoading||s.reportError||pendingFilters?'Showing the last successfully loaded results. ':'')+'Generated: '+r.generated):null,
         h('p',{className:'report-filter-hint'},Object.entries(r.labels||{}).map(([key,value])=>key+': '+value).join(' | ')),
         h('div',{className:'report-summary'},Object.entries(r.summary||{}).map(([label,value])=>h('div',{key:label,className:'report-metric'},[h('span',null,label),h('strong',null,value)]))),
         loaded&&(s.reportAppliedFilters?.type||f.type)==='sales'?this.buildReportCharts(r.rows):null,
-        this.recordTable('generated-report',[...Object.keys(displayColumns),...(['purchase_orders','supplier_book','payables'].includes(resultType)?['Actions']:[])],r.rows.map((row,i)=>tr([...Object.values(displayColumns).map(key=>td(row[key]==null?'-':supplierReport&&key==='remarks'?h('span',{className:'supplier-record-remarks',title:row[key]},row[key]):['reportPo','poId'].includes(key)?(['purchase_orders','supplier_book','payables'].includes(resultType)?row[key]:this.purchaseReportLink(row[key])):key==='status'?(resultType==='expiry'?h('span',{className:'expiry-status expiry-status--'+String(row[key]).toLowerCase()},row[key]):badge(row[key])):(r.moneyKeys||[]).includes(key)?Number(row[key]).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}):row[key],{...((r.numericKeys||[]).includes(key)?{textAlign:'right',fontVariantNumeric:'tabular-nums'}:{}),...(supplierReport&&['reportPo','receiptId','date'].includes(key)?{whiteSpace:'nowrap'}:{})})),...(['purchase_orders','supplier_book','payables'].includes(resultType)?[td(btn('View',()=>this.setState(supplierReport?{supplierRecordDetail:row}:{reportReceiptDetail:row})),{textAlign:'center'})]:[])],i)),{emptyMessage,externalSearch:true}),
+        resultType==='general'?this.generalReportSections(r.sections||[]):this.recordTable('generated-report',[...Object.keys(displayColumns),...(['purchase_orders','supplier_book','payables'].includes(resultType)?['Actions']:[])],r.rows.map((row,i)=>tr([...Object.values(displayColumns).map(key=>td(row[key]==null?'-':supplierReport&&key==='remarks'?h('span',{className:'supplier-record-remarks',title:row[key]},row[key]):['reportPo','poId'].includes(key)?(['purchase_orders','supplier_book','payables'].includes(resultType)?row[key]:this.purchaseReportLink(row[key])):key==='status'?(resultType==='expiry'?h('span',{className:'expiry-status expiry-status--'+String(row[key]).toLowerCase()},row[key]):badge(row[key])):(r.moneyKeys||[]).includes(key)?Number(row[key]).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}):row[key],{...((r.numericKeys||[]).includes(key)?{textAlign:'right',fontVariantNumeric:'tabular-nums'}:{}),...(supplierReport&&['reportPo','receiptId','date'].includes(key)?{whiteSpace:'nowrap'}:{})})),...(['purchase_orders','supplier_book','payables'].includes(resultType)?[td(btn('View',()=>this.setState(supplierReport?{supplierRecordDetail:row}:{reportReceiptDetail:row})),{textAlign:'center'})]:[])],i)),{emptyMessage,externalSearch:true}),
         !r.rows.length&&activeCount?h('div',{className:'action-group'},[h('span',null,'Try removing a filter to see more records.'),btn('Clear all filters',this.resetReportFilters)]):null,
 
         h('p',{className:'report-filter-hint'},r.note)

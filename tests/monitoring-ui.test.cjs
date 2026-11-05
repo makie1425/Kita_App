@@ -140,3 +140,13 @@ test('cashier accounts hide role selector and suppliers use labeled boxed naviga
  app.state.supplierAccountsData={receipts:[],settlements:[]};app.state.settlementForm=null;
  tree=JSON.stringify(app.buildSupplierAccounts());assert.ok(!tree.includes('Unpaid Balance'));assert.ok(tree.includes('Supplier Balance'));assert.ok(tree.includes('Historical payment and credit entries'));
 });
+
+test('General report renders separate original-column tables including empty sections',()=>{
+ const {app}=setup();const calls=[];
+ app.recordTable=(key,headers,rows,options)=>{calls.push({key,headers,rows,options});return null;};
+ const sections=[{type:'sales',title:'Sales Transaction Detail',columns:{'Transaction No.':'reference','Line total (PHP)':'amount'},rows:[{reference:'TXN-1',amount:1234.5}],moneyKeys:['amount'],numericKeys:['amount'],summary:{}},{type:'inventory',title:'Current Inventory',columns:{Product:'product'},rows:[],summary:{}}];
+ const result=app.generalReportSections(sections);
+ assert.equal(result.length,2);assert.deepEqual(Array.from(calls[0].headers),['Transaction No.','Line total (PHP)']);
+ assert.equal(calls[0].key,'general-sales');assert.equal(calls[1].key,'general-inventory');assert.equal(calls[1].options.emptyMessage,'No records for the selected filters.');
+ assert.ok(JSON.stringify(calls[0].rows).includes('1,234.50'));
+});
