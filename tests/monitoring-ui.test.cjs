@@ -162,3 +162,34 @@ test('report downloads use applied dates and cannot run with stale filters',()=>
  app.state.reportFilters.from='2026-10-07';links=nodes(app.buildAdmReports()).filter(n=>n.tag==='a'&&n.props?.download);
  for(const link of links){assert.equal(link.props.href,undefined);assert.equal(link.props['aria-disabled'],true);}
 });
+
+test('shared confirmation requires a reason and resolves only once',async()=>{
+ const {app}=setup();
+ const pending=app.requestConfirmation('Cancel PO',{reason:true,title:'Cancel Remaining Quantities'});
+ assert.equal(app.buildConfirmation().tag,'dialog');
+ assert.equal(await app.requestConfirmation('Duplicate'),false);
+ app.finishConfirmation(true);assert.ok(app.state.confirmationError);assert.ok(app.state.confirmation);
+ app.state.confirmationReason='  Supplier cannot deliver  ';app.finishConfirmation(true);
+ assert.equal(await pending,'Supplier cannot deliver');assert.equal(app.state.confirmation,null);
+ app.finishConfirmation(true);
+ const cancel=app.requestConfirmation('Receive stock');app.finishConfirmation(false);assert.equal(await cancel,false);
+});
+test('purchase review validation preserves entered lines and displays inline errors',async()=>{
+ const {app}=setup();const record={id:'PO-1',lines:[{productId:1,qty:2}]};
+ app.state.approvalNoteDraft={};app.state.purchaseReviewLines=[{productId:1,qty:2}];
+ app.authPost=()=>assert.fail('Rejected requests require a reason');
+ await app.reviewPurchase(record,'disapproved');assert.equal(app.state.purchaseReviewError,'Enter a rejection reason.');
+ assert.equal(app.state.purchaseReviewLines.length,1);
+});
+
+test('Admin and Manager navigation distinguish requests, orders and supplier balances',()=>{
+ for(const role of ['admin','manager']){
+  const {app}=setup();Object.assign(app.state,{role,authStep:'in',screen:role==='admin'?'admDashboard':'mgrDashboard',data:{}});
+  app.currentUser=()=>({name:'Test'});app.buildAdmDashboard=app.buildMgrDashboard=()=>null;
+  const result=app.renderVals();const items=result.navGroups.flatMap(g=>g.items);
+  assert.equal(items.filter(i=>i.label==='Purchase Orders').length,1);
+  assert.equal(items.filter(i=>i.label==='Purchase Requests').length,1);
+  assert.ok(items.some(i=>i.label==='Supplier Balances'));assert.ok(items.some(i=>i.label==='Suppliers'));
+  if(role==='manager')assert.ok(items.some(i=>i.label==='Create Purchase Request'));
+ }
+});
