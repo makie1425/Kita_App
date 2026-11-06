@@ -5,12 +5,13 @@ const nodes=n=>!n||typeof n!=='object'?[]:Array.isArray(n)?n.flatMap(nodes):[n,.
 const text=n=>n==null?'':typeof n==='string'?n:Array.isArray(n)?n.map(text).join(' '):text(n.children);
 function setup(){
   const app=new ctx.App();
-  Object.assign(app.state,{screen:'mgrRegistration',data:{PRODUCTS:[],CATEGORIES:[{name:'Drinks',status:'Active'}],SUPPLIERS:[],BRANDS:[],SUBCATEGORIES:[]},regProductName:'Water',regCategory:'Drinks',regScannedBarcode:'WATER',regStockUnit:'Bottle',regReorderLevel:5});
+  Object.assign(app.state,{screen:'mgrRegistration',data:{PRODUCTS:[],CATEGORIES:[{name:'Drinks',status:'Active'}],SUPPLIERS:[{id:1,name:'Supplier',status:'Active'}],BRANDS:[{id:1,name:'Brand',status:'Active'}],SUBCATEGORIES:[{id:1,name:'Water',category:'Drinks',status:'Active'}]},regProductName:'Water',regCategory:'Drinks',regScannedBarcode:'WATER',regStockUnit:'Bottle',regReorderLevel:5,regManufacturer:'Factory',regBrandId:1,regSubcategoryId:1,regSupplier:'Supplier',regStatus:'Active'});
   app.reloadCatalog=async()=>{};
   return app;
 }
 (async()=>{
   const app=setup();let tree=app.buildMgrRegistration();
+  assert(!text(tree).includes('Product type'));
   const controls=nodes(tree).filter(n=>['input','select'].includes(n.type));
   assert(controls.some(n=>n.props.id==='registration-regStockUnit'));
   assert(!controls.some(n=>['registration-regPurchaseUnit','registration-regConversionFactor'].includes(n.props.id)));
@@ -34,10 +35,11 @@ function setup(){
   assert(text(nodes(tree).find(n=>n.props?.id==='registration-feedback')).includes('Registration complete'));
   assert(nodes(tree).findIndex(n=>n.props?.id==='registration-feedback')<nodes(tree).findIndex(n=>n.type==='fieldset'));
   const edit=setup();
-  const product={id:2,name:'Juice',category:'Drinks',barcode:'JUICE',stock:12,stockUnit:'Bottle',purchaseUnit:'Box',conversionFactor:12,status:'Active',price:30,unitPrice:20};
-  edit.state.data.PRODUCTS=[product];edit.editProductMaster(product);
+  const product={id:2,name:'Juice',category:'Drinks',barcode:'JUICE',stock:12,stockUnit:'Bottle',purchaseUnit:'Box',conversionFactor:12,status:'Active',price:30,unitPrice:20,manufacturer:'Factory',brandId:1,subcategoryId:1,supplierId:1,size:500,sizeUnit:'mL',parentId:10,variantLabel:'Family pack'};
+  edit.state.data.PRODUCTS=[product];edit.editProductMaster(product);edit.state.regEditReason='Correct product details';
   let saved;edit.authPost=async(url,payload)=>{saved=payload;return {product:{...product,...payload}};};
   edit.saveRegistration();await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(saved.parentId,10);assert.equal(saved.variantLabel,'Family pack','Existing variant relationship is preserved without a Product Type selector');
   assert.equal(saved.purchaseUnit,'Box');assert.equal(saved.conversionFactor,12,'Editing preserves existing conversion data');
   console.log('Registration category access, simplified fields, size validation, top feedback, new-product defaults and existing conversion preservation passed.');
 })().catch(error=>{console.error(error);process.exitCode=1;});

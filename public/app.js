@@ -1149,7 +1149,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     const value=e.target.value;
     this.setState(s=>{
       const next={...s,[field]:value};
-      return {[field]:value,registrationError:"",registrationNotice:null,regSaved:false,...(field==="regCategory"?{regSubcategoryId:"",regParentId:"",regVariantLabel:""}:{}),...(field==='regParentId'&&!value?{regVariantLabel:''}:{}),...(["regUnitPrice","regQuantity"].includes(field)?{regCostPrice:this.registrationCost(next.regUnitPrice,next.regQuantity)}:{})};
+      return {[field]:value,registrationError:"",registrationNotice:null,regSaved:false,...(field==="regCategory"?{regSubcategoryId:"",...(!s.regEditing?{regParentId:"",regVariantLabel:""}:{})}:{}),...(field==='regParentId'&&!value?{regVariantLabel:''}:{}),...(["regUnitPrice","regQuantity"].includes(field)?{regCostPrice:this.registrationCost(next.regUnitPrice,next.regQuantity)}:{})};
     });
   };
   registrationDuplicate=()=>{
@@ -2674,7 +2674,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
   buildSubcategorySelect(category,value,onChange,{registration=false,includeInactive=false}={}){
     const h=React.createElement,options=this.subcategoriesFor(category,includeInactive);
     const placeholder=!category?'Select category first':!options.length?'No subcategories':registration?'Select subcategory':'All subcategories';
-    return h('label',{key:'subcategory',className:'field-group'},['Subcategory',h('select',{'aria-label':'Subcategory',value:value||'',onChange,disabled:!category||!options.length,required:registration},[
+    return h('label',{key:'subcategory',className:'field-group'},['Subcategory',registration?h('span',{className:'required-marker','aria-hidden':true},' *'):null,h('select',{'aria-label':'Subcategory',value:value||'',onChange,disabled:!category||!options.length,required:registration},[
       h('option',{key:'empty',value:''},placeholder),...options.map(c=>h('option',{key:c.id,value:c.id},c.name))
     ])]);
   }
@@ -2685,7 +2685,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     const products=s.productsLocal||data.PRODUCTS;
     const units=[...new Set(["Piece","Pair","Set","Dozen","Pack","Packet","Pouch","Bag","Box","Case","Carton","Sack","Tray","Bottle","Can","Jar","Tub","Cup","Tube","Roll","Sheet","Bundle","Bunch","Bar","Stick","Sachet","Strip","Blister pack","Tablet","Capsule","Vial","Ampoule","Drum","Bucket","Pail","Crate","Pallet","Kg","g","Liter","mL","m",s.regStockUnit].filter(Boolean))];
     const measurement=h('div',{className:'field-group'},[
-      h('label',{htmlFor:'registration-regSizeUnit'},'Measurement Unit'),
+      h('label',{htmlFor:'registration-regSizeUnit'},['Measurement Unit',h('span',{className:'required-marker','aria-hidden':true},' *')]),
       h('select',{id:'registration-regSizeUnit',required:true,'aria-required':true,value:s.regSizeUnit||'',onChange:this.setRegField('regSizeUnit')},[
         h('option',{value:''},'Select measurement unit'),
         ...Object.entries(PRODUCT_MEASUREMENT_UNITS).map(([group,values])=>h('optgroup',{key:group,label:group},Object.entries(values).map(([value,label])=>h('option',{key:value,value},label)))),
@@ -2719,8 +2719,8 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
       h("datalist",{key:"names",id:"reg-product-options"},[...new Set(products.map(p=>p.name))].filter(name=>searchMatches(name,s.regProductName)).map(name=>h("option",{key:name,value:name}))),
       (s.registrationError||(!s.regSaved&&this.registrationDuplicate()))?h('p',{role:'alert',className:'alert'},s.registrationError||'This product already exists in inventory (Item Code '+this.registrationDuplicate().id+'). Use the existing product or choose a different brand or size.'):null,
       group("01","Product details","Identify the item and choose its category and supplier.",[
-        field("regProductName","Product name",{required:true}),field("regManufacturer","Manufacturer",{help:"Company that makes the product; separate from brand and supplier."}),s.regEditing?field("regStockId","Item Code",{type:"number",step:1,readOnly:true}):null,
-        h('label',{className:'field-group'},['Product type *',h('select',{required:true,value:s.regParentId||'main',onChange:e=>this.setRegField('regParentId')({target:{value:e.target.value==='main'?'':e.target.value}})},[h('option',{value:'main'},'Main product / no parent'),...products.filter(p=>!p.parentId&&p.id!==s.regEditing&&p.status==='Active'&&p.category===s.regCategory).map(p=>h('option',{key:p.id,value:p.id},p.name+' (#'+p.id+')'))])]),
+        field("regProductName","Product name",{required:true,placeholder:"e.g. Organic Almond Milk 1L"}),field("regManufacturer","Manufacturer",{placeholder:"e.g. Pure Harvest Ltd.",help:"Company that makes the product; separate from brand and supplier."}),s.regEditing?field("regStockId","Item Code",{type:"number",step:1,readOnly:true}):null,
+
         s.regParentId?field('regVariantLabel','Variant label',{required:true,help:'For example: Red, Vanilla or Family pack. Each variant has its own barcode and stock.'}):null,
         field("regScannedBarcode","Barcode",{required:true,placeholder:"Scan or enter the item barcode"}),
         h('div',{className:'registration-category'},[select("regCategory","Category",data.CATEGORIES.filter(c=>c.status==="Active").map(c=>c.name),true),btn('+ Add Category',this.openCategoryModal)]),

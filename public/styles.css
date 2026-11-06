@@ -2024,3 +2024,31 @@ button, .primary-button, .kita-button,
 .stock-condition-out > * { background: #fee2e2 !important; color: #b91c1c !important; }
 .page-back-toolbar { display: flex; margin-bottom: 16px; }
 .page-back-toolbar .kita-button { min-height: 34px; padding: 7px 12px !important; }
+
+/* Product registration follows the two-column product and stock cards. */
+.registration-page { max-width: 1040px; }
+.registration-page .form-section { padding: 0; margin-bottom: 28px; border: 1px solid #e1e8f2; border-radius: 14px; box-shadow: 0 1px 2px #12336508; overflow: hidden; }
+.registration-page .form-section > legend { float: left; box-sizing: border-box; display: flex; align-items: center; gap: 12px; width: 100%; padding: 16px 24px; margin: 0; background: #fbfcff; border-bottom: 1px solid #edf2f8; font-size: 14px; }
+.registration-page .section-number { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; margin: 0; border-radius: 6px; color: #2563eb; background: #e2edff; font-size: 11px; }
+.registration-page .form-section > .form-grid { clear: both; padding: 26px; gap: 24px 28px; }
+.registration-page .field-group > label, .registration-page label.field-group { color: #17345d; font-size: 11px; font-weight: 600; }
+.registration-page .field-group > label { text-transform: uppercase; letter-spacing: .4px; }
+.registration-page .field-group > :is(input,select), .registration-page label.field-group > select { width: 100%; max-width: none; min-height: 40px; box-sizing: border-box; border: 1px solid #cad8ed; border-radius: 8px; background: #fff; padding: 9px 12px; font-size: 13px; color: #17345d; }
+.registration-page .field-group input::placeholder { color: #8c9db9; }
+.registration-page .field-group small { font-size: 11px; font-weight: 400; color: #7188a8; line-height: 1.5; }
+.registration-page .registration-category { flex-wrap: nowrap; gap: 8px; }
+.registration-page .registration-category .field-group { flex: 1; }
+.registration-page .registration-category > .kita-button { flex: 0 0 auto; min-height: 40px; padding: 9px 14px !important; white-space: nowrap; }
+.registration-page .registration-size { width: 100%; max-width: none; }
+.registration-page .registration-size-fields { grid-template-columns: minmax(80px,.65fr) minmax(0,1.35fr); gap: 10px; }
+.registration-page .form-actions { padding: 10px 8px 24px; gap: 18px; }
+.registration-page .form-actions .primary-button { min-height: 42px; background: #2563eb; border-radius: 9px; padding: 10px 22px; font-size: 13px; }
+.registration-page :is(input,select,textarea):focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+@media (max-width: 680px) {
+  .registration-page .form-section > .form-grid { grid-template-columns: minmax(0,1fr); padding: 18px; gap: 20px; }
+  .registration-page .form-section > legend { padding: 14px 18px; }
+  .registration-page .form-actions { align-items: stretch; }
+  .registration-page .form-action-note { width: 100%; }
+  .registration-page .form-actions .primary-button { width: 100%; }
+}
+@media (max-width: 380px) { .registration-page .registration-category { flex-wrap: wrap; } .registration-page .registration-category > .kita-button { width: 100%; } }

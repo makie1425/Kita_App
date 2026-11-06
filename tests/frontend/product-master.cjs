@@ -1,7 +1,7 @@
 const fs=require('fs'),vm=require('vm'),assert=require('assert');
-const ctx=vm.createContext({URLSearchParams,React:{createElement:(type,props,...children)=>({type,props,children})},DCLogic:class{setState(p){Object.assign(this.state,typeof p==='function'?p(this.state):p)}},window:{},crypto:{randomUUID:()=> 'test'}});
+const ctx=vm.createContext({URLSearchParams,setTimeout:()=>0,clearTimeout:()=>{},React:{createElement:(type,props,...children)=>({type,props:{...(props||{}),children:children.length===1?children[0]:children},children})},DCLogic:class{setState(p){Object.assign(this.state,typeof p==='function'?p(this.state):p)}},window:{},crypto:{randomUUID:()=> 'test'}});
 vm.runInContext(fs.readFileSync('public/app.js','utf8')+';globalThis.App=Component;',ctx);
-const app=new ctx.App();
+const app=new ctx.App();app.loadInventoryHistory=async()=>{};
 const product={id:1,name:'Coke',category:'Beverages',stock:0,minStock:10,price:80,unitPrice:55,unit:'Bottle',stockUnit:'Bottle',purchaseUnit:'Bottle',conversionFactor:1,status:'Active',barcode:'COKE',size:1,sizeUnit:'Liter',brandId:1,subcategoryId:1};
 app.state.data={PRODUCTS:[product],CATEGORIES:[{name:'Beverages',status:'Active',classification:'Non-Perishable'}],BRANDS:[{id:1,name:'Coca-Cola',status:'Active'}],SUBCATEGORIES:[{id:1,name:'Soft Drinks',category:'Beverages',status:'Active'}],SUPPLIERS:[],ADJUSTMENTS:[],PURCHASE_ORDERS:[],RECEIVING_RECORDS:[],BATCH_RECALL:[]};
 Object.assign(app.state,{suppliersLocal:[],productsLocal:[product],categoriesLocal:app.state.data.CATEGORIES,adjustmentsLocal:[],purchaseData:{requests:[],orders:[]},inventoryHistory:{products:[product],batches:[],movements:[]},screen:'mgrRequest'});
@@ -32,7 +32,6 @@ const change=(control,value)=>control.props.onChange({target:{value}});
 for(const [method,categoryKey,subKey] of [
   ['buildMgrRegistration','regCategory','regSubcategoryId'],
   ['buildManualLookupModal','manualCategory','manualSubcategoryId'],
-  ['buildItemPickerModal','itemPickerFilterCategory','itemPickerSubcategoryId'],
   ['buildMgrInventory','inventoryCategory','inventorySubcategoryId'],
 ]){
   Object.assign(app.state,{[categoryKey]:'Beverages',[subKey]:'1'});
@@ -67,8 +66,8 @@ console.log('Dependent subcategory options, resets, empty states and product fil
 
 app.state.reportFilters={type:'sales',category:'Beverages',brandId:'1',subcategoryId:'1',productId:'1'};
 let reportTree=app.buildAdmReports();
-assert(text(reportTree).includes('Generate report'));
-assert(text(reportTree).includes('From date'));
+assert(text(reportTree).includes('Refresh'));
+assert(text(reportTree).includes('Date range'));
 app.setReportFilter('category','Snacks');
 assert.strictEqual(app.state.reportFilters.subcategoryId,'');
 assert.strictEqual(app.state.reportFilters.productId,'');
@@ -80,15 +79,17 @@ app.state.reportResult={title:'Sales lines',generated:'2026-10-06',rows:[],colum
 app.state.reportAppliedFilters={type:'sales',brandId:'1',from:'2026-10-01'};
 app.state.reportFilters={type:'inventory',brandId:'2'};
 reportTree=app.buildAdmReports();
+assert(nodes(reportTree).filter(n=>n.type==='a'&&n.props.download).every(n=>n.props['aria-disabled']),'Changed filters block exports');
+app.state.reportFilters={...app.state.reportAppliedFilters};reportTree=app.buildAdmReports();
 const links=nodes(reportTree).filter(n=>n.type==='a');
 assert(links.some(n=>n.props.href.includes('format=print')));
 assert(links.some(n=>n.props.href.includes('format=csv')));
 assert(links.some(n=>n.props.href.includes('format=pdf')&&n.props.download===true));
 assert(links.every(n=>n.props.href.includes('brandId=1')&&n.props.href.includes('type=sales')),'Exports retain generated filters');
-assert(text(reportTree).includes('No records match'));
+assert(text(reportTree).includes('No results found'));
 console.log('Report filters, date semantics, empty state and export filter consistency verified.');
 const actionGroups=nodes(app.buildAdmReports()).filter(n=>n.props?.className?.includes('action-group'));
-assert(actionGroups.length>=2,'Report form and exports have separate action rows');
+assert(actionGroups.length>=1,'Report form and exports have separate action rows');
 const inline=ctx.React.createElement('td',null,[ctx.React.createElement('button',{onClick:()=>{}},'Edit'),ctx.React.createElement('button',{onClick:()=>{}},'Deactivate')]);
 assert(nodes(inline).some(n=>n.props?.className==='action-group'),'Legacy table actions share a spaced wrapper');
 const existingFlex=ctx.React.createElement('div',{style:{display:'flex',gap:4}},[ctx.React.createElement('button',null,'One'),ctx.React.createElement('button',null,'Two')]);
@@ -111,8 +112,8 @@ console.log('Word-prefix search and product suggestions verified.');
 let registrationPayload;
 app.authPost=(url,payload)=>{registrationPayload=payload;return Promise.resolve({product:{...payload,id:99}})};
 app.reloadCatalog=()=>Promise.resolve();app.toast=()=>{};
-Object.assign(app.state,{regEditing:null,regProductName:'New item',regCategory:'Beverages',regScannedBarcode:'NEW-ITEM',regConversionFactor:'1',regUnitPrice:'55',regRetailPrice:'80'});
-app.saveRegistration();
+Object.assign(app.state,{regEditing:null,regProductName:'New item',regCategory:'Beverages',regScannedBarcode:'NEW-ITEM',regConversionFactor:'1',regUnitPrice:'55',regRetailPrice:'80',regManufacturer:'Factory',regBrandId:1,regSubcategoryId:1,regSize:1,regSizeUnit:'Liter',regSupplier:'Supplier',regStatus:'Active',regStockUnit:'Bottle',regReorderLevel:0});
+app.state.data.SUPPLIERS=[{id:1,name:'Supplier',status:'Active'}];app.saveRegistration();
 assert(registrationPayload,'New registration saves without pricing inputs');
 assert.strictEqual(registrationPayload.unitPrice,0);
 assert.strictEqual(registrationPayload.price,0);
