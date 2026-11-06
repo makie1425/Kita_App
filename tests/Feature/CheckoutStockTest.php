@@ -66,7 +66,7 @@ class CheckoutStockTest extends TestCase
         $this->assertDatabaseHas('transaction_lines', ['transaction_uuid' => 'TXN-test', 'qty' => 3, 'manualLookupQty' => 1, 'entryMethod' => 'Mixed']);
         $this->getJson('/api/kita-data')->assertOk()->assertJsonPath('TRANSACTIONS.0.lines.0.entryMethod', 'Mixed');
         $this->actingAs($this->manager)->getJson('/reports/data?type=sales')->assertOk()
-            ->assertJsonPath('rows.0.entryMethod', 'Mixed')->assertJsonPath('rows.0.manualLookupQty', 1);
+            ->assertJsonMissingPath('rows.0.entryMethod')->assertJsonMissingPath('rows.0.manualLookupQty');
         $this->actingAs($this->cashier);
         $this->postJson('/api/transactions', $this->sale(1, 'TXN-unknown'))->assertCreated();
         $this->assertDatabaseHas('transaction_lines', ['transaction_uuid' => 'TXN-unknown', 'manualLookupQty' => null, 'entryMethod' => null]);
@@ -75,7 +75,7 @@ class CheckoutStockTest extends TestCase
         $this->postJson('/api/transactions', $barcode)->assertCreated();
         $this->assertDatabaseHas('transaction_lines', ['transaction_uuid' => 'TXN-barcode', 'manualLookupQty' => 0, 'entryMethod' => 'Barcode']);
         $this->actingAs($this->manager)->getJson('/reports/data?type=sales')->assertOk()
-            ->assertJsonFragment(['entryMethod' => 'Unknown', 'manualLookupQty' => null]);
+            ->assertJsonMissingPath('rows.0.entryMethod')->assertJsonMissingPath('rows.0.manualLookupQty');
     }
 
     public function test_checkout_rejects_manual_lookup_count_above_sold_quantity(): void

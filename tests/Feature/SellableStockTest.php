@@ -47,6 +47,18 @@ class SellableStockTest extends TestCase
         $this->actingAs($other)->getJson('/api/inventory/availability?productId=1&quantity=1')->assertNotFound();
     }
 
+    public function test_cart_preflight_returns_only_requested_products_and_denies_other_workspaces(): void
+    {
+        $this->batch(5, '2027-01-01');
+        $this->insertFixture('products', ['id'=>2,'name'=>'Rice','category'=>'Food','status'=>'Active','stock'=>2,'price'=>30,'unitPrice'=>10]);
+        $this->getJson('/api/inventory/availability?productIds[]=1')->assertOk()->assertJsonCount(1,'products')->assertJsonPath('products.0.id',1)->assertJsonPath('products.0.sellableStock',5);
+        $this->getJson('/api/inventory/availability?productIds[]=1&productIds[]=2')->assertOk()->assertJsonCount(2,'products');
+        $this->getJson('/api/inventory/availability?productIds[]=999999')->assertNotFound();
+        $this->getJson('/api/inventory/availability?productIds[]=1&productIds[]=1')->assertUnprocessable();
+        $this->getJson('/api/inventory/availability?productId=1&quantity=1&productIds[]=2')->assertUnprocessable();
+        $this->actingAs(User::factory()->create(['role'=>'manager']))->getJson('/api/inventory/availability?productIds[]=1')->assertNotFound();
+    }
+
     private function batch(int $qty, ?string $expiry = null, bool $recalled = false, string $received = '2026-10-01', int $cost = 10): int
     {
         FifoInventory::receive(1, $qty, $cost, $received, batch: 'B-'.Str::random(5), expiry: $expiry);

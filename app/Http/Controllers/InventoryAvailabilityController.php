@@ -10,7 +10,12 @@ class InventoryAvailabilityController extends Controller
 {
     public function __invoke(Request $request)
     {
-        $data = $request->validate(['productId' => ['nullable', 'integer', 'min:1'], 'quantity' => ['nullable', 'integer', 'min:1', 'max:1000000', 'required_with:productId']]);
+        $data = $request->validate([
+            'productId' => ['nullable', 'integer', 'min:1', 'prohibits:productIds'],
+            'quantity' => ['nullable', 'integer', 'min:1', 'max:1000000', 'required_with:productId'],
+            'productIds' => ['sometimes', 'array', 'min:1', 'max:500'],
+            'productIds.*' => ['required', 'integer', 'min:1', 'distinct'],
+        ]);
 
         // A read-only preflight must not wait for a product write lock.
         // Checkout separately locks and revalidates stock before committing a sale.
@@ -23,7 +28,10 @@ class InventoryAvailabilityController extends Controller
                 abort_unless($product, 404, 'Product not found.');
                 $products = [InventoryAvailability::assertSellable($product, $data['quantity'])];
             } else {
-                $products = InventoryAvailability::products($query->get()->map(fn ($p) => (array) $p)->all());
+                if (isset($data['productIds'])) $query->whereIn('id', $data['productIds']);
+                $rows = $query->get();
+                abort_if(isset($data['productIds']) && $rows->count() !== count($data['productIds']), 404, 'A requested product is unavailable to this account.');
+                $products = InventoryAvailability::products($rows->map(fn ($p) => (array) $p)->all());
             }
 
             $promotions = \App\Services\WorkspaceRead::table('promotions')->where('startDate', '<=', now()->toDateString())

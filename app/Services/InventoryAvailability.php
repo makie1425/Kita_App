@@ -7,7 +7,7 @@ use Illuminate\Validation\ValidationException;
 
 class InventoryAvailability
 {
-    public static function reservations()
+    public static function reservations(?array $productIds = null)
     {
         $transactions = DB::table('transactions');
         if (config('workspaces.enabled')) {
@@ -16,6 +16,7 @@ class InventoryAvailability
         }
 
         return WorkspaceRead::table('inventory_allocations as a')->joinSub($transactions, 't', 't.uuid', '=', 'a.referenceId')
+            ->when($productIds !== null, fn ($query) => $query->whereIn('a.productId', $productIds))
             ->where('a.referenceType', 'payment_reservation')->where('t.status', 'Pending Payment')
             ->groupBy('a.batchId')->select('a.batchId')->selectRaw('SUM(a.quantity - a.returnedQuantity) as reserved');
     }
@@ -26,15 +27,16 @@ class InventoryAvailability
             $visible = WorkspaceRead::table('products')->whereIn('id', array_column($products, 'id'))->pluck('id')->all();
             $products = array_values(array_filter($products, fn ($product) => in_array($product['id'], $visible)));
         }
+        if (!$products) return [];
         $today = now()->toDateString();
-        $balances = \App\Services\WorkspaceRead::table('inventory_batches as b')->leftJoinSub(self::reservations(), 'r', 'r.batchId', '=', 'b.id')
+        $balances = \App\Services\WorkspaceRead::table('inventory_batches as b')->leftJoinSub(self::reservations(array_column($products, 'id')), 'r', 'r.batchId', '=', 'b.id')
             ->whereIn('b.productId', array_column($products, 'id'))->groupBy('b.productId')
             ->select('b.productId')->selectRaw('SUM(b.quantityRemaining) as onHand, SUM(COALESCE(r.reserved, 0)) as reserved, SUM(CASE WHEN b.recalled = 0 AND (b.expiryDate IS NULL OR b.expiryDate > ?) THEN b.quantityRemaining ELSE 0 END) as sellable', [$today])
             ->selectRaw('SUM(CASE WHEN b.expiryDate <= ? THEN b.quantityRemaining + COALESCE(r.reserved, 0) ELSE 0 END) as expired, SUM(CASE WHEN b.recalled = 1 THEN b.quantityRemaining + COALESCE(r.reserved, 0) ELSE 0 END) as recalled', [$today])
             ->selectRaw('SUM(CASE WHEN b.recalled = 1 AND b.expiryDate <= ? THEN b.quantityRemaining + COALESCE(r.reserved, 0) ELSE 0 END) as expiredAndRecalled', [$today])
             ->selectRaw('SUM((b.quantityRemaining + COALESCE(r.reserved, 0)) * b.unitCost) as inventoryValue')
             ->get()->keyBy('productId');
-        $categories = \App\Services\WorkspaceRead::table('categories')->where('status', 'Active')->whereNull('archivedAt')->pluck('name')->all();
+        $categories = \App\Services\WorkspaceRead::table('categories')->whereIn('name', array_unique(array_column($products, 'category')))->where('status', 'Active')->whereNull('archivedAt')->pluck('name')->all();
 
         return array_map(function ($product) use ($balances, $today, $categories) {
             $balance = $balances->get($product['id']);

@@ -23,7 +23,7 @@ const text=n=>n==null?'':typeof n!=='object'?String(n):Array.isArray(n)?n.map(te
 (async()=>{
   // Rapid scans queue server checks against the latest cart quantity.
   await Promise.all([app.addProductToCart(serverProduct),app.addProductToCart(serverProduct),app.addProductToCart(serverProduct)]);
-  assert.equal(app.state.cart[0].qty,2);assert.deepEqual(calls,[1,2,3]);assert.match(messages.at(-1),/Expired or recalled/);
+  assert.equal(app.state.cart[0].qty,2);assert.deepEqual(calls,[0],'Rapid scans share one bounded availability request');assert.match(messages.at(-1),/Only 2 units/);
   serverProduct.sellableStock=0;
   await app.stepQty(app.state.cart[0].lineId,1)();assert.equal(app.state.cart[0].qty,2);
   let paymentCalls=0;app.finalizeTransaction=()=>paymentCalls++;
@@ -38,13 +38,14 @@ const text=n=>n==null?'':typeof n!=='object'?String(n):Array.isArray(n)?n.map(te
   // Display the physical balance and each reason instead of presenting all units as sellable.
   app.state.role='manager';app.state.invTab='table';app.state.data.PRODUCTS=[{...serverProduct}];app.state.productsLocal=app.state.data.PRODUCTS;
   const inventory=app.buildMgrInventory();
-  for(const label of ['Stock on Hand','Sellable Quantity','Expired','Recalled','Reserved','Exclusion reasons'])assert(text(inventory).includes(label),label);
-  assert(text(inventory).includes('Expired: 3; Recalled: 3'));
+  for(const label of ['Qty on Hand','Available Qty','Reserved Qty','Stock Condition'])assert(text(inventory).includes(label),label);
+  assert.equal(app.sellableStock(serverProduct),2);
   app.state.inventoryWorkflows={today:'2026-10-13',batches:[{id:7,productId:1,name:'Milk',quantityRemaining:8,stockOnHand:8,recalled:true,eligibility:'Recalled'}],events:[],counts:[]};
   app.state.workflowForm={batchId:'7',recallAction:'Release recall',reason:'Verified safe'};
   let event;app.saveInventoryWorkflow=(route,data)=>event=data;
   const recall=app.buildInventoryWorkflows('recall');
-  nodes(recall).find(n=>n.type==='button'&&text(n)==='Save recall status').props.onClick();
+  app.requestConfirmation=async()=>true;
+  await nodes(recall).find(n=>n.type==='button'&&text(n)==='Save recall status').props.onClick();
   assert.equal(event.type,'Release recall');assert.equal(event.quantity,8);
   console.log('Sellable stock UI: fresh selection, rapid scans, quantity/checkout checks, offline blocking, stale responses, physical totals and recall release passed.');
 })().catch(e=>{console.error(e);process.exitCode=1;});

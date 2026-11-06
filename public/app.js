@@ -413,7 +413,7 @@ class Component extends DCLogic {
     clearInterval(this.sessionTimer);
     this.reportRequestId=(this.reportRequestId||0)+1;this.reportController?.abort();
     this.purchaseLoadId=(this.purchaseLoadId||0)+1;this.stockRequestId=(this.stockRequestId||0)+1;
-    this.cartGeneration=(this.cartGeneration||0)+1;
+    this.cartGeneration=(this.cartGeneration||0)+1;this.resetCheckoutChecks();
     this.confirmationResolve?.(false);this.confirmationResolve=null;
     if(window.KITA_AUTH){window.KITA_AUTH.user=null;if(csrfToken)window.KITA_AUTH.csrfToken=csrfToken;}
     this.setState({...this.emptySessionState,screenTrail:[],authStep:'login',role:null,screen:null,authenticatedUser:null,data:null,cart:[],newReqCart:[],accountsLocal:null,purchaseData:null,supplierAccountsData:null,inventoryHistory:null,reportResult:null,saDashboard:null,confirmation:null,manualLookupOpen:false,seniorPwdOpen:false,overrideLine:null,acctModalOpen:false,discountManagerPin:'',approvalPin:'',approvalManagerId:'',currentApprovalPin:'',newApprovalPin:'',confirmApprovalPin:'',loginUsername:'',loginPassword:'',otpEmail:'',otpCode:'',mgrNotificationsLocal:[],notificationUnread:0,mgrNotifOpen:false,toasts:[],loginError:message||'Please sign in again.'});
@@ -572,27 +572,41 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
   // ---- Checkout / cart ----
   setBarcodeInput=e=>this.setState({barcodeInput:e.target.value});
   onBarcodeKey=e=>{ if(e.key==="Enter") this.scanBarcode(); };
-  scanBarcode=()=>{ const {data,barcodeInput,productsLocal}=this.state; if(!data||!barcodeInput.trim()) return;
+  scanBarcode=(source='scan')=>{ const {data,barcodeInput,productsLocal}=this.state; if(!data||!barcodeInput.trim()) return;
     if(!this.state.scannerConnected){ this.toast("Scanner disconnected. Use Manual Product Lookup.","error"); this.setState({barcodeInput:""}); return; }
     const code=barcodeInput.trim();
     const normalizedCode=code.replace(/\D/g,"");
     const findProduct=catalog=>catalog.find(p=>String(p.barcode||"").trim()===code)||(/^\d+$/.test(code)?catalog.find(p=>String(p.id)===code):null);
     const productCatalog=productsLocal||data.PRODUCTS;
     const p=findProduct(productCatalog);
-    if(p){ this.addProductToCart(p); this.setState({barcodeInput:""}); return; }
+    if(p){ this.addProductToCart(p,false,source); this.setState({barcodeInput:""}); return; }
+    if(this.barcodeCatalogLookup)return;
+    const lookup={};this.barcodeCatalogLookup=lookup;this.setState({barcodeCatalogLookup:true});
+    const actor=this.state.authenticatedUser,generation=this.cartGeneration||0;
     this.reloadCatalog().then(()=>{
+      if(actor!==this.state.authenticatedUser||generation!==(this.cartGeneration||0))return;
       const refreshed=this.state.productsLocal||[];
       const refreshedProduct=findProduct(refreshed);
-      if(refreshedProduct){ this.addProductToCart(refreshedProduct); this.setState({barcodeInput:""}); return; }
+      if(refreshedProduct){ this.addProductToCart(refreshedProduct,false,source); this.setState({barcodeInput:""}); return; }
       this.toast("Unrecognized barcode - sent to manual lookup.","error"); this.setState({barcodeInput:"",manualLookupOpen:true});
-    }).catch(()=>{ this.toast("Could not refresh the product catalog.","error"); this.setState({barcodeInput:"",manualLookupOpen:true}); });
+    }).catch(()=>{if(actor!==this.state.authenticatedUser||generation!==(this.cartGeneration||0))return;this.toast("Could not refresh the product catalog.","error");this.setState({barcodeInput:"",manualLookupOpen:true});}).finally(()=>{if(this.barcodeCatalogLookup!==lookup)return;this.barcodeCatalogLookup=null;if(actor===this.state.authenticatedUser&&generation===(this.cartGeneration||0))this.setState({barcodeCatalogLookup:false});});
   };
   sellableStock=p=>Number(p?.sellableStock??0);
-  refreshStockAvailability=async(productId,quantity)=>{
+  checkoutSetState=patch=>new Promise(resolve=>this.setState(patch,resolve));
+  resetCheckoutChecks=()=>{
+    for(const controller of this.stockControllers||[])controller.abort();
+    this.stockControllers=new Set();this.stockSelectionQueue=null;this.stockAddBatch=null;this.stockSelections=0;this.stockCheckoutChecking=false;this.stockCheckoutToken=null;this.lastStockSelectionIds=[];this.barcodeCatalogLookup=null;
+    this.setState({stockSelectionPending:0,checkoutStockChecking:false,checkoutStockError:'',barcodeCatalogLookup:false});
+  };
+  refreshStockAvailability=async(productId,quantity,productIds)=>{
     const actor=this.state.authenticatedUser,requestId=(this.stockRequestId||0)+1;this.stockRequestId=requestId;
     const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),30000);
+    this.stockControllers??=new Set();this.stockControllers.add(controller);
     try{
-      const suffix=productId?'?'+new URLSearchParams({productId,quantity}):'';
+      const params=new URLSearchParams();
+      if(productId){params.set('productId',productId);params.set('quantity',quantity);}
+      else if(productIds)for(const id of [...new Set(productIds.map(String))])params.append('productIds[]',id);
+      const suffix=params.size?'?'+params:'';
       const response=await this.sessionFetch('/api/inventory/availability'+suffix,{headers:{Accept:'application/json'},credentials:'same-origin',cache:'no-store',signal:controller.signal});
       const body=await response.json();this.handleSessionResponse(response,body);
       if(!response.ok)throw new Error(Object.values(body.errors||{})[0]?.[0]||body.message||'Cannot verify sellable stock. Try again.');
@@ -601,37 +615,63 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
         this.stockAppliedId=requestId;
         const fresh=new Map(body.products.map(p=>[String(p.id),p]));
         const merge=items=>(items||[]).map(p=>fresh.has(String(p.id))?{...p,...fresh.get(String(p.id))}:p);
-        this.setState(s=>({productsLocal:merge(s.productsLocal||s.data?.PRODUCTS),data:s.data?{...s.data,BUSINESS_DATE:body.businessDate,PRODUCTS:merge(s.data.PRODUCTS)}:s.data,stockAvailabilityError:'',stockCheckedAt:body.checkedAt,...(Array.isArray(body.activePromotions)?{checkoutPromotions:body.activePromotions,cart:s.cart.map(l=>({...l,promo:body.activePromotions.find(p=>(p.productIds||[]).includes(l.productId)||(p.type==='Category-Wide'&&p.category===(fresh.get(String(l.productId))||(s.productsLocal||[]).find(x=>x.id===l.productId))?.category))||null}))}:{})}));
+        await this.checkoutSetState(s=>({productsLocal:merge(s.productsLocal||s.data?.PRODUCTS),data:s.data?{...s.data,BUSINESS_DATE:body.businessDate,PRODUCTS:merge(s.data.PRODUCTS)}:s.data,stockAvailabilityError:'',stockCheckedAt:body.checkedAt,...(Array.isArray(body.activePromotions)?{checkoutPromotions:body.activePromotions,cart:s.cart.map(l=>({...l,promo:body.activePromotions.find(p=>(p.productIds||[]).includes(l.productId)||(p.type==='Category-Wide'&&p.category===(fresh.get(String(l.productId))||(s.productsLocal||[]).find(x=>x.id===l.productId))?.category))||null}))}:{})}));
       }
       return body.products;
-    }catch(error){throw new Error(error.name==='AbortError'?'Stock check timed out. Try again before selling.':error.message);}finally{clearTimeout(timer);}
+    }catch(error){throw new Error(error.name==='AbortError'?'Stock check timed out. Try again before selling.':error.message);}finally{clearTimeout(timer);this.stockControllers?.delete(controller);}
   };
   queueStockSelection=work=>{
-    if(this.checkoutInFlight||this.stockCheckoutChecking||this.state.paymentState==='processing')return Promise.resolve();
+    if(this.checkoutInFlight||this.stockCheckoutChecking||this.state.paymentState==='processing')return Promise.resolve(false);
     const generation=this.cartGeneration||0,actor=this.state.authenticatedUser;
+    const current=()=>generation===(this.cartGeneration||0)&&actor===this.state.authenticatedUser;
     this.stockSelections=(this.stockSelections||0)+1;
+    this.setState({stockSelectionPending:this.stockSelections,checkoutStockError:''});
     const queued=(this.stockSelectionQueue||Promise.resolve()).then(async()=>{
-      if(generation!==(this.cartGeneration||0)||actor!==this.state.authenticatedUser)return;
-      await work(()=>generation===(this.cartGeneration||0)&&actor===this.state.authenticatedUser);
-    }).catch(error=>this.toast(error.message,'error')).finally(()=>{this.stockSelections--;});
+      if(!current())return false;
+      return await work(current);
+    }).catch(error=>{if(current()){this.setState({checkoutStockError:error.message});this.toast(error.message,'error');}return false;}).finally(()=>{
+      if(current()){this.stockSelections=Math.max(0,(this.stockSelections||0)-1);this.setState({stockSelectionPending:this.stockSelections});}
+    });
     this.stockSelectionQueue=queued;return queued;
+  };
+  retryStockCheck=async()=>{
+    if(this.stockSelections||this.stockCheckoutChecking||this.checkoutInFlight)return;
+    const ids=this.state.cart.length?this.state.cart.map(l=>l.productId):this.lastStockSelectionIds;
+    if(!ids?.length)return;
+    const token={};this.stockCheckoutToken=token;this.stockCheckoutChecking=true;this.setState({checkoutStockChecking:true,checkoutStockError:''});
+    try{await this.refreshStockAvailability(null,null,ids);if(this.stockCheckoutToken===token)this.toast('Stock verified. Add the product again or complete the sale.');}
+    catch(error){if(this.stockCheckoutToken===token)this.setState({checkoutStockError:error.message});}
+    finally{if(this.stockCheckoutToken===token){this.stockCheckoutChecking=false;this.setState({checkoutStockChecking:false});}}
   };
   promoStatus=(p)=>{ const today=this.state.data?.BUSINESS_DATE||new Date().toISOString().slice(0,10); if(today<p.startDate) return "Scheduled"; if(today>p.endDate) return "Expired"; return "Active"; };
   activePromo=(productId)=>{ const list=this.state.checkoutPromotions??this.state.promotionsLocal; if(!list) return null; const product=(this.state.productsLocal||this.state.data?.PRODUCTS||[]).find(p=>p.id===productId);return list.find(pr=>((pr.productIds||[]).includes(productId)||(pr.type==='Category-Wide'&&pr.category===product?.category)) && this.promoStatus(pr)==="Active") || null; };
-  addProductToCart=(p,manual)=>this.queueStockSelection(async current=>{
-    const quantity=(this.state.cart.find(l=>l.productId===p.id)?.qty||0)+1;
-    const fresh=(await this.refreshStockAvailability(p.id,quantity))[0];
-    if(current())this.addVerifiedProductToCart(fresh,manual);
-  });
-  addVerifiedProductToCart=(p,manual)=>{
+  addProductToCart=(p,manual,source='scan')=>{
+    if(this.checkoutInFlight||this.stockCheckoutChecking||this.state.paymentState==='processing')return Promise.resolve(false);
+    const generation=this.cartGeneration||0,actor=this.state.authenticatedUser;
+    if(source==='button'&&this.stockSelections)return Promise.resolve(false);
+    const existing=this.stockAddBatch;
+    if(existing&&!existing.started&&existing.generation===generation&&existing.actor===actor){existing.items.push({p,manual});return existing.promise;}
+    const batch={items:[{p,manual}],generation,actor,started:false};this.stockAddBatch=batch;
+    batch.promise=this.queueStockSelection(async current=>{
+      batch.started=true;
+      const ids=[...new Set(batch.items.map(item=>String(item.p.id)))];this.lastStockSelectionIds=ids;
+      const products=await this.refreshStockAvailability(null,null,ids);
+      if(!current())return false;
+      const fresh=new Map(products.map(product=>[String(product.id),product]));
+      for(const item of batch.items){if(!current())return false;const product=fresh.get(String(item.p.id));if(!product)throw new Error('Selected product is unavailable to this account.');await this.addVerifiedProductToCart(product,item.manual);}
+      return true;
+    });
+    return batch.promise;
+  };
+  addVerifiedProductToCart=async(p,manual)=>{
     if(p.status==="Quarantine"){ this.toast(`"${p.name}" is quarantined — blocked from sale.`,"error"); return; }
     if(p.status!=="Active"||this.sellableStock(p)<=0){ this.toast(`"${p.name}" has no sellable stock. ${(p.exclusionReasons||[]).join('; ')}`,"error"); return; }
     const existing=this.state.cart.find(l=>l.productId===p.id);
     if(existing && existing.qty>=this.sellableStock(p)){ this.toast(`Only ${this.sellableStock(p)} units of ${p.name} are available.`,"error"); return; }
-    if(existing){ this.setState(s=>({cart:s.cart.map(l=>l.productId===p.id?{...l,qty:l.qty+1,manualQty:(l.manualQty||0)+(manual?1:0),manual:!!(l.manualQty||manual),lastEntryMethod:manual?"Manual lookup":"Barcode",pulse:true}:l)})); this.toast(`Added 1 more "${p.name}".`);
+    if(existing){ await this.checkoutSetState(s=>({cart:s.cart.map(l=>l.productId===p.id?{...l,qty:l.qty+1,manualQty:(l.manualQty||0)+(manual?1:0),manual:!!(l.manualQty||manual),lastEntryMethod:manual?"Manual lookup":"Barcode",pulse:true}:l)})); this.toast(`Added 1 more "${p.name}".`);
       setTimeout(()=>this.setState(s=>({cart:s.cart.map(l=>l.productId===p.id?{...l,pulse:false}:l)})),900); return; }
     const promo=this.activePromo(p.id);
-    this.setState(s=>({cart:[...s.cart,{lineId:Date.now()+Math.random(),productId:p.id,name:this.productLabel(p),qty:1,unitPrice:p.price,originalPrice:p.price,vatClass:p.vatClass,manual:!!manual,manualQty:manual?1:0,lastEntryMethod:manual?"Manual lookup":"Barcode",
+    await this.checkoutSetState(s=>({cart:[...s.cart,{lineId:Date.now()+Math.random(),productId:p.id,name:this.productLabel(p),qty:1,unitPrice:p.price,originalPrice:p.price,vatClass:p.vatClass,manual:!!manual,manualQty:manual?1:0,lastEntryMethod:manual?"Manual lookup":"Barcode",
       overridden:false,overrideReason:"",overrideApprover:"",promo,pulse:false}]}));
     this.toast(`Added "${p.name}"${manual?" (Manual Entry)":""}${promo?" — promo "+promo.name+" applied":""}.`);
   };
@@ -641,7 +681,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     const product=delta>0?(await this.refreshStockAvailability(line.productId,line.qty+delta))[0]:(this.state.productsLocal||this.state.data?.PRODUCTS||[]).find(p=>p.id===line.productId);
     if(!current())return;
     if(delta>0 && (!product || line.qty+delta>this.sellableStock(product))){ this.toast(`Only ${this.sellableStock(product)} units of ${line.name} are available.`,"error"); return; }
-    this.setState(s=>({cart:s.cart.map(l=>{
+    await this.checkoutSetState(s=>({cart:s.cart.map(l=>{
       if(l.lineId!==lineId)return l;
       const qty=Math.max(1,l.qty+delta),change=qty-l.qty;
       let manualQty=l.manualQty||0;
@@ -651,10 +691,10 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     })}));
   });
   removeLine=lineId=>()=>this.setState(s=>({cart:s.cart.filter(l=>l.lineId!==lineId)}));
-  openManualLookup=()=>this.setState({manualLookupOpen:true,manualSearch:"",manualCategory:"",manualSubcategoryId:""});
+  openManualLookup=()=>this.setState({manualLookupOpen:true,manualSearch:"",manualCategory:"",manualSubcategoryId:"",manualLookupPage:0});
   closeManualLookup=()=>this.setState({manualLookupOpen:false});
-  setManualSearch=e=>this.setState({manualSearch:e.target.value});
-  addManualProduct=p=>()=>{ this.addProductToCart(p,true); this.setState({manualLookupOpen:false}); };
+  setManualSearch=e=>this.setState({manualSearch:e.target.value,manualLookupPage:0});
+  addManualProduct=p=>()=>{ if(this.stockSelections||this.stockCheckoutChecking)return;this.addProductToCart(p,true,'button'); this.setState({manualLookupOpen:false}); };
 
   openSeniorPwd=()=>this.setState({seniorPwdOpen:true});
   closeSeniorPwd=()=>this.setState({seniorPwdOpen:false});
@@ -698,16 +738,19 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
   };
   startPayment=async()=>{
     if(this.overrideDeclining){this.toast('Wait for the manager decision to finish.','error');return;}
-    if(this.stockSelections||this.stockCheckoutChecking){this.toast('Wait for the stock check to finish.','error');return;}
+    if(this.stockSelections||this.stockCheckoutChecking)return;
     if(this.checkoutInFlight || this.state.paymentState==="processing") return;
     if(this.state.cart.length===0){ this.toast("Cart is empty.","error"); return; }
     const generation=this.cartGeneration||0,actor=this.state.authenticatedUser;
-    this.stockCheckoutChecking=true;
-    try{await this.refreshStockAvailability();}catch(error){this.toast(error.message,'error');return;}finally{this.stockCheckoutChecking=false;}
+    const token={};this.stockCheckoutToken=token;this.stockCheckoutChecking=true;this.setState({checkoutStockChecking:true,checkoutStockError:''});
+    let fresh;
+    try{fresh=await this.refreshStockAvailability(null,null,this.state.cart.map(l=>l.productId));}
+    catch(error){if(this.stockCheckoutToken===token){this.setState({checkoutStockError:error.message});this.toast(error.message,'error');}return;}
+    finally{if(this.stockCheckoutToken===token){this.stockCheckoutChecking=false;this.setState({checkoutStockChecking:false});}}
     if(generation!==(this.cartGeneration||0)||actor!==this.state.authenticatedUser||!this.state.cart.length)return;
-    const catalog=this.state.productsLocal||this.state.data?.PRODUCTS||[];
+    const catalog=fresh||[];
     for(const line of this.state.cart){
-      const product=catalog.find(p=>p.id===line.productId);
+      const product=catalog.find(p=>String(p.id)===String(line.productId));
       if(!product || product.status!=="Active" || line.qty>this.sellableStock(product)){
         this.toast(product?`Only ${this.sellableStock(product)} sellable units of ${line.name} are available. Please update the cart.`:"A cart product is unavailable.","error");
         return;
@@ -719,12 +762,12 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     }
     if(this.state.paymentMethod==="cash"){
       if(this.cashTendered(total)===null)return;
-      this.finalizeTransaction(); return;
+      return this.finalizeTransaction();
     }
     const uuid=this.checkoutUuid||(this.checkoutUuid="TXN-"+crypto.randomUUID().replace(/-/g,"").slice(0,26));
     this.checkoutInFlight=true;
     this.setState({paymentState:"processing"});
-    this.authPost((window.KITA_AUTH&&window.KITA_AUTH.paymongoUrl)||"/api/payments/paymongo/checkout",{
+    return this.authPost((window.KITA_AUTH&&window.KITA_AUTH.paymongoUrl)||"/api/payments/paymongo/checkout",{
       uuid,...this.discountApprovalPayload(),
       cashier:this.currentUser().name,
       total,
@@ -761,7 +804,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
       referenceNo: this.state.paymentMethod==="cash"?null:(refCodes[this.state.ewalletProvider]||"RF-")+Math.floor(70000000+Math.random()*9999999),
       status:"Unused", seniorApplied:this.state.seniorApplied, employeeDiscount:this.state.employeeDiscount };
 
-    this.authPost((window.KITA_AUTH&&window.KITA_AUTH.transactionUrl)||"/api/transactions",{
+    return this.authPost((window.KITA_AUTH&&window.KITA_AUTH.transactionUrl)||"/api/transactions",{
       ...this.discountApprovalPayload(),
       items:result.cart.map(l=>({productId:l.productId,qty:l.qty,manualLookupQty:l.manualQty||0,overridden:!!l.overridden})),
       uuid:result.uuid,status:result.status,cashier:result.cashier,total:Number(result.totals.grandTotal.toFixed(2)),
@@ -782,7 +825,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
       this.reloadCatalog().catch(()=>{});
     }).finally(()=>{ this.checkoutInFlight=false; this.setState({discountManagerPin:""}); });
   };
-  newSale=()=>{this.cartGeneration=(this.cartGeneration||0)+1;this.checkoutUuid=null;this.setState({cart:[],seniorApplied:false,seniorInfo:null,employeeDiscount:false,paymentState:"idle",tendered:"",transactionResult:null,lateWebhook:false,discountManagerId:"",discountManagerPin:""});};
+  newSale=()=>{this.cartGeneration=(this.cartGeneration||0)+1;this.resetCheckoutChecks();this.checkoutUuid=null;this.setState({cart:[],seniorApplied:false,seniorInfo:null,employeeDiscount:false,paymentState:"idle",tendered:"",transactionResult:null,lateWebhook:false,discountManagerId:"",discountManagerPin:""});};
   discountNeedsApproval=()=>this.computeTotals().discount>0 || this.state.cart.some(l=>l.overridden);
   discountApprovalPayload=()=>({discountType:this.state.employeeDiscount?"employee":this.state.seniorApplied?"senior":"none",discount_manager_id:this.state.discountManagerId||null,discount_manager_pin:this.state.discountManagerPin||null});
   buildDiscountApproval(){
@@ -1282,6 +1325,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     if(!data) return card(loadingStatus("Loading catalog..."));
     if(transactionResult) return this.buildTransactionView(transactionResult);
     const totals=this.computeTotals();
+    const stockBusy=!!(this.state.stockSelectionPending||this.state.checkoutStockChecking||this.state.barcodeCatalogLookup),controlsBusy=stockBusy||paymentState==='processing'||!!this.checkoutInFlight;
     const priorityNote = employeeDiscount ? "Applied: Employee Discount (10%) — Senior/PWD & Promotions not stacked" : seniorApplied ? "Applied: Senior/PWD Discount (20% + VAT exemption) — Promotions not stacked" : null;
     const cartRows=cart.map(l=>tr([
       td(React.createElement("div",null,[
@@ -1292,19 +1336,21 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
         (l.promo && !employeeDiscount && !seniorApplied)?React.createElement("span",{key:"p",style:{fontSize:10,fontWeight:700,color:COLORS.purple,background:COLORS.purpleBg,padding:"2px 6px",borderRadius:6}},"Promo: "+l.promo.name):null,
       ])),
       td(React.createElement("div",{style:{display:"flex",alignItems:"center",gap:6,animation:l.pulse?"pulse .3s ease 2":"none"}},[
-        React.createElement("button",{key:"m",onClick:this.stepQty(l.lineId,-1),style:{width:24,height:24,borderRadius:6,border:"1px solid "+COLORS.border,background:"#fff",cursor:"pointer"}},"−"),
+        React.createElement("button",{key:"m",onClick:this.stepQty(l.lineId,-1),disabled:controlsBusy,style:{width:24,height:24,borderRadius:6,border:"1px solid "+COLORS.border,background:"#fff",cursor:"pointer"}},"−"),
         React.createElement("span",{key:"q",style:{minWidth:20,textAlign:"center",fontWeight:700}},l.qty),
-        React.createElement("button",{key:"p",onClick:this.stepQty(l.lineId,1),style:{width:24,height:24,borderRadius:6,border:"1px solid "+COLORS.border,background:"#fff",cursor:"pointer"}},"+"),
+        React.createElement("button",{key:"p",onClick:this.stepQty(l.lineId,1),disabled:controlsBusy,style:{width:24,height:24,borderRadius:6,border:"1px solid "+COLORS.border,background:"#fff",cursor:"pointer"}},"+"),
       ])),
       td(l.overridden?React.createElement("div",null,[React.createElement("span",{key:"s",style:{textDecoration:"line-through",color:COLORS.textMuted,marginRight:6}},peso(l.originalPrice)),React.createElement("span",{key:"n",style:{color:COLORS.green}},peso(l.unitPrice))]):peso(l.unitPrice)),
       td(peso(l.unitPrice*l.qty),{fontWeight:700}),
       td(React.createElement("div",{style:{display:"flex",gap:6}},[
-        React.createElement("button",{key:"ov",onClick:this.openOverride(l.lineId),style:{fontSize:11,fontWeight:700,color:COLORS.brand,background:"none",border:"none",cursor:"pointer"}},"Override"),
-        React.createElement("button",{key:"rm",onClick:this.removeLine(l.lineId),style:{fontSize:11,fontWeight:700,color:COLORS.red,background:"none",border:"none",cursor:"pointer"}},"Remove"),
+        React.createElement("button",{key:"ov",onClick:this.openOverride(l.lineId),disabled:controlsBusy,style:{fontSize:11,fontWeight:700,color:COLORS.brand,background:"none",border:"none",cursor:"pointer"}},"Override"),
+        React.createElement("button",{key:"rm",onClick:this.removeLine(l.lineId),disabled:controlsBusy,style:{fontSize:11,fontWeight:700,color:COLORS.red,background:"none",border:"none",cursor:"pointer"}},"Remove"),
       ])),
     ],l.lineId));
     const commitSteps=["Insert Sale","Update Inventory","Insert Payment","COMMIT"];
     return React.createElement("div",{className:"pos-layout",style:{display:"flex",flexDirection:"column",gap:16,maxWidth:1180,margin:"0 auto"}},[
+      this.state.checkoutStockError?React.createElement('div',{className:'checkout-stock-error',role:'alert'},[React.createElement('p',null,this.state.checkoutStockError),React.createElement('p',null,'Your cart is preserved. Verify stock before adding products or completing the sale.'),React.createElement('button',{type:'button',className:'kita-button',disabled:controlsBusy,onClick:this.retryStockCheck},this.state.checkoutStockChecking?'Checking Stock...':'Retry Stock Check')]):null,
+      this.state.stockSelectionPending?React.createElement('p',{role:'status','aria-live':'polite',className:'checkout-stock-status'},'Checking stock and adding products...'):null,
       this.state.stockAvailabilityError?React.createElement('p',{role:'alert'},'Live stock update failed. Each selection and checkout must pass a new stock check.'):null,
       React.createElement("div",{key:"left"},[
         card([
@@ -1312,10 +1358,10 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
           React.createElement("div",{key:"h",style:{fontSize:12,color:COLORS.textSoft,marginBottom:10}},"Scan the barcode or type it below, then press Enter or Add."),
           !scannerConnected?React.createElement("div",{key:"w",style:{background:COLORS.redBg,color:COLORS.red,padding:"8px 12px",borderRadius:8,fontSize:12,fontWeight:600,marginBottom:10}},"⚠ Scanner disconnected — use manual entry below."):null,
           React.createElement("div",{key:"row",style:{display:"flex",gap:8}},[
-            React.createElement("input",{key:"i",autoFocus:true,value:barcodeInput,onChange:this.setBarcodeInput,onKeyDown:this.onBarcodeKey,placeholder:"Scan or type barcode, then Enter...",style:{flex:1,padding:"12px 14px",border:"1px solid "+COLORS.border,borderRadius:8,fontFamily:"'JetBrains Mono',monospace",fontSize:14}}),
-            React.createElement("button",{key:"add",onClick:this.scanBarcode,style:{padding:"0 16px",background:COLORS.brand,color:"#fff",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer"}},"Add"),
+            React.createElement("input",{key:"i",autoFocus:true,disabled:!!this.state.checkoutStockChecking||paymentState==="processing",value:barcodeInput,onChange:this.setBarcodeInput,onKeyDown:this.onBarcodeKey,placeholder:"Scan or type barcode, then Enter...",style:{flex:1,padding:"12px 14px",border:"1px solid "+COLORS.border,borderRadius:8,fontFamily:"'JetBrains Mono',monospace",fontSize:14}}),
+            React.createElement("button",{key:"add",onClick:()=>this.scanBarcode('button'),disabled:controlsBusy,style:{padding:"0 16px",background:COLORS.brand,color:"#fff",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer"}},this.state.barcodeCatalogLookup?"Finding...":this.state.stockSelectionPending?"Adding...":"Add"),
           ]),
-          React.createElement("button",{key:"ml",onClick:this.openManualLookup,style:{marginTop:10,fontSize:12,fontWeight:700,color:COLORS.brand,background:"none",border:"none",cursor:"pointer"}},"Search Products"),
+          React.createElement("button",{key:"ml",onClick:this.openManualLookup,disabled:controlsBusy,style:{marginTop:10,fontSize:12,fontWeight:700,color:COLORS.brand,background:"none",border:"none",cursor:"pointer"}},"Search Products"),
         ],{marginBottom:16}),
         card([React.createElement("div",{key:"t",style:{fontWeight:800,fontSize:16,marginBottom:10}},`2. Cart (${cart.length} item${cart.length!==1?"s":""})`),
           cart.length===0?React.createElement("div",{key:"e",style:{padding:"30px 0",textAlign:"center",color:COLORS.textMuted,fontSize:13}},"Scan an item to begin."):table(["Item","Qty","Unit Price","Line Total","Actions"],cartRows)]),
@@ -1348,7 +1394,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
           (paymentState==="failed"||paymentState==="timeout")?React.createElement("div",{key:"fail",style:{background:COLORS.redBg,color:COLORS.red,padding:"10px",borderRadius:8,fontSize:12,fontWeight:700,marginBottom:8}},[React.createElement("div",{key:"m"},paymentState==="timeout"?"Timed out — reservation released.":"Payment failed."),React.createElement("div",{key:"a",style:{display:"flex",gap:8,marginTop:6}},[btn("Retry",this.retryPayment),btn("Switch to Cash",this.switchToCash)])]):null,
           paymentState==="cancelled"?React.createElement("div",{key:"c",style:{background:COLORS.redBg,color:COLORS.red,padding:"10px",borderRadius:8,fontSize:12,fontWeight:700,marginBottom:8}},"Payment cancelled."):null,
           React.createElement("div",{key:"actions",style:{display:"flex",gap:8}},[
-            (paymentState==="idle"||paymentState==="failed"||paymentState==="timeout"||paymentState==="cancelled")?React.createElement("button",{key:"pay",onClick:this.startPayment,style:{flex:1,padding:"11px",background:COLORS.brand,color:"#fff",border:"none",borderRadius:8,fontWeight:800,cursor:"pointer"}},"Complete Sale "+peso(totals.grandTotal)):null,
+            (paymentState==="idle"||paymentState==="failed"||paymentState==="timeout"||paymentState==="cancelled")?React.createElement("button",{key:"pay",onClick:this.startPayment,disabled:controlsBusy||!!this.state.checkoutStockError||!cart.length,"aria-busy":stockBusy,style:{flex:1,padding:"11px",background:COLORS.brand,color:"#fff",border:"none",borderRadius:8,fontWeight:800,cursor:"pointer"}},this.state.checkoutStockChecking?"Checking Stock...":this.state.stockSelectionPending?"Adding Products...":"Complete Sale "+peso(totals.grandTotal)):null,
             (paymentState==="pending"||paymentState==="processing")?React.createElement("button",{key:"cancel",onClick:this.cancelPayment,style:{flex:1,padding:"11px",background:"#fff",border:"1px solid "+COLORS.border,borderRadius:8,fontWeight:700,cursor:"pointer"}},"Cancel"):null,
           ]),
         ]),
@@ -1367,10 +1413,15 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     const h=React.createElement;
     const {data,manualSearch,manualCategory=""}=this.state;
     const catalog=this.state.productsLocal||data.PRODUCTS;
-    const categoryOf=p=>String(p.category||"").trim()||"Uncategorized";
-    const categories=[...new Set(catalog.map(categoryOf))].sort((a,b)=>a.localeCompare(b));
-    const q=manualSearch.trim().toLowerCase();
-    const results=catalog.filter(p=>(!manualCategory||categoryOf(p)===manualCategory)&&(!this.state.manualSubcategoryId||String(p.subcategoryId)===String(this.state.manualSubcategoryId))&&(searchMatches([p.name,(data.BRANDS||[]).find(b=>String(b.id)===String(p.brandId))?.name,p.size,p.sizeUnit,p.barcode,categoryOf(p)].join(" "),q)));
+    const brands=data.BRANDS||[];
+    if(this.manualLookupIndex?.catalog!==catalog||this.manualLookupIndex?.brands!==brands){
+      const names=new Map(brands.map(b=>[String(b.id),b.name]));
+      const rows=catalog.map(p=>({p,category:String(p.category||'').trim()||'Uncategorized',label:[p.name,names.get(String(p.brandId)),p.size,p.sizeUnit].filter(Boolean).join(' '),search:[p.name,names.get(String(p.brandId)),p.size,p.sizeUnit,p.barcode,p.category].filter(Boolean).join(' ')}));
+      this.manualLookupIndex={catalog,brands,rows,categories:[...new Set(rows.map(r=>r.category))].sort((a,b)=>a.localeCompare(b))};
+    }
+    const {rows,categories}=this.manualLookupIndex,categoryOf=p=>String(p.category||'').trim()||'Uncategorized';
+    const results=rows.filter(r=>(!manualCategory||r.category===manualCategory)&&(!this.state.manualSubcategoryId||String(r.p.subcategoryId)===String(this.state.manualSubcategoryId))&&searchMatches(r.search,manualSearch.trim()));
+    const pageSize=20,pages=Math.max(1,Math.ceil(results.length/pageSize)),page=Math.min(this.state.manualLookupPage||0,pages-1),visible=results.slice(page*pageSize,(page+1)*pageSize);
     return h("div",{key:"mlm",style:{position:"fixed",inset:0,background:"rgba(15,31,74,0.38)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:50,padding:16}},
       h("div",{className:"manual-lookup-dialog",role:"dialog","aria-modal":true,"aria-label":"Manual Product Lookup",onKeyDown:e=>{if(e.key==="Escape"){e.stopPropagation();this.closeManualLookup();}},style:{width:520,maxWidth:"100%",maxHeight:"80vh",background:"#fff",borderRadius:14,display:"flex",flexDirection:"column",overflow:"hidden"}},[
         h("div",{key:"header",className:"manual-lookup-header"},[
@@ -1378,23 +1429,24 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
         ]),
         h("div",{key:"body",className:"dialog-scroll manual-lookup-body",tabIndex:0,"aria-label":"Product lookup results and filters",style:{minHeight:0,overflowY:"auto",padding:20}},[
         h("label",{key:"label",htmlFor:"manual-category",style:{display:"block",fontSize:12,fontWeight:700,marginBottom:6}},"Category"),
-        h("select",{key:"category",id:"manual-category",value:manualCategory,onChange:e=>this.setState({manualCategory:e.target.value,manualSubcategoryId:""}),style:{width:"100%",padding:10,border:"1px solid "+COLORS.border,borderRadius:8,marginBottom:10}},[
+        h("select",{key:"category",id:"manual-category",value:manualCategory,onChange:e=>this.setState({manualCategory:e.target.value,manualSubcategoryId:"",manualLookupPage:0}),style:{width:"100%",padding:10,border:"1px solid "+COLORS.border,borderRadius:8,marginBottom:10}},[
           h("option",{key:"all",value:""},"All categories"),
           ...categories.map(category=>h("option",{key:category,value:category},category)),
         ]),
-        this.buildSubcategorySelect(manualCategory,this.state.manualSubcategoryId,e=>this.setState({manualSubcategoryId:e.target.value})),
+        this.buildSubcategorySelect(manualCategory,this.state.manualSubcategoryId,e=>this.setState({manualSubcategoryId:e.target.value,manualLookupPage:0})),
         h("input",{key:"search",value:manualSearch,onChange:this.setManualSearch,"aria-label":"Search products",placeholder:"Search products in selected category",style:{width:"100%",boxSizing:"border-box",padding:10,border:"1px solid "+COLORS.border,borderRadius:8,marginBottom:10}}),
         h("div",{key:"count",style:{fontSize:12,color:COLORS.textSoft,marginBottom:12}},results.length+" product(s) found"),
-        ...categories.filter(category=>results.some(p=>categoryOf(p)===category)).map(category=>h("section",{key:category,style:{marginBottom:16}},[
+        ...categories.filter(category=>visible.some(r=>r.category===category)).map(category=>h("section",{key:category,style:{marginBottom:16}},[
           h("h3",{key:"heading",style:{fontSize:13,margin:"0 0 6px",padding:"8px 10px",background:COLORS.brandBg,color:COLORS.brandDark,borderRadius:6}},category),
-          ...results.filter(p=>categoryOf(p)===category).map(p=>{
+          ...visible.filter(r=>r.category===category).map(({p,label})=>{
             const available=p.status==="Active"&&this.sellableStock(p)>0;
-            return h("button",{key:p.id,type:"button",disabled:!available,onClick:this.addManualProduct(p),style:{width:"100%",background:"transparent",border:0,borderBottom:"1px solid #eef1f6",display:"flex",justifyContent:"space-between",gap:12,textAlign:"left",padding:"12px 8px",cursor:available?"pointer":"not-allowed",opacity:available?1:0.5}},[
-              h("span",{key:"details"},[h("span",{key:"name",style:{display:"block",fontWeight:600,fontSize:13}},[p.name,(data.BRANDS||[]).find(b=>String(b.id)===String(p.brandId))?.name,p.size,p.sizeUnit].filter(Boolean).join(" ")),h("span",{key:"stock",style:{display:"block",fontSize:11,color:COLORS.textMuted}},p.status!=="Active"?p.status:this.sellableStock(p)>0?this.sellableStock(p)+" sellable":"Unavailable: "+((p.exclusionReasons||[]).join("; ")||"No eligible stock"))]),
+            return h("button",{key:p.id,type:"button",disabled:!available||!!this.state.stockSelectionPending||!!this.state.checkoutStockChecking,onClick:this.addManualProduct(p),style:{width:"100%",background:"transparent",border:0,borderBottom:"1px solid #eef1f6",display:"flex",justifyContent:"space-between",gap:12,textAlign:"left",padding:"12px 8px",cursor:available?"pointer":"not-allowed",opacity:available?1:0.5}},[
+              h("span",{key:"details"},[h("span",{key:"name",style:{display:"block",fontWeight:600,fontSize:13}},label),h("span",{key:"stock",style:{display:"block",fontSize:11,color:COLORS.textMuted}},p.status!=="Active"?p.status:this.sellableStock(p)>0?this.sellableStock(p)+" sellable":"Unavailable: "+((p.exclusionReasons||[]).join("; ")||"No eligible stock"))]),
               h("span",{key:"price",style:{fontWeight:700,whiteSpace:"nowrap"}},peso(p.price)),
             ]);
           }),
         ])),
+        results.length>pageSize?h('div',{className:'manual-lookup-pagination'},[h('button',{type:'button',className:'kita-button',disabled:page===0,onClick:()=>this.setState({manualLookupPage:page-1})},'Previous'),h('span',{role:'status'},'Page '+(page+1)+' of '+pages),h('button',{type:'button',className:'kita-button',disabled:page>=pages-1,onClick:()=>this.setState({manualLookupPage:page+1})},'Next')]):null,
         !results.length?h("p",{key:"empty",style:{textAlign:"center",padding:16,color:COLORS.textSoft}},"No products match. Try another category or search."):null,
         ]),
         h("div",{key:"footer",style:{flexShrink:0,padding:"12px 20px",background:"#fff",borderTop:"1px solid "+COLORS.border}},

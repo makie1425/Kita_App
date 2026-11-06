@@ -2096,3 +2096,9 @@ dl.receiving-transaction-details>div{min-width:0;padding:12px;background:#f5f9ff
 dl.receiving-transaction-details dt{color:#617492;font-size:12px}
 dl.receiving-transaction-details dd{margin:5px 0 0;color:#142b50;overflow-wrap:anywhere}
 @media(max-width:520px){dl.receiving-transaction-details{grid-template-columns:minmax(0,1fr)}}
+
+.checkout-stock-error{grid-column:1/-1;border:1px solid #fecaca;background:#fff5f5;color:#991b1b;padding:14px 18px;border-radius:10px}
+.checkout-stock-error p{margin:0 0 8px;font-size:13px}
+.checkout-stock-status{grid-column:1/-1;color:#1d4ed8;background:#eff6ff;border-radius:8px;padding:10px 14px;margin:0;font-size:13px}
+.pos-layout button:disabled,.manual-lookup-dialog button:disabled{opacity:.55;cursor:not-allowed}
+.manual-lookup-pagination{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px;font-size:12px}
