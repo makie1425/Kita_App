@@ -265,3 +265,30 @@ test('low-stock cards remain a dedicated list outside shared action grouping',()
  const selected=nodes(app.buildItemPickerModal()).filter(n=>n.tag==='button'&&n.props?.['aria-pressed']);
  assert.equal(selected.length,1);
 });
+
+test('tracker leaves unreached connector gray and marks final decision colors',()=>{
+ const {app}=setup();const nodes=v=>!v||typeof v!=='object'?[]:Array.isArray(v)?v.flatMap(nodes):[v,...nodes(v.children)];
+ let steps=nodes(app.buildPurchaseTracking({status:'Review'})).filter(n=>n.tag==='li');
+ assert.ok(steps[1].props.className.includes('is-connected'));assert.ok(!steps[2].props.className.includes('is-connected'));
+ for(const [status,cls] of [['Approved','is-approved'],['Rejected','is-rejected'],['Cancelled','is-cancelled']]){
+  steps=nodes(app.buildPurchaseTracking({status})).filter(n=>n.tag==='li');assert.ok(steps[2].props.className.includes(cls));assert.ok(steps[2].props.className.includes('is-connected'));
+ }
+});
+test('receipt transaction opens in a dialog with a Print Receipt action',()=>{
+ const {app}=setup();app.purchasingState=()=>null;app.state.purchaseData={orders:[{id:'PO1',supplierId:7,supplierName:'Supplier',lines:[],receipts:[{id:'RCV1',date:'2026-11-06',receivedBy:'Manager',lines:[{productId:1,name:'Rice',unit:'Piece',deliveredQty:2}]}]}]};
+ const nodes=v=>!v||typeof v!=='object'?[]:Array.isArray(v)?v.flatMap(nodes):[v,...nodes(v.children)];
+ let tree=app.buildPurchaseHistory();assert.ok(!nodes(tree).some(n=>n.tag==='details'));
+ nodes(tree).find(n=>n.tag==='button'&&n.children.flat(Infinity).includes('View Transaction')).props.onClick();
+ tree=app.buildPurchaseHistory();assert.equal(nodes(tree).filter(n=>n.tag==='dialog').length,1);assert.ok(!JSON.stringify(tree).includes('View / Print Receipt'));
+ assert.ok(nodes(tree).some(n=>n.tag==='a'&&n.props.href==='/receipts/RCV1/report'&&n.children.includes('Print Receipt')));
+ nodes(tree).find(n=>n.tag==='dialog').props.onCancel({preventDefault(){}});assert.equal(app.state.receiptTransactionId,null);
+});
+test('receiving requires only actual missing fields and assigns lot metadata automatically',()=>{
+ const {app}=setup();app.state.data={BUSINESS_DATE:'2026-11-06',CATEGORIES:[{name:'Food',classification:'Perishable'}]};
+ app.inspectionProduct=()=>({name:'Fresh Milk',category:'Food'});app.inspectionLine=()=>({name:'Fresh Milk'});app.inspectionDue=()=>10;app.inspectionValueLimit=()=>1000;
+ app.state.inspection={requestKey:'key',deliveryDate:'2026-11-06',notes:'No remarks',entries:[{key:'entry',poId:'PO1',productId:1,type:'current',delivered:2,damaged:0,unitCost:10,lots:[{quantity:2,expiryDate:''}]}]};
+ assert.equal(app.reviewInspection(),false);assert.equal(Object.keys(app.state.inspectionErrors).length,1);assert.equal(app.state.receiveError,'Enter the expiration date for Fresh Milk.');
+ app.state.inspection.entries[0].lots[0].expiryDate='2026-11-20';assert.equal(app.reviewInspection(),true);
+ const payload=app.inspectionPayload();assert.equal(payload.automaticLots,true);assert.equal(payload.supplierReference,undefined);assert.equal(payload.entries[0].lots[0].supplierLot,null);
+ app.state.inspection.entries[0].damaged=3;assert.equal(app.reviewInspection(),false);assert.equal(app.state.inspectionErrors['entries.0.damaged'],'Damaged quantity cannot exceed delivered quantity for Fresh Milk.');
+});

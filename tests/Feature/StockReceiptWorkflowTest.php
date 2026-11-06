@@ -27,6 +27,34 @@ class StockReceiptWorkflowTest extends TestCase {
   return ['poId'=>$po,'version'=>$version,'productId'=>$this->product,'type'=>$type,'delivered'=>$delivered,'damaged'=>$damaged,'damageReason'=>$damaged?'Crushed packaging':null,'disposition'=>'return','unitCost'=>100,'lots'=>$delivered>$damaged?[['quantity'=>$delivered-$damaged,'supplierLot'=>'SUP-123','manufacturedDate'=>now()->subDays(10)->toDateString(),'noExpiry'=>true]]:[]];
  }
  private function body($po,$entries) {return ['requestKey'=>(string)Str::uuid(),'primaryPo'=>$po,'supplierId'=>$this->supplier,'deliveryDate'=>now()->toDateString(),'supplierReference'=>'INV-TEST','notes'=>'No remarks','entries'=>$entries];}
+ public function test_automatic_receiving_identifiers_quantities_and_retries():void {
+  $po=$this->order(5);
+  $body=$this->body($po,[$this->entry($po,2)]);$body['automaticLots']=true;unset($body['supplierReference']);
+  $body['entries'][0]['lots']=[['quantity'=>999,'noExpiry'=>true]];
+  $id=$this->postJson('/api/stock-receipts',$body)->assertCreated()->json('id');
+  $saved=json_decode(DB::table('stock_receipts')->where('id',$id)->value('payload'),true);
+  $this->assertStringStartsWith('REF-',$saved['supplierReference']);
+  $this->assertStringStartsWith('LOT-',$saved['entries'][0]['lots'][0]['supplierLot']);
+  $this->assertSame(2,$saved['entries'][0]['lots'][0]['quantity']);
+  $this->assertNull($saved['entries'][0]['lots'][0]['manufacturedDate']);
+  $this->postJson('/api/stock-receipts',$body)->assertOk()->assertJsonPath('id',$id);
+  $this->assertDatabaseHas('products',['id'=>$this->product,'stock'=>2]);
+  $this->assertDatabaseCount('stock_receipts',1);
+  $next=$this->body($po,[$this->entry($po,1,0,1)]);$next['automaticLots']=true;unset($next['supplierReference']);
+  $next['entries'][0]['lots']=[['expiryDate'=>now()->addMonth()->toDateString()]];
+  $id2=$this->postJson('/api/stock-receipts',$next)->assertCreated()->json('id');
+  $saved2=json_decode(DB::table('stock_receipts')->where('id',$id2)->value('payload'),true);
+  $this->assertNotSame($saved['supplierReference'],$saved2['supplierReference']);
+  $this->assertNotSame($saved['entries'][0]['lots'][0]['supplierLot'],$saved2['entries'][0]['lots'][0]['supplierLot']);
+  $this->assertDatabaseHas('products',['id'=>$this->product,'stock'=>3]);
+ }
+ public function test_missing_expiry_reports_only_the_specific_product_field():void {
+  $po=$this->order(5);$body=$this->body($po,[$this->entry($po,2)]);$body['automaticLots']=true;unset($body['supplierReference']);
+  $body['entries'][0]['lots']=[[]];
+  $this->postJson('/api/stock-receipts',$body)->assertUnprocessable()->assertJsonValidationErrors('entries.0.lots.0.expiryDate')->assertJsonFragment(['Enter the expiration date for Coke, or select No expiration date when applicable.']);
+  $this->assertDatabaseCount('stock_receipts',0);
+  $this->assertDatabaseHas('products',['id'=>$this->product,'stock'=>0]);
+ }
  public function test_supplier_balance_tracks_goods_not_payments_and_stays_scoped():void {
   $po=$this->order(50);
   $this->getJson('/api/supplier-accounts')->assertOk()->assertJsonCount(0,'balances');

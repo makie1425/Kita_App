@@ -6,6 +6,7 @@ use App\Http\Controllers\PurchasingController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class StockReceiptWorkflow
 {
@@ -27,10 +28,24 @@ class StockReceiptWorkflow
 
     private function data(Request $request): array
     {
+        $request->validate([
+            'requestKey'=>['required','uuid'], 'automaticLots'=>['sometimes','boolean'],
+            'entries'=>['required','array','min:1','max:200'], 'entries.*'=>['required','array'],
+            'entries.*.productId'=>['required','integer'], 'entries.*.substituteProductId'=>['nullable','integer'],
+        ]);
+        $automatic = $request->boolean('automaticLots');
+        $attributes = ['deliveryDate'=>'delivery date', 'notes'=>'receiving notes'];
+        $products = WorkspaceRead::table('products')->whereIn('id', collect($request->input('entries', []))->pluck('substituteProductId')->merge(collect($request->input('entries', []))->pluck('productId'))->filter()->all())->get()->keyBy('id');
+        foreach ((array) $request->input('entries', []) as $i=>$entry) {
+            $name = $products->get($entry['substituteProductId'] ?? $entry['productId'] ?? 0)?->name ?? 'selected product';
+            foreach (['delivered'=>'delivered quantity','damaged'=>'damaged quantity','unitCost'=>'purchase cost'] as $key=>$label) $attributes["entries.$i.$key"] = "$label for $name";
+            foreach ((array) ($entry['lots'] ?? []) as $j=>$lot) $attributes["entries.$i.lots.$j.expiryDate"] = "expiration date for $name";
+        }
         $data = $request->validate([
+            'automaticLots'=>['sometimes','boolean'],
             'requestKey'=>['required','uuid'],'primaryPo'=>['required','string'], 'supplierId'=>['required','integer'],
             'deliveryDate'=>['required','date_format:Y-m-d','before_or_equal:today'],
-            'supplierReference'=>['required','string','max:100'],'notes'=>['required','string','max:2000'],
+            'supplierReference'=>[$automatic?'nullable':'required','string','max:100'],'notes'=>['required','string','max:2000'],
             'entries'=>['required','array','min:1','max:200'],
             'entries.*.poId'=>['required','string'],'entries.*.version'=>['required','integer','min:0'],
             'entries.*.productId'=>['required','integer'],'entries.*.type'=>['required','in:current,missing,damaged,outstanding'],
@@ -39,17 +54,33 @@ class StockReceiptWorkflow
             'entries.*.substituteProductId'=>['nullable','integer'],'entries.*.substitutionReason'=>['nullable','string','max:500'],
             'entries.*.unitCost'=>['required',...InventoryRules::moneyRules()],
             'entries.*.sellingPrice'=>['prohibited'],
-            'entries.*.lots'=>['present','array','max:100'],
-            'entries.*.lots.*.quantity'=>['required','integer','between:1,1000000'],
-            'entries.*.lots.*.supplierLot'=>['required','string','max:40'],
+            'entries.*.lots'=>['present','array',$automatic?'max:1':'max:100'],
+            'entries.*.lots.*.quantity'=>[$automatic?'nullable':'required','integer','between:1,1000000'],
+            'entries.*.lots.*.supplierLot'=>[$automatic?'nullable':'required','string','max:40'],
             'entries.*.lots.*.expiryDate'=>['nullable','date_format:Y-m-d','after:today'],
-            'entries.*.lots.*.manufacturedDate'=>['required','date_format:Y-m-d','before_or_equal:deliveryDate'],
+            'entries.*.lots.*.manufacturedDate'=>[$automatic?'nullable':'required','date_format:Y-m-d','before_or_equal:deliveryDate'],
             'entries.*.lots.*.noExpiry'=>['sometimes','boolean'],
-        ]);
-        foreach ($data['entries'] as $entry) {
-            foreach ($entry['lots'] as $lot) {
-                abort_unless(!empty($lot['expiryDate']) || !empty($lot['noExpiry']),422,'Enter each expiration date or explicitly select No expiration date.');
-                abort_if(!empty($lot['expiryDate']) && !empty($lot['noExpiry']),422,'Choose an expiration date or No expiration date, not both.');
+        ], [], $attributes);
+        if ($automatic) {
+            // Stable server-derived identifiers preserve idempotency on retry.
+            $data['supplierReference'] = 'REF-'.strtoupper($data['requestKey']);
+            foreach ($data['entries'] as $i=>&$entry) {
+                $accepted = max(0, $entry['delivered']-$entry['damaged']);
+                $lot = $entry['lots'][0] ?? [];
+                $entry['lots'] = $accepted ? [[
+                    'quantity'=>$accepted,
+                    'supplierLot'=>'LOT-'.strtoupper(substr(hash('sha256', $data['requestKey'].'|'.$i),0,28)),
+                    'expiryDate'=>$lot['expiryDate'] ?? null, 'noExpiry'=>$lot['noExpiry'] ?? false,
+                    'manufacturedDate'=>null,
+                ]] : [];
+            }
+            unset($entry);
+        }
+        foreach ($data['entries'] as $i=>$entry) {
+            $name = $products->get($entry['substituteProductId'] ?? $entry['productId'])?->name ?? 'selected product';
+            foreach ($entry['lots'] as $j=>$lot) {
+                if (empty($lot['expiryDate']) && empty($lot['noExpiry'])) throw ValidationException::withMessages(["entries.$i.lots.$j.expiryDate"=>"Enter the expiration date for $name, or select No expiration date when applicable."]);
+                if (!empty($lot['expiryDate']) && !empty($lot['noExpiry'])) throw ValidationException::withMessages(["entries.$i.lots.$j.expiryDate"=>"Choose an expiration date or No expiration date for $name."]);
             }
         }
         $entered=collect($data['entries'])->where('poId',$data['primaryPo'])->pluck('productId')->map(fn($id)=>(int)$id);
@@ -91,8 +122,10 @@ class StockReceiptWorkflow
             $seen[$key.'|'.$entry['type']]=true;
             $balance=$balances[$key] ?? self::obligation($line);
             $delivered=(int)$entry['delivered'];$damaged=(int)$entry['damaged'];$accepted=$delivered-$damaged;
-            abort_if(($delivered===0 && $entry['type']!=='current') || $damaged>$delivered,422,'Outstanding-item deliveries must be positive and damaged quantity cannot exceed delivery.');
-            abort_if($damaged && (!trim($entry['damageReason'] ?? '') || empty($entry['disposition'])),422,'Choose a damage disposition and enter a reason.');
+            abort_if($delivered===0 && $entry['type']!=='current',422,'Enter a positive delivered quantity for '.$line->name.'.');
+            abort_if($damaged>$delivered,422,'Damaged quantity cannot exceed delivered quantity for '.$line->name.'.');
+            abort_if($damaged && !trim($entry['damageReason'] ?? ''),422,'Enter a damage reason for '.$line->name.'.');
+            abort_if($damaged && empty($entry['disposition']),422,'Select a damage disposition for '.$line->name.'.');
             $type=$entry['type'];
             if ($balance['unclassified'] && in_array($type,['missing','damaged'])) abort(422,'Older quantities are unclassified. Choose Previous outstanding item; do not guess a damage balance.');
             if ($type==='missing') abort_if($delivered>$balance['missing'],422,'Delivery exceeds the outstanding missing quantity.');

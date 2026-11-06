@@ -1812,7 +1812,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
       this.recordTable('purchase-review',['Request Number','Request Date','Supplier','Requested By','Items','Total Cost','Status','Actions'],requests.map(r=>tr([td(r.id),td(r.requested_at||r.dateRequested),td(r.supplierName||this.purchaseSupplier(r.lines[0]?.supplierId)),td(r.requestedBy),td(r.lines.length),td(peso(r.lines.reduce((sum,l)=>sum+Number(l.confirmedQty??l.qty)*Number(l.unitCost||0),0))),td(badge(r.status)),td(this.purchaseRequestActions(r))],r.id))),this.purchaseRequestDetails(),this.purchaseReviewDetails()
     ]);
   }
-  openPurchaseReceiving=order=>this.setState({purchaseReceivingId:order.id,receiveError:'',inspectionReview:false,inspection:{requestKey:crypto.randomUUID(),primaryPo:order.id,supplierId:Number(order.supplierId),deliveryDate:this.state.data?.BUSINESS_DATE||new Date().toISOString().slice(0,10),supplierReference:'',notes:'',entries:order.lines.filter(l=>this.carryoverAvailable(l)>0).map(l=>this.newInspectionEntry(order,l,'current'))}});
+  openPurchaseReceiving=order=>this.setState({purchaseReceivingId:order.id,receiveError:'',inspectionErrors:{},inspectionReview:false,inspection:{requestKey:crypto.randomUUID(),primaryPo:order.id,supplierId:Number(order.supplierId),deliveryDate:this.state.data?.BUSINESS_DATE||new Date().toISOString().slice(0,10),supplierReference:'',notes:'',entries:order.lines.filter(l=>this.carryoverAvailable(l)>0).map(l=>this.newInspectionEntry(order,l,'current'))}});
 
   receivingDraft=()=>Object.fromEntries(['receiveVersion','receiveQty','receiveDamaged','receiveDamageReasons','receiveSubstitutes','receiveReasons','receivePrices','receiveCosts','receiveExpiries','receiveManufactured','receiveNotes','receivePaymentDueDate','receiveSupplierDocument'].map(k=>[k,this.state[k]]));
   emptyReceivingDraft=order=>({receiveVersion:order.receivingVersion,receiveQty:{},receiveDamaged:{},receiveDamageReasons:{},receiveSubstitutes:{},receiveReasons:{},receivePrices:{},receiveCosts:{},receiveExpiries:{},receiveManufactured:{},receiveNotes:'',receivePaymentDueDate:'',receiveSupplierDocument:''});
@@ -1951,41 +1951,49 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
   };
   inspectionAccepted=entry=>Math.max(0,Number(entry.delivered||0)-Number(entry.damaged||0));
   inspectionDue=entry=>{const l=this.inspectionLine(entry);if(!l)return 0;const b=l.obligation;return entry.type==='damaged'?Number(b?.damaged||0):entry.type==='missing'?Number(b?.missing??this.carryoverAvailable(l)):this.carryoverAvailable(l);};
-  updateInspection=(key,changes)=>this.setState(s=>({inspectionReview:false,inspection:{...s.inspection,entries:s.inspection.entries.map(e=>{if(e.key!==key)return e;const next={...e,...changes};if(('delivered' in changes||'damaged' in changes)&&next.lots.length===1)next.lots=[{...next.lots[0],quantity:this.inspectionAccepted(next)}];return next;})},receiveError:''}));
+  updateInspection=(key,changes)=>this.setState(s=>({inspectionReview:false,inspectionErrors:{},inspection:{...s.inspection,entries:s.inspection.entries.map(e=>{if(e.key!==key)return e;const next={...e,...changes};if(('delivered' in changes||'damaged' in changes)&&next.lots.length===1)next.lots=[{...next.lots[0],quantity:this.inspectionAccepted(next)}];return next;})},receiveError:''}));
   updateInspectionLot=(entry,index,changes)=>this.updateInspection(entry.key,{lots:entry.lots.map((l,i)=>i===index?{...l,...changes}:l)});
-  inspectionPayload=()=>{const d=this.state.inspection;return {...d,entries:d.entries.map(({key,...e})=>({...e,delivered:Number(e.delivered||0),damaged:Number(e.damaged||0),unitCost:Number(e.unitCost),lots:this.inspectionAccepted(e)>0?e.lots.map(l=>({...l,quantity:Number(l.quantity),expiryDate:l.expiryDate||null,manufacturedDate:l.manufacturedDate||null,supplierLot:l.supplierLot.trim()||null})):[]}))};};
+  inspectionPayload=()=>{const d=this.state.inspection;return {...d,automaticLots:true,supplierReference:undefined,entries:d.entries.map(({key,...e})=>({...e,delivered:Number(e.delivered||0),damaged:Number(e.damaged||0),unitCost:Number(e.unitCost),lots:this.inspectionAccepted(e)>0?e.lots.map(l=>({...l,quantity:Number(l.quantity),expiryDate:l.expiryDate||null,manufacturedDate:null,supplierLot:null})):[]}))};};
+  receivingFieldError=key=>this.state.inspectionErrors?.[key]?React.createElement('small',{className:'receiving-field-error',role:'alert'},this.state.inspectionErrors[key]):null;
   reviewInspection=()=>{
-    const d=this.state.inspection,entered=d.entries;
-    let error='';
-    if(!entered.some(e=>Number(e.delivered)>0))error='Enter delivered quantities for at least one product.';
-    for(const e of entered){
-      if(!e.poId||!e.productId)error='Choose the original PO and product for each additional entry.';
-      if(!Number.isInteger(Number(e.delivered))||Number(e.delivered)<0||!Number.isInteger(Number(e.damaged||0))||Number(e.damaged||0)<0||Number(e.damaged)>Number(e.delivered))error='Delivered and damaged quantities must be whole numbers. Damage cannot exceed delivery.';
-      if(Number(e.damaged)>0&&!e.damageReason.trim())error='Enter a reason for each damaged quantity.';
-      if(!this.validAmount(e.unitCost))error='Enter a valid purchase cost.';
+    const d=this.state.inspection,entered=d.entries,errors={},today=this.state.data?.BUSINESS_DATE||new Date().toISOString().slice(0,10);
+    const add=(key,message)=>{if(!errors[key])errors[key]=message;};
+    if(!d.deliveryDate)add('deliveryDate','Select a delivery date.');
+    else if(d.deliveryDate>today)add('deliveryDate','Delivery date cannot be in the future.');
+    entered.forEach((e,i)=>{
+      const key='entries.'+i+'.',name=this.inspectionProduct(e)?.name||this.inspectionLine(e)?.name||'selected product';
+      if(!e.poId||!e.productId)add(key+'productId','Select the original purchase order and product.');
+      for(const [field,label] of [['delivered','delivered quantity'],['damaged','damaged quantity']]){
+        if(e[field]==null||String(e[field]).trim()==='')add(key+field,'Enter the '+label+' for '+name+'. Enter 0 when none.');
+        else if(!Number.isInteger(Number(e[field]))||Number(e[field])<0||Number(e[field])>1000000)add(key+field,'Enter a whole '+label+' between 0 and 1,000,000 for '+name+'.');
+      }
+      if(Number(e.damaged)>Number(e.delivered))add(key+'damaged','Damaged quantity cannot exceed delivered quantity for '+name+'.');
+      if(Number(e.delivered)>this.inspectionDue(e))add(key+'delivered','Delivered quantity exceeds the outstanding quantity for '+name+'.');
+      if(Number(e.damaged)>0&&!String(e.damageReason||'').trim())add(key+'damageReason','Enter a damage reason for '+name+'.');
+      if(Number(e.damaged)>0&&!e.disposition)add(key+'disposition','Select a damage disposition for '+name+'.');
+      if(e.unitCost==null||String(e.unitCost).trim()===''||!this.validAmount(e.unitCost))add(key+'unitCost','Enter a valid purchase cost for '+name+'.');
       const groupValue=entered.filter(x=>x.poId===e.poId&&Number(x.productId)===Number(e.productId)).reduce((n,x)=>n+Math.round(this.inspectionAccepted(x)*Number(x.unitCost)*100),0);
-      if(groupValue>Math.round(this.inspectionValueLimit(e)*100))error='Cannot receive: total cost exceeds the remaining approved value of '+peso(this.inspectionValueLimit(e))+'. Only equal-or-lower-value replacements are allowed.';
-      if(e.substituteProductId&&!e.substitutionReason.trim())error='Explain each substitution.';
-      const accepted=this.inspectionAccepted(e),perishable=this.state.data?.CATEGORIES?.find(c=>c.name===this.inspectionProduct(e)?.category)?.classification==='Perishable';
-      if(accepted>0&&(e.lots.some(l=>!Number.isInteger(Number(l.quantity))||Number(l.quantity)<=0)||e.lots.reduce((n,l)=>n+Number(l.quantity||0),0)!==accepted))error='Lot quantities must add up to the accepted quantity.';
-      if(accepted>0&&e.lots.some(l=>(perishable&&!l.expiryDate)||(l.expiryDate&&l.expiryDate<=(this.state.data?.BUSINESS_DATE||new Date().toISOString().slice(0,10)))))error='Provide future expiration dates for perishable products; expired goods cannot be accepted.';
-    }
-    if(!d.deliveryDate||!String(d.supplierReference||'').trim()||!String(d.notes||'').trim())error='Complete delivery date, supplier reference, and receiving notes. Enter No remarks when there are none.';
-    for(const e of entered){
-      if([e.delivered,e.damaged,e.unitCost].some(v=>v==null||String(v).trim()===''))error='Complete delivered quantity, damaged quantity, and purchase cost for every item. Enter 0 when none.';
-      if(this.inspectionAccepted(e)>0&&e.lots.some(l=>!String(l.supplierLot||'').trim()||!l.manufacturedDate||(!l.expiryDate&&!l.noExpiry)))error='Complete every lot: quantity, supplier lot, manufacturing date, and expiration date (or select No expiration date).';
-      if(Number(e.damaged)>0&&!e.disposition)error='Choose a disposition for damaged items.';
-      if(e.type!=='current'&&Number(e.delivered)<=0)error='Enter a delivered quantity for each outstanding item, or remove that entry.';
-    }
-    this.setState({receiveError:error,inspectionReview:!error});
-    return !error;
+      if(groupValue>Math.round(this.inspectionValueLimit(e)*100))add(key+'unitCost','Receiving value for '+name+' exceeds the remaining approved value of '+peso(this.inspectionValueLimit(e))+'.');
+      if(e.substituteProductId&&!String(e.substitutionReason||'').trim())add(key+'substitutionReason','Enter a replacement reason for '+name+'.');
+      if(this.inspectionAccepted(e)>0){
+        const lot=e.lots[0]||{},perishable=this.state.data?.CATEGORIES?.find(c=>c.name===this.inspectionProduct(e)?.category)?.classification==='Perishable';
+        if(!lot.expiryDate&&(perishable||!lot.noExpiry))add(key+'lots.0.expiryDate','Enter the expiration date for '+name+'.');
+        else if(lot.expiryDate&&lot.expiryDate<=today)add(key+'lots.0.expiryDate','Expiration date must be after today for '+name+'.');
+      }
+      if(e.type!=='current'&&Number(e.delivered)<=0)add(key+'delivered','Enter a delivered quantity for '+name+', or remove this entry.');
+    });
+    if(!entered.some(e=>Number(e.delivered)>0)&&!Object.keys(errors).length)add('entries','Enter a delivered quantity for at least one product.');
+    if(!String(d.notes||'').trim())add('notes','Enter receiving notes. Enter No remarks when there are none.');
+    const first=Object.keys(errors)[0];
+    this.setState({inspectionErrors:errors,receiveError:first?errors[first]:'',inspectionReview:!first},()=>{if(first)setTimeout(()=>{const field=document.querySelector('[data-receiving-field="'+first+'"]');field?.focus();field?.scrollIntoView({block:'center',behavior:'smooth'});},0);});
+    return !first;
   };
   submitInspection=async()=>{
     if(this.receivingBusy||!this.state.inspectionReview)return;
     if(!this.reviewInspection())return;
     this.receivingBusy=true;this.setState({receivingSaving:true,receiveError:''});
     try{const result=await this.authPost('/api/stock-receipts',this.inspectionPayload());this.setState({purchaseReceivingId:null,inspection:null,lastReceivedPo:null,lastStockReceipt:result.id});this.toast(result.message);await Promise.all([this.reloadPurchasing(),this.reloadCatalog()]);}
-    catch(error){this.setState({receiveError:error.message,inspectionReview:false});}finally{this.receivingBusy=false;this.setState({receivingSaving:false});}
+    catch(error){const errors=Object.fromEntries(Object.entries(error.body?.errors||{}).map(([key,value])=>[key,value[0]]));this.setState({receiveError:error.message,inspectionErrors:errors,inspectionReview:false});}finally{this.receivingBusy=false;this.setState({receivingSaving:false});}
   };
   stockReceiptAction=async(record,action)=>{
     if(this.receivingBusy)return;
@@ -2016,6 +2024,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
         h('header',{className:'receipt-history-dialog-header'},[h('div',null,[h('span',{className:'receipt-history-eyebrow'},'STOCK RECEIPT'),h('h2',null,selected.id),h('p',null,'Recorded on '+(selected.deliveryDate||'Not recorded'))]),h('button',{type:'button',className:'receipt-history-close','aria-label':'Close receipt details',disabled:!!s.receivingSaving,onClick:close},'×')]),
         h('div',{className:'receipt-history-dialog-body',tabIndex:0,'aria-label':'Receipt items, scroll for more'},[
           h('div',{className:'receipt-history-audit'},[status(selected),h('span',null,(selected.exceptions||[]).join('; ')||'No exceptions')]),
+          h('p',null,'Receiving Reference: '+(selected.payload?.supplierReference||selected.id)),
           h('div',{className:'inspection-table-wrap'},table(['Original PO','Product','Type','Delivered','Damaged','Accepted','Outstanding'],(selected.summary||[]).map((e,i)=>tr([td(e.poId),td(e.name),td({current:'Current order',missing:'Missing items',damaged:'Replacement',outstanding:'Outstanding items'}[e.type]||e.type),td(e.delivered),td(e.damaged),td(e.accepted),td(e.remaining)],i)))),
           review?h('div',{className:'inspection-approval'},[h('label',null,['Review note',h('textarea',{value:s.stockReceiptReviewNotes?.[selected.id]||'',disabled:!!s.receivingSaving,onChange:e=>this.setState(s=>({stockReceiptReviewNotes:{...s.stockReceiptReviewNotes,[selected.id]:e.target.value}}))})]),...['Approved','Declined'].map(action=>h('button',{type:'button',className:'kita-button',disabled:!!s.receivingSaving,onClick:()=>this.stockReceiptAction(selected,action)},action==='Approved'?'Approve receipt':'Reject receipt'))]):null
         ]),
@@ -2030,35 +2039,29 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     const accepted=d.entries.reduce((n,e)=>n+this.inspectionAccepted(e),0),units=[...new Set(d.entries.filter(e=>this.inspectionAccepted(e)>0).map(e=>this.purchaseUnit(this.inspectionLine(e)||{})))];
     const quantityLabel=units.length===1?units[0]:units.length?'units (mixed units)':'units';
     const field=(label,value,onChange,props={})=>h('label',null,[label,h('input',{required:!props.readOnly,value:value??'',onChange,...props})]);
-    const edit=(e,k,type='number')=>h('input',{required:true,'aria-label':k+' for '+e.poId+' '+e.productId,type,min:0,step:1,value:e[k],onChange:ev=>this.updateInspection(e.key,{[k]:ev.target.value})});
+    const edit=(e,k,type='number')=>{const key='entries.'+d.entries.indexOf(e)+'.'+k;return h('div',null,[h('input',{required:true,'data-receiving-field':key,'aria-invalid':!!this.state.inspectionErrors?.[key],'aria-label':k+' for '+e.poId+' '+e.productId,type,min:0,step:1,value:e[k],onChange:ev=>this.updateInspection(e.key,{[k]:ev.target.value})}),this.receivingFieldError(key)]);};
     const details=e=>{
       const l=this.inspectionLine(e),product=this.inspectionProduct(e),accepted=this.inspectionAccepted(e);if(!l)return null;
       const candidates=(this.state.productsLocal||this.state.data?.PRODUCTS||[]).filter(p=>p.status==='Active'&&!p.archivedAt&&Number(p.id)!==Number(e.productId)&&String(p.stockUnit||p.unit).toLowerCase()===String(l.unit).toLowerCase());
       return h('div',{className:'inspection-entry-details'},[
         h('p',{className:'inventory-help'},'Outstanding value limit: '+peso(this.inspectionValueLimit(e))+' | Receiving value: '+peso(accepted*Number(e.unitCost))),
-        Number(e.damaged)>0?h('div',{className:'inspection-damage'},[h('strong',null,'Damaged goods — excluded from saleable stock'),field('Damage reason *',e.damageReason,ev=>this.updateInspection(e.key,{damageReason:ev.target.value}),{maxLength:500}),h('label',null,['Disposition',h('select',{value:e.disposition,onChange:ev=>this.updateInspection(e.key,{disposition:ev.target.value})},[['return','Return to supplier'],['reject','Reject at delivery'],['quarantine','Quarantine (not saleable)']].map(([v,t])=>h('option',{value:v,key:v},t)))]),h('small',null,'Damaged quantities remain outstanding until replaced or resolved through an approved adjustment.')]):null,
-        (e.type!=='current'||Number(l.deliveredQty)>0||Number(l.obligation?.damaged)>0)?h('details',{className:'inspection-options',open:true},[h('summary',null,'Same product or replacement'),h('label',null,['Product received',h('select',{'aria-label':'Replacement product for '+e.poId+' '+e.productId,value:e.substituteProductId||'',onChange:ev=>{const p=candidates.find(p=>String(p.id)===ev.target.value);this.updateInspection(e.key,{substituteProductId:p?Number(p.id):null,unitCost:p?p.unitPrice:l.unitCost});}},[h('option',{value:''},'Original product — '+l.name),...candidates.map(p=>h('option',{key:p.id,value:p.id},p.name+' · '+peso(p.unitPrice)))])]),e.substituteProductId?field('Substitution reason *',e.substitutionReason,ev=>this.updateInspection(e.key,{substitutionReason:ev.target.value}),{maxLength:500}):null,null]):null,
-        h('details',{className:'inspection-options',open:true},[h('summary',null,'Purchase cost: '+peso(e.unitCost)),field('Actual unit cost',e.unitCost,ev=>this.updateInspection(e.key,{unitCost:ev.target.value}),{type:'number',min:0,step:'0.01'}),null]),
-        accepted>0?h('details',{className:'inspection-options',open:true},[h('summary',null,'Lot details ('+e.lots.length+') — '+product?.name),null,...e.lots.map((lot,i)=>h('div',{className:'inspection-lot-grid',key:i},[
-          field('Lot quantity',lot.quantity,ev=>this.updateInspectionLot(e,i,{quantity:ev.target.value}),{type:'number',min:1,step:1,'aria-label':'Lot '+(i+1)+' quantity for '+e.poId+' '+e.productId}),
-          field('Manufacturer / supplier lot',lot.supplierLot,ev=>this.updateInspectionLot(e,i,{supplierLot:ev.target.value}),{maxLength:40}),
-          field('Expiration date',lot.expiryDate,ev=>this.updateInspectionLot(e,i,{expiryDate:ev.target.value}),{type:'date',required:!lot.noExpiry,disabled:!!lot.noExpiry}),
-          this.state.data?.CATEGORIES?.find(c=>c.name===product?.category)?.classification!=='Perishable'?h('label',null,[h('input',{type:'checkbox',checked:!!lot.noExpiry,onChange:ev=>this.updateInspectionLot(e,i,{noExpiry:ev.target.checked,expiryDate:''})}),'No expiration date']):null,
-          field('Manufacturing date',lot.manufacturedDate,ev=>this.updateInspectionLot(e,i,{manufacturedDate:ev.target.value}),{type:'date',max:d.deliveryDate}),
-          e.lots.length>1?h('button',{type:'button',className:'inspection-text-button',onClick:()=>this.updateInspection(e.key,{lots:e.lots.filter((_,n)=>n!==i)})},'Remove lot'):null
-        ])),h('button',{type:'button',className:'inspection-text-button',onClick:()=>this.updateInspection(e.key,{lots:[...e.lots,{quantity:0,supplierLot:'',expiryDate:'',manufacturedDate:''}]})},'+ Add another lot'),h('strong',null,'Allocated '+e.lots.reduce((n,l)=>n+Number(l.quantity||0),0)+' / '+accepted)]):null
+        Number(e.damaged)>0?h('div',{className:'inspection-damage'},[h('strong',null,'Damaged goods — excluded from saleable stock'),h('div',null,[field('Damage reason *',e.damageReason,ev=>this.updateInspection(e.key,{damageReason:ev.target.value}),{maxLength:500,'data-receiving-field':'entries.'+d.entries.indexOf(e)+'.damageReason'}),this.receivingFieldError('entries.'+d.entries.indexOf(e)+'.damageReason')]),h('label',null,['Disposition',h('select',{'data-receiving-field':'entries.'+d.entries.indexOf(e)+'.disposition',value:e.disposition,onChange:ev=>this.updateInspection(e.key,{disposition:ev.target.value})},[['return','Return to supplier'],['reject','Reject at delivery'],['quarantine','Quarantine (not saleable)']].map(([v,t])=>h('option',{value:v,key:v},t)))]),h('small',null,'Damaged quantities remain outstanding until replaced or resolved through an approved adjustment.')]):null,
+        (e.type!=='current'||Number(l.deliveredQty)>0||Number(l.obligation?.damaged)>0)?h('details',{className:'inspection-options',open:true},[h('summary',null,'Same product or replacement'),h('label',null,['Product received',h('select',{'aria-label':'Replacement product for '+e.poId+' '+e.productId,value:e.substituteProductId||'',onChange:ev=>{const p=candidates.find(p=>String(p.id)===ev.target.value);this.updateInspection(e.key,{substituteProductId:p?Number(p.id):null,unitCost:p?p.unitPrice:l.unitCost});}},[h('option',{value:''},'Original product — '+l.name),...candidates.map(p=>h('option',{key:p.id,value:p.id},p.name+' · '+peso(p.unitPrice)))])]),e.substituteProductId?h('div',null,[field('Substitution reason *',e.substitutionReason,ev=>this.updateInspection(e.key,{substitutionReason:ev.target.value}),{maxLength:500,'data-receiving-field':'entries.'+d.entries.indexOf(e)+'.substitutionReason'}),this.receivingFieldError('entries.'+d.entries.indexOf(e)+'.substitutionReason')]):null,null]):null,
+        h('details',{className:'inspection-options',open:true},[h('summary',null,'Purchase cost: '+peso(e.unitCost)),h('div',null,[field('Actual unit cost',e.unitCost,ev=>this.updateInspection(e.key,{unitCost:ev.target.value}),{type:'number',min:0,step:'0.01','data-receiving-field':'entries.'+d.entries.indexOf(e)+'.unitCost'}),this.receivingFieldError('entries.'+d.entries.indexOf(e)+'.unitCost')]),null]),
+        accepted>0?h('p',{className:'inventory-help'},'Lot number and quantity are assigned automatically. Record a separate receipt for a different expiration date.'):null
+
       ]);
     };
     const row=e=>{const l=this.inspectionLine(e),p=this.inspectionProduct(e),due=this.inspectionDue(e);return h(React.Fragment,{key:e.key},[
-      h('tr',null,[td(l?.name||''),td(p?.sku||p?.barcode||p?.id||''),td(l?.unit||''),td(l?.orderedQty||0),td(due),td(edit(e,'delivered')),td(edit(e,'damaged')),td(h('output',null,this.inspectionAccepted(e))),td(h('output',null,Math.max(0,due-Number(e.delivered||0)))),td(h('input',{'aria-label':'Expiration for '+e.poId+' '+e.productId,type:'date',required:this.inspectionAccepted(e)>0&&!e.lots[0]?.noExpiry,disabled:e.lots.length!==1||!!e.lots[0]?.noExpiry||this.inspectionAccepted(e)===0,value:e.lots[0]?.expiryDate||'',onChange:ev=>this.updateInspectionLot(e,0,{expiryDate:ev.target.value})}))]),
+      h('tr',null,[td(l?.name||''),td(p?.sku||p?.barcode||p?.id||''),td(l?.unit||''),td(l?.orderedQty||0),td(due),td(edit(e,'delivered')),td(edit(e,'damaged')),td(h('output',null,this.inspectionAccepted(e))),td(h('output',null,Math.max(0,due-Number(e.delivered||0)))),td(h('div',{className:'receiving-expiration'},[h('input',{'aria-label':'Expiration for '+e.poId+' '+e.productId,'data-receiving-field':'entries.'+d.entries.indexOf(e)+'.lots.0.expiryDate','aria-invalid':!!this.state.inspectionErrors?.['entries.'+d.entries.indexOf(e)+'.lots.0.expiryDate'],type:'date',required:this.inspectionAccepted(e)>0&&!e.lots[0]?.noExpiry,disabled:!!e.lots[0]?.noExpiry||this.inspectionAccepted(e)===0,value:e.lots[0]?.expiryDate||'',onChange:ev=>this.updateInspectionLot(e,0,{expiryDate:ev.target.value})}),this.state.data?.CATEGORIES?.find(c=>c.name===p?.category)?.classification!=='Perishable'&&this.inspectionAccepted(e)>0?h('label',null,[h('input',{type:'checkbox',checked:!!e.lots[0]?.noExpiry,onChange:ev=>this.updateInspectionLot(e,0,{noExpiry:ev.target.checked,expiryDate:''})}),'No expiration date']):null,this.receivingFieldError('entries.'+d.entries.indexOf(e)+'.lots.0.expiryDate')]))]),
       h('tr',{className:'inspection-detail-row'},[h('td',{colSpan:10},details(e))])
     ]);};
     return h('dialog',{className:'receiving-dialog inspection-dialog','aria-label':'Receive delivery inspection',ref:node=>{if(node&&!node.open)node.showModal();},onCancel:ev=>{ev.preventDefault();close();}},h('div',{className:'inspection-shell'},[
       h('header',{className:'inspection-header'},[h('div',null,[h('small',null,'STOCK RECEIVING'),h('h2',null,'Receive Delivery'),null]),h('button',{type:'button','aria-label':'Close receiving',disabled:!!this.state.receivingSaving,onClick:close},'×')]),
       h('div',{className:'inspection-scroll'},h('fieldset',{className:'inspection-body',disabled:!!this.state.receivingSaving},[
         h('div',{className:'inspection-po-details'},[field('Purchase Order No.',order.id,null,{readOnly:true}),field('Supplier',order.supplierName||this.purchaseSupplier(order.supplierId),null,{readOnly:true}),field('PO Date',String(order.created||'').slice(0,10),null,{readOnly:true}),h('div',null,[h('small',null,'PO Status'),badge(order.status)])]),
-        this.state.inspectionReview?h('section',{className:'inspection-review'},[h('h3',null,'Review stock receipt'),null,h('div',{className:'inspection-table-wrap'},table(['PO','Product','Receiving type','Delivered','Damaged','Accepted','Remaining'],d.entries.filter(e=>Number(e.delivered)>0).map(e=>tr([td(e.poId),td(this.inspectionProduct(e)?.name),td(e.type==='current'?'Current PO':e.type==='damaged'?'Damaged replacement':e.type==='missing'?'Previously missing':'Previous outstanding'),td(e.delivered),td(e.damaged||0),td(this.inspectionAccepted(e)),td(Math.max(0,this.carryoverAvailable(this.inspectionLine(e)||{})-this.inspectionAccepted(e)))],e.key)))),...d.entries.filter(e=>Number(e.delivered)>0).map(e=>h('p',{key:e.key},[h('strong',null,(this.inspectionProduct(e)?.name||'')+' — '+e.poId),': '+e.lots.map(l=>l.quantity+' units / lot '+(l.supplierLot||'not supplied')+' / expiry '+(l.expiryDate||'not applicable')).join('; ')]))]):h(React.Fragment,null,[
-          h('details',{className:'inspection-delivery-info',open:true},[h('summary',null,'Delivery information · '+d.deliveryDate),h('div',{className:'inspection-delivery-grid'},[field('Delivery date',d.deliveryDate,ev=>this.setState({inspection:{...d,deliveryDate:ev.target.value}}),{type:'date',max:this.state.data?.BUSINESS_DATE}),field('Supplier delivery / invoice reference *',d.supplierReference,ev=>this.setState({inspection:{...d,supplierReference:ev.target.value}}),{maxLength:100}),field('Received by',this.state.authenticatedUser?.name||'',null,{readOnly:true})])]),
+        this.state.inspectionReview?h('section',{className:'inspection-review'},[h('h3',null,'Review stock receipt'),null,h('div',{className:'inspection-table-wrap'},table(['PO','Product','Receiving type','Delivered','Damaged','Accepted','Remaining'],d.entries.filter(e=>Number(e.delivered)>0).map(e=>tr([td(e.poId),td(this.inspectionProduct(e)?.name),td(e.type==='current'?'Current PO':e.type==='damaged'?'Damaged replacement':e.type==='missing'?'Previously missing':'Previous outstanding'),td(e.delivered),td(e.damaged||0),td(this.inspectionAccepted(e)),td(Math.max(0,this.carryoverAvailable(this.inspectionLine(e)||{})-this.inspectionAccepted(e)))],e.key)))),...d.entries.filter(e=>Number(e.delivered)>0).map(e=>h('p',{key:e.key},[h('strong',null,(this.inspectionProduct(e)?.name||'')+' — '+e.poId),': '+e.lots.map(l=>l.quantity+' units / lot '+(l.supplierLot||'assigned automatically')+' / expiry '+(l.expiryDate||'not applicable')).join('; ')]))]):h(React.Fragment,null,[
+          h('details',{className:'inspection-delivery-info',open:true},[h('summary',null,'Delivery information · '+d.deliveryDate),h('div',{className:'inspection-delivery-grid'},[h('div',null,[field('Delivery date',d.deliveryDate,ev=>this.setState({inspection:{...d,deliveryDate:ev.target.value}}),{type:'date',max:this.state.data?.BUSINESS_DATE,'data-receiving-field':'deliveryDate','aria-invalid':!!this.state.inspectionErrors?.deliveryDate}),this.receivingFieldError('deliveryDate')]),field('Receiving Reference','Assigned automatically when saved',null,{readOnly:true}),field('Received by',this.state.authenticatedUser?.name||'',null,{readOnly:true})])]),
           h('section',null,[h('div',{className:'inspection-section-title'},[h('h3',null,'1. Products for this Purchase Order'),h('span',null,primary.length+' products')]),null,stickyTable(h('div',{className:'inspection-table-wrap'},h('table',null,[h('thead',null,h('tr',null,['Product','SKU / Code','Unit','Ordered','Outstanding','Delivered','Damaged','Accepted','Undelivered','Expiration'].map(t=>h('th',{key:t},t)))),h('tbody',null,primary.map(row))])))]),
           h('section',{className:'inspection-additional'},[h('div',{className:'inspection-section-title'},[h('div',null,[h('h3',null,'2. Add Outstanding Item (Optional)'),null]),h('button',{type:'button',className:'inspection-add-button',disabled:!sourceOrders.length,onClick:()=>this.setState({inspection:{...d,entries:[...d.entries,this.newInspectionEntry(null,null,'outstanding')]}})},'+ Add Outstanding Item')]),!sourceOrders.length?h('small',null,'No other eligible previous POs for this supplier.'):null,...extra.map(e=>{
             const source=sourceOrders.find(o=>o.id===e.poId),l=this.inspectionLine(e),b=l?.obligation;
@@ -2071,7 +2074,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
               l?stickyTable(h('div',{className:'inspection-table-wrap'},h('table',null,[h('thead',null,h('tr',null,['Product','SKU / Code','Unit','Ordered','Outstanding','Delivered','Damaged','Accepted','Undelivered','Expiration'].map(t=>h('th',{key:t},t)))),h('tbody',null,row(e))]))):null
             ]);
           })]),
-          h('section',null,[h('h3',null,'3. Receiving Notes'),h('textarea',{'aria-label':'Receiving notes',rows:2,maxLength:2000,required:true,placeholder:'Required: enter No remarks, or explain any receiving issues.',value:d.notes,onChange:ev=>this.setState({inspection:{...d,notes:ev.target.value}})})])
+          h('section',null,[h('h3',null,'3. Receiving Notes'),h('textarea',{'aria-label':'Receiving notes','data-receiving-field':'notes','aria-invalid':!!this.state.inspectionErrors?.notes,rows:2,maxLength:2000,required:true,placeholder:'Required: enter No remarks, or explain any receiving issues.',value:d.notes,onChange:ev=>this.setState({inspection:{...d,notes:ev.target.value}})}),this.receivingFieldError('notes')])
         ]),
         this.state.receiveError?h('p',{role:'alert',className:'inspection-error'},this.state.receiveError):null
       ])),
@@ -2128,7 +2131,17 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     const query=this.state.receiptHistorySearch||'',type=this.state.receiptHistoryType||'',from=this.state.receiptHistoryFrom||'',to=this.state.receiptHistoryTo||'';
     const isReplacement=r=>(r.lines||[]).some(l=>/replacement|substitut/i.test(l.conditionText||''));
     const filtered=all.filter(({o,r})=>(!type||(type==='replacement'?isReplacement(r):!isReplacement(r)))&&(!from||r.date>=from)&&(!to||r.date<=to)&&searchMatches([r.id,o.id,o.supplierName,r.receivedBy,r.remarks,...(r.lines||[]).map(l=>l.name)].join(' '),query));
-    return h('div',{className:'receiving-workspace'},[
+    const selected=all.find(({r})=>String(r.id)===String(this.state.receiptTransactionId));
+    const close=()=>this.setState({receiptTransactionId:null});
+    const popup=selected?(()=>{const {o,r}=selected;return h('dialog',{className:'receipt-history-dialog','aria-labelledby':'receipt-transaction-title',ref:n=>{if(n&&!n.open)n.showModal();},onCancel:e=>{e.preventDefault();close();}},[
+      h('header',{className:'receipt-history-dialog-header'},[h('div',null,[h('small',null,'TRANSACTION DETAILS'),h('h2',{id:'receipt-transaction-title'},r.id)]),h('button',{type:'button',className:'receipt-history-close','aria-label':'Close transaction',onClick:close},'\u00d7')]),
+      h('div',{className:'receipt-history-dialog-body'},[
+        h('dl',{className:'receiving-transaction-details'},[['Receipt No.',r.id],['Purchase Order No.',o.id],['Supplier',o.supplierName||this.purchaseSupplier(o.supplierId)],['Date and Time',r.received_at||r.date],['Received By',r.receivedBy||'Not recorded'],['Status','Posted'],['Remarks',r.remarks||'No remarks']].map(([label,value])=>h('div',{key:label},[h('dt',null,label),h('dd',null,value)]))),
+        h('div',{className:'table-scroll'},table(['Product','Received Quantity','Stock Unit'],(r.lines||[]).map((l,i)=>tr([td(l.name||o.lines.find(p=>Number(p.productId)===Number(l.productId))?.name||l.productId),td(l.deliveredQty),td(this.purchaseUnit(l))],i))))
+      ]),
+      h('footer',{className:'receipt-history-dialog-footer'},[btn('Close',close),h('a',{className:'kita-button kita-button--primary',href:'/receipts/'+encodeURIComponent(r.id)+'/report',target:'_blank',rel:'noopener'},'Print Receipt')])
+    ]);})():null;
+    return h('div',{className:'receiving-workspace transaction-history-workspace'},[
       moduleTitle('Transaction History'),
       h('div',{className:'receiving-card-metrics'},[kpi('Posted PO Receipts',all.length),kpi('Purchase Orders Received',orders.filter(o=>o.receipts?.length).length),kpi('Replacement / Substitution Receipts',all.filter(({r})=>isReplacement(r)).length),kpi('Latest Receipt Date',all[0]?.r.date||'No receipts')]),
       h('section',{className:'receiving-card-panel'},[
@@ -2145,13 +2158,9 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
           h('div',{className:'receiving-card-row'},[h('span',null,r.remarks||'Stock received and posted'),h('strong',{className:'receiving-card-quantity'},'+'+this.receivingQuantityLabel(r.lines||[],l=>l.deliveredQty))]),
           h('p',{className:'receiving-card-meta'},'Purchase Order: '+o.id),
           h('p',{className:'receiving-card-meta'},'Received by: '+(r.receivedBy||'Not recorded')),
-          h('details',{className:'receiving-transaction-details'},[
-            h('summary',null,'View Transaction'),
-            h('dl',null,[...[[ 'Receipt No.',r.id],['Purchase Order No.',o.id],['Supplier',o.supplierName||this.purchaseSupplier(o.supplierId)],['Status','Posted']].map(([label,value])=>h('div',{key:label},[h('dt',null,label),h('dd',null,value)])),...(r.lines||[]).map((l,i)=>h('div',{key:i},[h('dt',null,l.name||o.lines.find(p=>Number(p.productId)===Number(l.productId))?.name||l.productId),h('dd',null,l.deliveredQty+' '+this.purchaseUnit(l))]))]),
-            h('a',{className:'kita-button',href:'/receipts/'+encodeURIComponent(r.id)+'/report',target:'_blank',rel:'noopener'},'View / Print Receipt')
-          ])
+          h('div',{className:'receiving-history-actions'},[btn('View Transaction',()=>this.setState({receiptTransactionId:r.id}),'primary'),h('a',{className:'kita-button',href:'/receipts/'+encodeURIComponent(r.id)+'/report',target:'_blank',rel:'noopener'},'Print Receipt')])
         ])):h('p',{className:'record-empty'},'No receipt transactions match these filters.'))
-      ])
+      ]),popup
     ]);
   }
   cancelPurchaseRemainder=async id=>{
@@ -2172,9 +2181,9 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     const current=cancelled?'Cancel':rejected?'Rejected':approved?'Approved':review?'Review':'Pending',index=cancelled||approved||rejected?2:review?1:0;
     const date=cancelled?(order.cancelled_at||null):index===2?(r.approved_at||r.reviewed_at):index===0?(r.requested_at||r.dateRequested||r.created):null;
     const descriptions={Cancel:'Purchase order has been cancelled.',Pending:'Purchase order submitted and awaiting evaluation.',Review:'Purchase order is being reviewed; comments or corrections may be provided.',Approved:'Purchase order has been approved.',Rejected:'Purchase order has been declined.'};
-    return h('section',{className:'po-tracking','aria-label':'Purchase order approval tracking'},[
+    return h('section',{className:'po-tracking po-tracking--'+current.toLowerCase(),'aria-label':'Purchase order approval tracking'},[
       h('h3',null,'Order Status'),
-      h('ol',{className:'po-tracking-steps'},['Pending','Review',cancelled?'Cancel':rejected?'Rejected':'Approved'].map((label,i)=>h('li',{key:label,className:i<=index?'is-active':'','aria-current':i===index?'step':undefined},[h('span',{className:'po-tracking-dot','aria-hidden':true},String(i+1)),h('strong',null,label)]))),
+      h('ol',{className:'po-tracking-steps'},['Pending','Review',cancelled?'Cancel':rejected?'Rejected':'Approved'].map((label,i)=>h('li',{key:label,className:[i<=index?'is-active':'',i>0&&i<=index?'is-connected':'',i===2&&i<=index?'is-'+(cancelled?'cancelled':rejected?'rejected':'approved'):''].filter(Boolean).join(' '),'aria-current':i===index?'step':undefined},[h('span',{className:'po-tracking-dot','aria-hidden':true},String(i+1)),h('strong',null,label)]))),
       h('section',{className:'po-tracking-details'},[h('h3',null,'Status Details'),h('div',{className:'po-tracking-heading'},[h('strong',null,current),h('span',{className:'po-tracking-badge'},'Current Status')]),
         h('p',{className:'po-tracking-date'},date?String(date):'Status date not recorded'),h('p',null,descriptions[current]),
         h('h4',null,'Remarks / Comments'),h('p',{className:'po-tracking-remarks'},(cancelled?order.cancellationReason||(typeof order.supplierCallback==='string'?order.supplierCallback:order.supplierCallback?.reason)||r.adminNote:rejected?r.disapprovalReason||r.adminNote:r.adminNote||r.notes)||(rejected?'No rejection remarks recorded.':'No remarks recorded.')),
