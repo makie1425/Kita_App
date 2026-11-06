@@ -34,6 +34,19 @@ class PurchaseWorkflowTest extends TestCase
         ] + $this->catalogFields('Supplies'))->assertCreated()->json('product.id');
     }
 
+    public function test_unlinked_supplier_cannot_be_used_for_a_product(): void
+    {
+        $other = $this->postJson('/api/suppliers', ['name' => 'Other Supplier', 'email' => 'other@example.com'])->assertCreated()->json('supplier.id');
+        $this->postJson('/api/purchase-requests', ['category' => 'Supplies', 'lines' => [
+            ['productId' => $this->product, 'supplierId' => $other, 'qty' => 1, 'unitCost' => 2.50],
+        ]])->assertUnprocessable()->assertJsonValidationErrors('lines');
+        $this->assertDatabaseCount('item_requests', 0);
+        $this->insertFixture('supplier_products', ['supplierId' => $other, 'productId' => $this->product, 'costPrice' => 2.50]);
+        $this->postJson('/api/purchase-requests', ['category' => 'Supplies', 'lines' => [
+            ['productId' => $this->product, 'supplierId' => $other, 'qty' => 1, 'unitCost' => 2.50],
+        ]])->assertCreated();
+    }
+
     public function test_receiving_saves_edited_cost_and_retail_prices_without_changing_po_cost(): void
     {
         $id = $this->requestOrder();
@@ -506,7 +519,7 @@ class PurchaseWorkflowTest extends TestCase
         $this->assertSame(2, DB::table('notifications')->where('recipientId', $this->admin->id)->where('recipientRole', 'admin')->whereIn('recordId', [$id, $later])->where('type', 'Stock received')->count());
         $this->actingAs($this->admin)->getJson('/api/purchasing')->assertOk()->assertJsonPath('orders.0.id', $later)->assertJsonPath('orders.0.status', 'Fully Received')->assertJsonCount(2, 'orders.0.receipts');
         $this->get('/purchase-orders/'.$id.'/report')->assertOk()->assertSee('PURCHASE ORDER / RECEIVING REPORT')->assertSee($id)
-            ->assertSee('Purchase Supplier')->assertSee('Approving Admin')->assertSee('Receiving Manager')->assertSee('Print Report');
+            ->assertSee('Purchase Supplier')->assertSee('Approving Admin')->assertSee('Receiving Manager')->assertSee('onclick="window.print()">Print</button>', false);
     }
 
     public function test_receiving_retry_and_stale_version_cannot_double_stock_and_reference_is_generated(): void

@@ -121,6 +121,7 @@ test('item-first PO suggests low stock and selects category and eligible supplie
  assert.equal(field('Subcategory').props.value,'Grains');assert.equal(field('Supplier').props.value,'7');
  assert.equal(app.state.purchaseItemDraft.qty,8);assert.equal(app.state.purchaseItemDraft.unitCost,25);
  app.state.data.SUPPLIERS[1].products=[{productId:1,costPrice:28}];
+ field('Supplier').props.onChange({target:{value:''}});
  field('Item Name').props.onChange({target:{value:'1'}});assert.equal(field('Supplier').props.value,'');
  field('Supplier').props.onChange({target:{value:'8'}});assert.equal(app.state.purchaseItemDraft.unitCost,28);
  app.state.newReqCart=[{productId:1}];app.state.newReqSupplier='7';field('Item Name').props.onChange({target:{value:'2'}});
@@ -228,4 +229,25 @@ test('inventory combines supplier and category filters and exposes compact Edit 
  const {app}=setup();Object.assign(app.state,{role:'manager',inventorySupplierId:'2',inventoryCategory:'Food',data:{PRODUCTS:[{id:1,name:'Rice',category:'Food',supplierId:1,status:'Active',stock:0,minStock:2},{id:2,name:'Soap',category:'Household',supplierId:2,status:'Active',stock:5}],SUPPLIERS:[{id:2,name:'Linked supplier',status:'Active',products:[{productId:1}]}],CATEGORIES:[{name:'Food'}],SUBCATEGORIES:[],BRANDS:[]}});
  const captured=[];app.recordTable=(key,headers,rows)=>{captured.push({key,rows});return {tag:'table',children:rows};};
  const tree=JSON.stringify(app.buildStockBalance());assert.equal(captured[0].rows.length,1);assert.ok(tree.includes('Rice'));assert.ok(tree.includes('stock-condition-out'));assert.ok(tree.includes('Archive'));assert.ok(tree.includes('Edit'));assert.ok(!tree.includes('Edit Item'));
+});
+
+test('supplier-first filters products and suggestions and resets incompatible item',()=>{
+ const {app}=setup();app.state.newReqCart=[];app.state.purchaseItemDraft={};
+ app.state.data={PRODUCTS:[{id:1,name:'Rice',category:'Food',supplierId:7,status:'Active',sellableStock:0,minStock:10,stockUnit:'Piece',unitPrice:30},{id:2,name:'Soap',category:'Care',supplierId:8,status:'Active',sellableStock:2,minStock:5,stockUnit:'Piece'}],SUPPLIERS:[{id:7,name:'Food Supply',status:'Active',products:[{productId:1,costPrice:25}]},{id:8,name:'Care Supply',status:'Active',products:[]}],SUBCATEGORIES:[]};
+ const nodes=v=>!v||typeof v!=='object'?[]:Array.isArray(v)?v.flatMap(nodes):[v,...nodes(v.children)];
+ const field=label=>nodes(app.buildItemPickerModal()).find(n=>n.tag==='label'&&JSON.stringify(n.children[0]).includes('"'+label+'"')).children.flat(Infinity).find(n=>['select','input'].includes(n?.tag));
+ assert.equal(field('Supplier').props.disabled,false);
+ field('Supplier').props.onChange({target:{value:'7'}});
+ assert.ok(!JSON.stringify(field('Item Name')).includes('Soap'));
+ assert.ok(!JSON.stringify(nodes(app.buildItemPickerModal()).find(n=>n.props?.className==='po-low-stock')).includes('Soap'));
+ field('Item Name').props.onChange({target:{value:'1'}});
+ assert.equal(app.state.purchaseItemDraft.supplierId,'7');assert.equal(app.state.purchaseItemDraft.unitCost,25);
+ assert.ok(JSON.stringify(app.buildItemPickerModal()).includes('250.00'));
+ field('Supplier').props.onChange({target:{value:'8'}});
+ assert.equal(app.state.purchaseItemDraft.productId,undefined);assert.equal(field('Category').props.value,'');
+ assert.ok(!JSON.stringify(field('Item Name')).includes('Rice'));
+ field('Supplier').props.onChange({target:{value:''}});
+ assert.ok(JSON.stringify(field('Item Name')).includes('Rice'));
+ app.state.newReqCart=[{productId:2}];app.state.newReqSupplier='8';
+ assert.equal(field('Supplier').props.disabled,true);assert.ok(!JSON.stringify(field('Item Name')).includes('Rice'));
 });

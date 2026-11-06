@@ -2240,48 +2240,49 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     const products=s.data.PRODUCTS.filter(p=>p.status==='Active'&&!p.archivedAt);
     const eligible=p=>(s.data.SUPPLIERS||[]).filter(v=>v.status==='Active'&&!v.archivedAt&&(String(p?.supplierId)===String(v.id)||(v.products||[]).some(l=>String(l.productId)===String(p?.id))));
     const product=products.find(p=>String(p.id)===String(d.productId));
-    const suppliers=product?eligible(product):[];
+    const suppliers=(s.data.SUPPLIERS||[]).filter(v=>v.status==='Active'&&!v.archivedAt);
     const supplier=String(s.newReqCart.length?s.newReqSupplier:d.supplierId||'');
     const costFor=(p,id)=>s.data.SUPPLIERS.find(v=>String(v.id)===String(id))?.products?.find(l=>String(l.productId)===String(p.id))?.costPrice??p.unitPrice??0;
-    const select=p=>{const choices=eligible(p),id=s.newReqCart.length?String(s.newReqSupplier):choices.length===1?String(choices[0].id):'';
+    const select=p=>{const choices=eligible(p),id=s.newReqCart.length?String(s.newReqSupplier):supplier&&choices.some(v=>String(v.id)===supplier)?supplier:choices.length===1?String(choices[0].id):'';
       this.setState({purchaseItemDraft:{productId:p.id,supplierId:id,qty:Math.max(1,Number(p.minStock||0)-this.sellableStock(p)),unitCost:costFor(p,id)},purchaseItemError:''});};
-    const low=products.filter(p=>p.needsReorder??this.sellableStock(p)<=Number(p.minStock||0));
-    const matching=products.filter(p=>searchMatches(this.productLabel(p)+' '+p.category,s.itemPickerSearch||''));
+    const filtered=products.filter(p=>!supplier||eligible(p).some(v=>String(v.id)===supplier));
+    const changeSupplier=id=>{const keep=product&&(!id||eligible(product).some(v=>String(v.id)===id));this.setState({purchaseItemDraft:keep?{...d,supplierId:id,unitCost:costFor(product,id)}:{supplierId:id},purchaseItemError:product&&!keep?'Item cleared. Select a product supplied by this supplier.':''});};
+    const low=filtered.filter(p=>p.needsReorder??this.sellableStock(p)<=Number(p.minStock||0));
+    const matching=filtered.filter(p=>searchMatches(this.productLabel(p)+' '+p.category+' '+(p.barcode||'')+' '+(p.sku||''),s.itemPickerSearch||''));
     const line=product?{...d,productId:product.id,name:this.productLabel(product),qty:d.qty??1}:null;
     const stock=line?this.purchaseUnit(line):'',unit=d.orderUnit||stock;
     const set=(key,value)=>this.setState({purchaseItemDraft:{...d,[key]:value},purchaseItemError:''});
     const field=(label,input)=>h('label',null,[h('span',null,label),input]);
     const save=()=>{
-      if(!product||!suppliers.some(v=>String(v.id)===supplier)){this.setState({purchaseItemError:s.newReqCart.length?'This item needs a separate PO or a saved link to the current supplier.':'Select an eligible supplier for this item. Register its supplier link if none is available.'});return;}
+      if(!product||!eligible(product).some(v=>String(v.id)===supplier)){this.setState({purchaseItemError:s.newReqCart.length?'This item needs a separate PO or a saved link to the current supplier.':'Select an eligible supplier for this item. Register its supplier link if none is available.'});return;}
       const qty=Number(d.qty??1),cost=Number(d.unitCost??product.unitPrice??0),factor=Number(d.stockUnitsPerOrder);
-      if(!Number.isInteger(qty)||qty<1||!Number.isFinite(cost)||cost<0||(this.requestUsesPackage({...line,orderUnit:unit})&&(!Number.isInteger(factor)||factor<1||qty*factor>1000000))){this.setState({purchaseItemError:'Enter a positive whole quantity, valid cost, and stock units per package when required.'});return;}
+      if(!Number.isInteger(qty)||qty<1||qty>1000000||!Number.isFinite(cost)||cost<0||(this.requestUsesPackage({...line,orderUnit:unit})&&(!Number.isInteger(factor)||factor<1||qty*factor>1000000))){this.setState({purchaseItemError:'Enter a positive whole quantity, valid cost, and stock units per package when required.'});return;}
       if(s.newReqCart.some(v=>v.productId===product.id)){this.setState({purchaseItemError:'This item is already in the order. Update its quantity in the table.'});return;}
       this.purchaseSubmissionKey=null;
       this.setState({newReqSupplier:supplier,newReqCart:[...s.newReqCart,{...line,category:product.category,supplierId:supplier,qty,unitCost:cost,orderUnit:unit}],itemPickerOpen:false});
     };
     return h('dialog',{className:'po-item-dialog','aria-labelledby':'po-item-title',ref:n=>{if(n&&!n.open)n.showModal();},onCancel:e=>{e.preventDefault();this.closeItemPicker();}},[
-      h('header',null,[h('h2',{id:'po-item-title'},'Add Item to Order'),h('button',{type:'button',className:'po-close','aria-label':'Close',onClick:this.closeItemPicker},'\u00d7')]),
+      h('header',null,[h('div',null,[h('h2',{id:'po-item-title'},'Add Item to Purchase Order'),h('small',null,'Select from inventory or quick-add suggested low stock items.')]),h('button',{type:'button',className:'po-close','aria-label':'Close',onClick:this.closeItemPicker},'\u00d7')]),
       h('div',{className:'po-item-fields'},[
-        h('section',{className:'po-low-stock','aria-label':'Low-stock suggestions'},[h('strong',null,'Low-stock suggestions'),low.length?h('div',{className:'po-low-stock-list'},low.map(p=>h('button',{type:'button',key:p.id,onClick:()=>select(p)},[h('strong',null,this.productLabel(p)),h('span',null,'Low Stock ? Available: '+this.sellableStock(p)+' ? Reorder level: '+Number(p.minStock||0))]))):h('p',null,'No low-stock items.')]),
-        field('Search Products',h('input',{type:'search',value:s.itemPickerSearch||'',placeholder:'Search by item name or category',onChange:e=>this.setState({itemPickerSearch:e.target.value})})),
-        field('Item Name',h('select',{value:d.productId||'',onChange:e=>{const p=products.find(v=>String(v.id)===e.target.value);if(p)select(p);else this.setState({purchaseItemDraft:{},purchaseItemError:''});}},[h('option',{value:''},'Select an item...'),...[...new Map([...(product?[product]:[]),...matching].map(p=>[p.id,p])).values()].map(p=>h('option',{value:p.id,key:p.id},this.productLabel(p)))])),
+        h('section',{className:'po-low-stock','aria-label':'Low-stock suggestions'},[h('div',{className:'po-suggestion-heading'},[h('strong',null,'Low Stock Urgent Suggestions'),h('span',null,'Click to Auto-fill')]),low.length?h('div',{className:'po-low-stock-list'},low.map(p=>h('button',{type:'button',key:p.id,onClick:()=>select(p)},[h('strong',null,this.productLabel(p)),h('span',{className:this.sellableStock(p)<=0?'po-stock-critical':'po-stock-low'},this.sellableStock(p)<=0?'Out of Stock':'Low Stock'),h('span',null,'Available: '+this.sellableStock(p)+' / Reorder: '+Number(p.minStock||0)),h('small',null,'Est. Cost: PHP '+Number(costFor(p,supplier)).toFixed(2)+' / '+(p.stockUnit||p.unit||'stock unit'))]))):h('p',null,'No low-stock items for this selection.')]),
+        field('Search Products',h('input',{type:'search',value:s.itemPickerSearch||'',placeholder:'Search by item name, category or barcode',onChange:e=>this.setState({itemPickerSearch:e.target.value})})),
+        field('Item Name',h('select',{value:d.productId||'',onChange:e=>{const p=products.find(v=>String(v.id)===e.target.value);if(p)select(p);else this.setState({purchaseItemDraft:{supplierId:supplier},purchaseItemError:''});}},[h('option',{value:''},'Select an item...'),...[...new Map([...(product?[product]:[]),...matching].map(p=>[p.id,p])).values()].map(p=>h('option',{value:p.id,key:p.id},this.productLabel(p)))])),
         h('div',{className:'po-field-pair'},[
           field('Category',h('input',{readOnly:true,value:product?.category||''})),
           field('Subcategory',h('input',{readOnly:true,value:product?(s.data.SUBCATEGORIES||[]).find(v=>String(v.id)===String(product.subcategoryId))?.name||'Without Subcategory':''}))
         ]),
-        field('Supplier',h('select',{value:supplier,disabled:!product||!!s.newReqCart.length,onChange:e=>this.setState({purchaseItemDraft:{...d,supplierId:e.target.value,unitCost:costFor(product,e.target.value)},purchaseItemError:''})},[h('option',{value:''},'Select a supplier...'),...suppliers.map(v=>h('option',{key:v.id,value:v.id},v.name))])),
-        product&&!suppliers.length?h('p',{role:'status'},'No active supplier is linked to this item. Add a supplier link first.'):null,
-        product&&s.newReqCart.length&&!suppliers.some(v=>String(v.id)===supplier)?h('p',{role:'status'},'This item is not linked to the current PO supplier. Create a separate PO.'):null,
+        field('Supplier',h('select',{value:supplier,disabled:!!s.newReqCart.length,onChange:e=>changeSupplier(e.target.value)},[h('option',{value:''},'Select a supplier...'),...suppliers.map(v=>h('option',{key:v.id,value:v.id},v.name))])),
+        product&&!eligible(product).length?h('p',{role:'status'},'No active supplier is linked to this item. Add a supplier link first.'):null,
+        product&&s.newReqCart.length&&!eligible(product).some(v=>String(v.id)===supplier)?h('p',{role:'status'},'This item is not linked to the current PO supplier. Create a separate PO.'):null,
         product?h('small',null,'Cost uses the supplier price when recorded; otherwise the product cost.'):null,
-        h('div',{className:'po-field-pair'},[
-          field('Purchase Unit',h('select',{value:unit,disabled:!product,onChange:e=>this.setState({purchaseItemDraft:{...d,orderUnit:e.target.value,stockUnitsPerOrder:''}})},[...new Set([stock,product?.purchaseUnit,'Box','Case','Pack'].filter(Boolean))].map(v=>h('option',{value:v,key:v},v))))
-        ]),
-        h('div',{className:'po-field-pair'},[
-          field('Quantity',h('input',{type:'number',min:1,step:1,value:d.qty??1,onChange:e=>set('qty',e.target.value)})),
+        h('div',{className:'po-field-triple'},[
+          field('Purchase Unit',h('select',{value:unit,disabled:!product,onChange:e=>this.setState({purchaseItemDraft:{...d,orderUnit:e.target.value,stockUnitsPerOrder:''}})},[...new Set([stock,product?.purchaseUnit,'Box','Case','Pack'].filter(Boolean))].map(v=>h('option',{value:v,key:v},v)))),
+          field('Quantity',h('div',{className:'po-quantity'},[h('button',{type:'button','aria-label':'Decrease quantity',onClick:()=>set('qty',Math.max(1,Number(d.qty||1)-1))},'-'),h('input',{type:'number',min:1,step:1,value:d.qty??1,onChange:e=>set('qty',e.target.value)}),h('button',{type:'button','aria-label':'Increase quantity',onClick:()=>set('qty',Math.min(1000000,Number(d.qty||1)+1))},'+')])),
           field('Cost per Stock Unit (PHP)',h('input',{type:'number',min:0,step:'0.01',value:d.unitCost??product?.unitPrice??0,onChange:e=>set('unitCost',e.target.value)}))
         ]),
         line&&this.requestUsesPackage({...line,orderUnit:unit})?field(stock+' per '+unit,h('input',{type:'number',min:1,step:1,value:d.stockUnitsPerOrder||'',onChange:e=>set('stockUnitsPerOrder',e.target.value)})):null,
         h('small',null,['Item not registered? ',h('button',{className:'po-text-button',onClick:()=>{this.closeItemPicker();this.goScreen('mgrRegistration')();}},'Register Product First')]),
+        h('output',{className:'po-estimate','aria-live':'polite'},'Est. Subtotal: PHP '+(line&&(!this.requestUsesPackage({...line,orderUnit:unit})||Number(d.stockUnitsPerOrder)>0)?(Number(d.qty||1)*Number(d.unitCost??product.unitPrice??0)*(this.requestUsesPackage({...line,orderUnit:unit})?Number(d.stockUnitsPerOrder):1)).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}):'0.00')),
         s.purchaseItemError?h('p',{role:'alert',className:'po-item-error'},s.purchaseItemError):null
       ]),
       h('footer',null,[btn('Cancel',this.closeItemPicker),btn('Add Item',save,'primary')])

@@ -2052,3 +2052,26 @@ button, .primary-button, .kita-button,
   .registration-page .form-actions .primary-button { width: 100%; }
 }
 @media (max-width: 380px) { .registration-page .registration-category { flex-wrap: wrap; } .registration-page .registration-category > .kita-button { width: 100%; } }
+
+/* Purchase item selection: supplier filtering and compact responsive layout. */
+.po-item-dialog{width:560px;background:#fff}
+.po-item-dialog header{background:#fafbfd;padding:18px 22px;align-items:flex-start}
+.po-item-dialog header small{display:block;color:#71829f;margin-top:5px;font-size:12px}
+.po-item-fields{padding:20px 22px;gap:16px}
+.po-item-dialog .po-low-stock{background:#fffdf0;border-color:#ffdc72;color:#92400e}
+.po-suggestion-heading{display:flex;justify-content:space-between;gap:8px;align-items:center;font-size:11px}
+.po-suggestion-heading>span{background:#fff2c9;border-radius:12px;padding:3px 8px}
+.po-item-dialog .po-low-stock-list{display:flex;overflow-x:auto;max-height:none;gap:10px;padding-bottom:8px}
+.po-item-dialog .po-low-stock-list button{flex:0 0 190px;border-color:#ffdc72;color:#26344e;white-space:normal}
+.po-item-dialog .po-low-stock-list button:hover,.po-item-dialog .po-low-stock-list button:focus-visible{background:#fff8db;outline-color:#2563eb}
+.po-low-stock-list small,.po-low-stock-list button>span:not([class]){color:#71829f;font-size:11px}
+.po-stock-critical{color:#c21842;background:#fff0f3;border-radius:4px;padding:2px 5px;justify-self:start;font-size:10px}
+.po-stock-low{color:#a14e00;background:#fff0c2;border-radius:4px;padding:2px 5px;justify-self:start;font-size:10px}
+.po-field-triple{display:grid;grid-template-columns:1fr 1fr 1.2fr;gap:12px}
+.po-field-triple>label{min-width:0}
+.po-quantity{display:flex;min-width:0}
+.po-quantity button{flex:0 0 28px;border:1px solid #cbd8ed;background:#f2f6fc;color:#264777;cursor:pointer}
+.po-quantity input{min-width:0;text-align:center;padding:6px!important;border-radius:0!important}
+.po-item-dialog input[readonly]{background:#f1f5f9;color:#71829f}
+.po-estimate{justify-self:end;background:#f6f8fc;border:1px solid #dce5f2;border-radius:6px;padding:8px 12px;font-weight:600}
+@media(max-width:480px){.po-field-triple{grid-template-columns:1fr 1fr}.po-field-triple>label:last-child{grid-column:1/-1}.po-item-fields{padding:16px}.po-suggestion-heading{flex-wrap:wrap}}

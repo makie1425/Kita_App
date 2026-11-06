@@ -60,6 +60,10 @@ class PurchaseWorkflow
                 if (! $supplier) {
                     throw ValidationException::withMessages(['lines' => 'Select an active supplier for every item.']);
                 }
+                if ((int) $product->supplierId !== (int) $supplierId && !WorkspaceRead::table('supplier_products')
+                    ->where('supplierId', $supplierId)->where('productId', $product->id)->exists()) {
+                    throw ValidationException::withMessages(['lines' => 'The selected supplier is not linked to this product.']);
+                }
                 if ($lines && (int) reset($lines)['supplierId'] !== (int) $supplierId) {
                     throw ValidationException::withMessages(['lines' => 'Use one supplier per PO. Submit a separate request for another supplier.']);
                 }
