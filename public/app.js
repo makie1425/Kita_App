@@ -416,7 +416,7 @@ class Component extends DCLogic {
     this.cartGeneration=(this.cartGeneration||0)+1;
     this.confirmationResolve?.(false);this.confirmationResolve=null;
     if(window.KITA_AUTH){window.KITA_AUTH.user=null;if(csrfToken)window.KITA_AUTH.csrfToken=csrfToken;}
-    this.setState({...this.emptySessionState,authStep:'login',role:null,screen:null,authenticatedUser:null,data:null,cart:[],newReqCart:[],accountsLocal:null,purchaseData:null,supplierAccountsData:null,inventoryHistory:null,reportResult:null,saDashboard:null,confirmation:null,manualLookupOpen:false,seniorPwdOpen:false,overrideLine:null,acctModalOpen:false,discountManagerPin:'',approvalPin:'',approvalManagerId:'',currentApprovalPin:'',newApprovalPin:'',confirmApprovalPin:'',loginUsername:'',loginPassword:'',otpEmail:'',otpCode:'',mgrNotificationsLocal:[],notificationUnread:0,mgrNotifOpen:false,toasts:[],loginError:message||'Please sign in again.'});
+    this.setState({...this.emptySessionState,screenTrail:[],authStep:'login',role:null,screen:null,authenticatedUser:null,data:null,cart:[],newReqCart:[],accountsLocal:null,purchaseData:null,supplierAccountsData:null,inventoryHistory:null,reportResult:null,saDashboard:null,confirmation:null,manualLookupOpen:false,seniorPwdOpen:false,overrideLine:null,acctModalOpen:false,discountManagerPin:'',approvalPin:'',approvalManagerId:'',currentApprovalPin:'',newApprovalPin:'',confirmApprovalPin:'',loginUsername:'',loginPassword:'',otpEmail:'',otpCode:'',mgrNotificationsLocal:[],notificationUnread:0,mgrNotifOpen:false,toasts:[],loginError:message||'Please sign in again.'});
   };
   componentDidMount() {
     this.emptySessionState={...this.state};
@@ -535,7 +535,7 @@ class Component extends DCLogic {
     if(user?.password_setup_required){window.location.assign("/password/setup");return;}
     role=String(role||"").toLowerCase().replace(/[ _-]/g,"");
     const d={cashier:"pos",manager:"mgrDashboard",admin:"admDashboard",superadmin:"saDashboard"}[role];
-    if(!d || !user?.name){ this.setState({authStep:"login",role:null,screen:null,loginError:"Your session could not be loaded. Refresh the page and sign in again."}); return; }
+    if(!d || !user?.name){ this.setState({screenTrail:[],authStep:"login",role:null,screen:null,loginError:"Your session could not be loaded. Refresh the page and sign in again."}); return; }
 this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificationsLocal:[],notificationUnread:0,notificationNext:null,mgrNotifOpen:false},()=>{this.reloadNotifications();this.reloadCatalog().catch(error=>this.setState({dataError:error.message}));if(role==="superadmin")this.reloadSaDashboard();if(["manager","admin"].includes(role))this.reloadPurchasing().catch(()=>{});if(role!=="cashier") this.reloadAccounts().catch(error=>this.toast(error.message,"error"));});
   };
   logout=()=>{ this.authPost((window.KITA_AUTH&&window.KITA_AUTH.logoutUrl)||"/logout",{}).then(res=>{ if(window.KITA_AUTH) window.KITA_AUTH.csrfToken=res.csrf_token; this.endClientSession('',res.csrf_token); this.newSale(); this.setState({role:null,authenticatedUser:null,mgrNotificationsLocal:[],notificationUnread:0,mgrNotifOpen:false,data:null,accountsLocal:null,purchaseData:null,purchaseReceivingId:null,purchaseRequestDetail:null,newReqCart:[],cart:[],discountManagerPin:"",approvalPin:"",approvalManagerId:"",newApprovalPin:"",confirmApprovalPin:"",currentApprovalPin:"",refundTxn:null,authStep:"login",screen:null,pendingRole:null,loginUsername:"",loginPassword:"",otpEmail:"",loginError:""}); }).catch(error=>this.toast(error.message,"error")); };
@@ -553,7 +553,16 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
       else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}
     }
   };
-  goScreen=key=>()=>{ this.setState({screen:key,sidebarOpen:false}); if(["mgrRequest","mgrRequestView","mgrPurchaseHistory","mgrPO","mgrSupplier","admSuppliers","admPurchasedOrders","admForwarded","admDisapproved","admReceivingApprovals"].includes(key)&&!this.state.purchaseData&&!this.state.purchaseLoading)this.reloadPurchasing().catch(()=>{}); if(key==="supplierAccounts")this.loadSupplierAccounts(); if(key==="purchaseOrders"&&!this.state.purchaseData&&!this.state.purchaseLoading)this.reloadPurchasing().catch(()=>{}); if(key==="saDashboard")this.reloadSaDashboard(); if(key==="saBackup")this.loadSaRecords("backup"); if(key==="saAudit")this.loadSaRecords("audit"); if(["mgrCashiers","admManagers","saAdmins"].includes(key)&&!this.state.accountsLocal)this.reloadAccounts().catch(error=>this.toast(error.message,"error")); if(key==="shift") this.reloadCatalog().catch(()=>this.toast("Could not refresh shift transactions.","error")); };
+  confirmNavigation=async()=>{
+    const dirty=(this.state.screen==='mgrRequest'&&this.state.newReqCart?.length)||(this.state.screen==='mgrRegistration'&&!this.state.regSaved&&(this.state.regEditing||this.state.regProductName));
+    return !dirty||await this.requestConfirmation('You have an unfinished form. Leave this page? Your form remains available until cleared or saved.',{title:'Leave Form'});
+  };
+  navigateBack=async()=>{
+    if(!await this.confirmNavigation())return;
+    const trail=this.state.screenTrail||[];if(!trail.length)return;
+    this.setState({screen:trail[trail.length-1],screenTrail:trail.slice(0,-1),sidebarOpen:false});
+  };
+  goScreen=key=>async()=>{ if(key===this.state.screen)return;if(!await this.confirmNavigation())return;this.setState({screen:key,screenTrail:[...(this.state.screenTrail||[]),this.state.screen].filter(Boolean).slice(-20),sidebarOpen:false}); if(["mgrRequest","mgrRequestView","mgrPurchaseHistory","mgrPO","mgrSupplier","admSuppliers","admPurchasedOrders","admForwarded","admDisapproved","admReceivingApprovals"].includes(key)&&!this.state.purchaseData&&!this.state.purchaseLoading)this.reloadPurchasing().catch(()=>{}); if(key==="supplierAccounts")this.loadSupplierAccounts(); if(key==="purchaseOrders"&&!this.state.purchaseData&&!this.state.purchaseLoading)this.reloadPurchasing().catch(()=>{}); if(key==="saDashboard")this.reloadSaDashboard(); if(key==="saBackup")this.loadSaRecords("backup"); if(key==="saAudit")this.loadSaRecords("audit"); if(["mgrCashiers","admManagers","saAdmins"].includes(key)&&!this.state.accountsLocal)this.reloadAccounts().catch(error=>this.toast(error.message,"error")); if(key==="shift") this.reloadCatalog().catch(()=>this.toast("Could not refresh shift transactions.","error")); };
 
   simScannerDisconnect=()=>{ this.setState({scannerConnected:false}); this.toast("Scanner disconnected — use manual entry.","warn"); };
   simPaymentTimeout=()=>{ if(this.state.paymentState==="processing"||this.state.paymentState==="pending"){ this.setState({paymentState:"timeout"}); this.toast("Payment timed out.","error"); } else this.toast("Start an e-wallet payment first.","warn"); };
@@ -1043,9 +1052,11 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
   archiveAction=async(action,kind,ids)=>{
     if(this.archiveBusy)return;
     if(!ids.length){this.toast('Select at least one row.','error');return;}
+    if(action==='archive'&&!await this.requestConfirmation('Archive '+ids.length+' '+(kind==='products'?'product(s)':kind==='suppliers'?'supplier(s)':'category record(s)')+'? Records remain available in Archive and can be restored.',{title:'Archive Records'}))return;
+    if(this.archiveBusy)return;
     this.archiveBusy=true;this.setState({archiveSaving:true});
     try{const result=await this.authPost('/api/inventory/workflows/archive',{action,kind,ids});
-      await this.reloadCatalog();this.setState({archiveChecked:{},archiveConfirmOpen:false,supMgrSelected:{}});this.toast(result.message);
+      await this.reloadCatalog();this.setState({archiveChecked:{},archiveConfirmOpen:false,supMgrSelected:{},invSelected:{}});this.toast(result.message);
     }catch(error){this.toast(error.message,'error');}finally{this.archiveBusy=false;this.setState({archiveSaving:false});}
   };
   restoreArchived=()=>this.archiveAction('restore',this.state.archiveTab==='items'?'products':this.state.archiveTab,Object.keys(this.state.archiveChecked).filter(k=>this.state.archiveChecked[k]));
@@ -1053,10 +1064,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
   closeArchiveConfirm=()=>this.setState({archiveConfirmOpen:false});
   deletePermanently=()=>this.archiveAction('delete',this.state.archiveTab==='items'?'products':this.state.archiveTab,Object.keys(this.state.archiveChecked).filter(k=>this.state.archiveChecked[k]));
   toggleInvSelect=id=>()=>this.setState(s=>({invSelected:{...s.invSelected,[id]:!s.invSelected[id]}}));
-  moveInvSelectedToArchive=()=>{ const ids=Object.keys(this.state.invSelected).filter(k=>this.state.invSelected[k]);
-    if(!ids.length){ this.toast("Select at least one item.","error"); return; }
-    this.authPost('/api/inventory/workflows/archive',{kind:'products',ids}).then(r=>{this.setState({invSelected:{}});this.toast(r.message);return this.reloadCatalog();}).catch(e=>this.toast(e.message,'error'));
-  };
+  moveInvSelectedToArchive=()=>this.archiveAction('archive','products',Object.keys(this.state.invSelected||{}).filter(k=>this.state.invSelected[k]));
   toggleCatSelect=name=>()=>this.setState(s=>({catSelected:{...s.catSelected,[name]:!s.catSelected[name]}}));
   moveCatSelectedToArchive=()=>{ const names=Object.keys(this.state.catSelected).filter(k=>this.state.catSelected[k]);
     if(!names.length){ this.toast("Select at least one category.","error"); return; }
@@ -1110,7 +1118,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
   saveSupMgrProductCosts=supplierId=>()=>this.persistSupplierProducts(supplierId,this.state.suppliersLocal.find(s=>s.id===supplierId).products.map(p=>({...p,costPrice:Number(p.costPrice)})));
   toggleSupMgrPreferred=(supplierId,productId)=>()=>this.persistSupplierProducts(supplierId,this.state.suppliersLocal.find(s=>s.id===supplierId).products.map(p=>p.productId!==productId?p:{...p,preferred:!p.preferred}));
   // ---- Admin: Manage Accounts ----
-  openAcctModal=(mode,acct)=>()=>this.setState({acctModalOpen:true,acctModalMode:mode,acctError:"",acctForm:acct?{...acct,password:""}:{id:null,username:"",email:"",name:"",role:this.state.role==="superadmin"?"admin":"cashier",password:"",status:"Active"}});
+  openAcctModal=(mode,acct)=>()=>this.setState({acctModalOpen:true,acctModalMode:mode,acctError:"",acctForm:acct?{...acct,password:""}:{id:null,username:"",email:"",name:"",role:this.state.role==="superadmin"?"admin":this.state.role==="admin"?"manager":"cashier",password:"",status:"Active"}});
   closeAcctModal=()=>this.setState({acctModalOpen:false,acctError:""});
   setAcctField=field=>e=>this.setState(s=>({acctForm:{...s.acctForm,[field]:e.target.value},acctError:""}));
   saveAccount=async()=>{
@@ -1123,7 +1131,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     if(!creating&&original&&original.status!==f.status&&!await this.confirmAccountStatus(f))return;
     if(this.accountBusy)return;
     this.accountBusy=true;
-    const payload={first_name:f.first_name,last_name:f.last_name,email:f.email,...(this.state.role==="superadmin"?{}:{username:f.username||null}),role:this.state.role==="manager"?"cashier":f.role,status:f.status,...(this.state.role==="superadmin"?{}:{schedule:f.schedule||null})};
+    const payload={first_name:f.first_name,last_name:f.last_name,email:f.email,...(this.state.role==="superadmin"?{}:{username:f.username||null}),role:creating?(this.state.role==="manager"?"cashier":this.state.role==="admin"?"manager":"admin"):f.role,status:f.status,...(this.state.role==="superadmin"?{}:{schedule:f.schedule||null})};
 
     this.authPost(creating?"/api/accounts":`/api/accounts/${encodeURIComponent(f.role)}/${f.id}`,payload,creating?"POST":"PATCH")
       .then(res=>{this.setState({acctModalOpen:false,acctError:""});this.toast(res.message);if(this.state.role==="superadmin")this.reloadSaDashboard();return Promise.all([this.reloadAccounts(),this.reloadCatalog()]);})
@@ -2342,8 +2350,9 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
   }
   inventoryCondition=p=>p.stockCondition||(p.status!=='Active'?'Inactive':Number(p.stockOnHand??p.stock)===0?'Out of stock':this.sellableStock(p)===0?'Unavailable':this.sellableStock(p)<=Number(p.minStock||0)?'Reorder level reached':'In stock');
   openInventoryView=(view='products',productId)=>{
-    const filters=productId?{productId:String(productId)}:{};
+    const filters=productId?{productId:String(productId)}:view==='products'?{category:this.state.inventoryCategory||'',subcategoryId:this.state.inventorySubcategoryId||'',supplierId:this.state.inventorySupplierId||'',stockCondition:this.state.inventoryStockFilter||'',activeOnly:'1'}:{};
     this.setState({...(view==='batches'?{receivingTab:'batches',viewingBatch:null}:{}),inventoryHistoryOpen:true,inventoryView:view,inventoryFilters:filters,inventoryAppliedFilters:filters,inventoryHistory:null});
+    if(view==='products')this.setTableView('inventory-products',{query:this.state.tableViews?.['inventory-balance']?.query||'',page:1});
     this.loadInventoryHistory(filters);
   };
   draftInventoryRequest=p=>{
@@ -2354,23 +2363,25 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
   };
   buildStockBalance(){
     const h=React.createElement,s=this.state,d=s.data,products=(s.productsLocal||d.PRODUCTS).filter(p=>p.status!=='Inactive'&&!p.archivedAt);
-    const list=products.filter(p=>(!s.inventoryCategory||p.category===s.inventoryCategory)&&(!s.inventorySubcategoryId||String(p.subcategoryId)===String(s.inventorySubcategoryId))&&(!s.inventoryStockFilter||(s.inventoryStockFilter==='reorder'?p.needsReorder??this.sellableStock(p)<=Number(p.minStock||0):s.inventoryStockFilter==='unavailable'?Number(p.unavailableStock||0)>0:this.inventoryCondition(p)==='Out of stock')));
+    const list=products.filter(p=>(!s.inventoryCategory||p.category===s.inventoryCategory)&&(!s.inventorySubcategoryId||String(p.subcategoryId)===String(s.inventorySubcategoryId))&&(!s.inventorySupplierId||String(p.supplierId)===String(s.inventorySupplierId)||(d.SUPPLIERS||[]).find(v=>String(v.id)===String(s.inventorySupplierId))?.products?.some(link=>String(link.productId)===String(p.id)))&&(!s.inventoryStockFilter||(s.inventoryStockFilter==='reorder'?p.needsReorder??this.sellableStock(p)<=Number(p.minStock||0):s.inventoryStockFilter==='unavailable'?Number(p.unavailableStock||0)>0:this.inventoryCondition(p)==='Out of stock')));
     const selected=Object.values(s.invSelected||{}).filter(Boolean).length;
     const headers=['','Item Code','Item Name','Specification','Stock Unit','Qty on Hand','Reserved Qty','Available Qty','Minimum Stock','Stock Condition','Inventory Value','Category','Brand','Barcode','Supplier','Expired Qty','Recalled Qty','Unavailable Qty','Availability Remarks','Purchase Cost','Selling Price','Actions'];
     return h('div',{className:'inventory-workspace'},[
       h('div',{className:'inventory-summary'},[kpi('Items',list.length,'Matching item records'),kpi('Reorder Alerts',list.filter(p=>p.needsReorder??this.sellableStock(p)<=Number(p.minStock||0)).length,'Based on available quantity'),kpi('Unavailable Items',list.filter(p=>Number(p.unavailableStock||0)>0).length,'Expired, recalled, reserved or blocked'),kpi('Inventory Value',peso(list.reduce((n,p)=>n+Number(p.inventoryValue||0),0)),'On-hand quantities at recorded batch costs; opening costs may be estimated')]),
       h('div',{className:'purchase-filters'},[
-        h('label',null,['Category',h('select',{value:s.inventoryCategory||'',onChange:e=>this.setState({inventoryCategory:e.target.value,inventorySubcategoryId:''})},[h('option',{value:''},'All categories'),...d.CATEGORIES.map(c=>h('option',{key:c.name,value:c.name},c.name))])]),
-        this.buildSubcategorySelect(s.inventoryCategory,s.inventorySubcategoryId,e=>this.setState({inventorySubcategoryId:e.target.value}),{includeInactive:true}),
-        h('label',null,['Stock filter',h('select',{value:s.inventoryStockFilter||'',onChange:e=>this.setState({inventoryStockFilter:e.target.value})},[['','All items'],['reorder','Reorder level reached'],['out','Out of stock'],['unavailable','Has unavailable stock']].map(([value,label])=>h('option',{value,key:value},label)))]),
+        h('label',null,['Category',h('select',{value:s.inventoryCategory||'',onChange:e=>this.setState({inventoryCategory:e.target.value,inventorySubcategoryId:'',tableViews:{...s.tableViews,'inventory-balance':{...s.tableViews?.['inventory-balance'],page:1}}})},[h('option',{value:''},'All categories'),...d.CATEGORIES.map(c=>h('option',{key:c.name,value:c.name},c.name))])]),
+        this.buildSubcategorySelect(s.inventoryCategory,s.inventorySubcategoryId,e=>{this.setState({inventorySubcategoryId:e.target.value});this.setTableView('inventory-balance',{page:1});},{includeInactive:true}),
+        h('label',null,['Supplier',h('select',{'aria-label':'Inventory supplier',value:s.inventorySupplierId||'',onChange:e=>{this.setState({inventorySupplierId:e.target.value});this.setTableView('inventory-balance',{page:1});}},[h('option',{value:''},'All suppliers'),...(d.SUPPLIERS||[]).filter(v=>v.status==='Active'&&!v.archivedAt).map(v=>h('option',{key:v.id,value:v.id},v.name))])]),
+        btn('Clear filters',()=>{this.setState({inventoryCategory:'',inventorySubcategoryId:'',inventorySupplierId:'',inventoryStockFilter:''});this.setTableView('inventory-balance',{page:1,query:''});}),
+        h('label',null,['Stock filter',h('select',{value:s.inventoryStockFilter||'',onChange:e=>{this.setState({inventoryStockFilter:e.target.value});this.setTableView('inventory-balance',{page:1});}},[['','All items'],['reorder','Reorder level reached'],['out','Out of stock'],['unavailable','Has unavailable stock']].map(([value,label])=>h('option',{value,key:value},label)))]),
         btn('Refresh balances',()=>this.refreshStockAvailability().catch(e=>this.toast(e.message,'error'))),
         btn('Export / Print',()=>this.openInventoryView('products')),
         selected?btn('Archive selected ('+selected+')',this.moveInvSelectedToArchive,'danger'):null,
       ]),
       null,
       this.recordTable('inventory-balance',headers,list.map(p=>tr([
-        td(h('input',{type:'checkbox','aria-label':'Select '+p.name,checked:!!s.invSelected?.[p.id],onChange:this.toggleInvSelect(p.id)})),td(p.id),td(h('button',{className:'inventory-item-link',onClick:()=>this.openInventoryView('movements',p.id)},this.productLabel(p))),td([p.size,p.sizeUnit].filter(Boolean).join(' ')||'—'),td(p.stockUnit||p.unit||'Not set'),td(p.stockOnHand??p.stock),td(p.reservedStock||0),td(this.sellableStock(p)),td(p.minStock||0),td(badge(this.inventoryCondition(p))),td(peso(p.inventoryValue||0)),td(p.category),td((d.BRANDS||[]).find(b=>String(b.id)===String(p.brandId))?.name||'—'),td(p.barcode||'—'),td(this.purchaseSupplier(p.supplierId)),td(p.expiredStock||0),td(p.recalledStock||0),td(p.unavailableStock||0),td((p.exclusionReasons||[]).join('; ')||'Available for sale'),td(peso(p.unitPrice)),td(peso(p.price)),
-        td(h('div',{className:'inventory-row-actions'},[btn('Batches',()=>this.openInventoryView('batches',p.id)),btn('Edit Item',()=>this.editProductMaster(p)),p.needsReorder?btn('Request Stock',()=>this.draftInventoryRequest(p)):null]))
+        td(h('input',{type:'checkbox','aria-label':'Select '+p.name,checked:!!s.invSelected?.[p.id],onChange:this.toggleInvSelect(p.id)})),td(p.id),td(h('button',{className:'inventory-item-link',onClick:()=>this.openInventoryView('movements',p.id)},this.productLabel(p))),td([p.size,p.sizeUnit].filter(Boolean).join(' ')||'—'),td(p.stockUnit||p.unit||'Not set'),td(p.stockOnHand??p.stock),td(p.reservedStock||0),td(this.sellableStock(p)),td(p.minStock||0),td(React.createElement('span',{className:this.inventoryCondition(p).toLowerCase()==='out of stock'?'stock-condition-out':''},badge(this.inventoryCondition(p)))),td(peso(p.inventoryValue||0)),td(p.category),td((d.BRANDS||[]).find(b=>String(b.id)===String(p.brandId))?.name||'—'),td(p.barcode||'—'),td(this.purchaseSupplier(p.supplierId)),td(p.expiredStock||0),td(p.recalledStock||0),td(p.unavailableStock||0),td((p.exclusionReasons||[]).join('; ')||'Available for sale'),td(peso(p.unitPrice)),td(peso(p.price)),
+        td(h('div',{className:'inventory-row-actions'},[btn('Batches',()=>this.openInventoryView('batches',p.id)),btn('Edit',()=>this.editProductMaster(p)),btn('Archive',()=>this.archiveAction('archive','products',[String(p.id)]),'danger'),p.needsReorder?btn('Request Stock',()=>this.draftInventoryRequest(p)):null]))
       ],p.id)),{columnPicker:true,defaultHidden:['Category','Brand','Barcode','Supplier','Expired Qty','Recalled Qty','Unavailable Qty','Availability Remarks','Purchase Cost','Selling Price']}),
       h('p',{className:'inventory-help'},s.stockCheckedAt?'Balances checked '+new Date(s.stockCheckedAt).toLocaleString()+'. Click Refresh balances to update.':'Click Refresh balances to load current stock.')
     ]);
@@ -2378,7 +2389,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
   buildMgrInventory(){
     if(this.state.inventoryHistoryOpen)return this.buildInventoryHistory();
     const {data,invTab,adjustmentsLocal}=this.state; if(!data) return null;
-    const tabs=[["table","Stock Balance"],["adjustments","Stock Adjustments"],["writeoffs","Stock Issues / Returns"],["recall","Batch Recall"],["reconciliation","Stock Count"],["expiry","Expiry Monitoring"],["categories","Item Groups"]];
+    const tabs=[["table","Stock Balance"],["adjustments","Stock Adjustments"],["writeoffs","Stock Issues / Returns"],["recall","Batch Recall"],["reconciliation","Stock Count"],["expiry","Expiry Monitoring"],["categories","Product Item"]];
     let body;
     if(invTab==="adjustments"){
       const {newAdjForm}=this.state;
@@ -2609,7 +2620,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     const field=(key,label,options)=>h('label',{key},[label,options?h('select',{value:f[key]||'',onChange:e=>this.setInventoryHistoryFilter(key,e.target.value)},[h('option',{value:''},'All'),...options.map(([value,text])=>h('option',{key:value,value},text))]):h('input',{type:'date',value:f[key]||'',onChange:e=>this.setInventoryHistoryFilter(key,e.target.value)})]);
     const schema=this.inventorySchema(kind),rows=this.inventoryRows(kind),busy=this.state.inventoryHistoryLoading,blocked=!history||busy||!!this.state.inventoryHistoryError;
     return h('div',{className:'inventory-workspace'},[sectionTitle(titles[kind]),
-      !embedded?h('div',{className:'inventory-view-tabs'},[btn(kind==='batches'?'Back to Stock Receiving':'Back to Inventory',()=>this.setState({inventoryHistoryOpen:false})),...Object.entries(titles).filter(([view])=>view===kind).map(([view,label])=>h('button',{type:'button',className:'kita-button','aria-pressed':kind===view,onClick:()=>{const filters={...f};delete filters.from;delete filters.to;delete filters.lowStock;delete filters.movementType;this.setState({inventoryView:view,inventoryFilters:filters,inventoryAppliedFilters:filters});this.loadInventoryHistory(filters);}},label))]):null,
+      !embedded?h('div',{className:'inventory-view-tabs'},[btn(kind==='batches'?'\u2190 Back to Stock Receiving':'\u2190 Back to Inventory',()=>this.setState({inventoryHistoryOpen:false})),...Object.entries(titles).filter(([view])=>view===kind).map(([view,label])=>h('button',{type:'button',className:'kita-button','aria-pressed':kind===view,onClick:()=>{const filters={...f};delete filters.from;delete filters.to;delete filters.lowStock;delete filters.movementType;this.setState({inventoryView:view,inventoryFilters:filters,inventoryAppliedFilters:filters});this.loadInventoryHistory(filters);}},label))]):null,
       h('div',{className:'purchase-filters'},[field('category','Category',d.CATEGORIES.map(c=>[c.name,c.name])),this.buildSubcategorySelect(f.category,f.subcategoryId,e=>this.setInventoryHistoryFilter('subcategoryId',e.target.value),{includeInactive:true}),field('brandId','Brand',(d.BRANDS||[]).map(c=>[c.id,c.name])),field('productId','Item',d.PRODUCTS.filter(p=>(!f.category||p.category===f.category)&&(!f.subcategoryId||String(p.subcategoryId)===String(f.subcategoryId))&&(!f.brandId||String(p.brandId)===String(f.brandId))&&(kind==='batches'||!f.supplierId||String(p.supplierId)===String(f.supplierId))).map(c=>[c.id,c.name+' #'+c.id])),field('supplierId',kind==='batches'?'Receipt supplier':'Default item supplier',d.SUPPLIERS.map(c=>[c.id,c.name])),...(kind==='products'?[field('lowStock','Stock filter',[['1','Reorder level reached']])]:[field('from',kind==='movements'?'Posted from':'Receipt date from'),field('to',kind==='movements'?'Posted to':'Receipt date to')]),kind==='movements'?field('movementType','Transaction type',Object.entries(history?.movementTypes||{})):null]),
       h('div',{className:'inventory-view-tabs'},[h('button',{className:'kita-button',disabled:busy,onClick:this.applyInventoryFilters},busy?'Refreshing...':'Refresh'),btn('Clear filters',()=>{this.setState({inventoryFilters:{},inventoryAppliedFilters:{}});this.loadInventoryHistory({});}),h('button',{className:'kita-button',disabled:blocked,onClick:this.exportInventoryHistory(kind)},'Download CSV'),h('button',{className:'kita-button',disabled:blocked,onClick:this.printInventoryHistory(kind)},'Print')]),
       null,
@@ -2668,7 +2679,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     ])]);
   }
   productLabel=p=>[p.name,p.variantLabel,(this.state.data?.BRANDS||[]).find(b=>String(b.id)===String(p.brandId))?.name,p.size?Number(p.size):null,p.sizeUnit].filter(Boolean).join(' ');
-  editProductMaster=p=>this.setState({screen:'mgrRegistration',regEditing:p.id,registrationNotice:null,registrationError:"",regParentId:p.parentId||'',regVariantLabel:p.variantLabel||'',regStockId:String(p.id),regProductName:p.name,regManufacturer:p.manufacturer||'',regCategory:p.category,regBrandId:p.brandId||'',regSubcategoryId:p.subcategoryId||'',regSize:p.size||'',regSizeUnit:p.sizeUnit||'',regReorderLevel:p.minStock||0,regScannedBarcode:p.barcode||'',regSupplier:(this.state.data.SUPPLIERS.find(s=>s.id===p.supplierId)||{}).name||'',regStockUnit:p.stockUnit||p.unit,regPurchaseUnit:p.purchaseUnit||p.unit,regConversionFactor:p.conversionFactor||1,regUnitPrice:String(p.unitPrice??0),regRetailPrice:String(p.price??0),regStatus:p.status,regSaved:false,regBatch:'',regLot:'',regExpiry:'',regEditReason:''});
+  editProductMaster=p=>this.setState({screenTrail:[...(this.state.screenTrail||[]),this.state.screen].filter(Boolean),screen:'mgrRegistration',regEditing:p.id,registrationNotice:null,registrationError:"",regParentId:p.parentId||'',regVariantLabel:p.variantLabel||'',regStockId:String(p.id),regProductName:p.name,regManufacturer:p.manufacturer||'',regCategory:p.category,regBrandId:p.brandId||'',regSubcategoryId:p.subcategoryId||'',regSize:p.size||'',regSizeUnit:p.sizeUnit||'',regReorderLevel:p.minStock||0,regScannedBarcode:p.barcode||'',regSupplier:(this.state.data.SUPPLIERS.find(s=>s.id===p.supplierId)||{}).name||'',regStockUnit:p.stockUnit||p.unit,regPurchaseUnit:p.purchaseUnit||p.unit,regConversionFactor:p.conversionFactor||1,regUnitPrice:String(p.unitPrice??0),regRetailPrice:String(p.price??0),regStatus:p.status,regSaved:false,regBatch:'',regLot:'',regExpiry:'',regEditReason:''});
   buildMgrRegistration(){
     const h=React.createElement,s=this.state,data=s.data;
     const products=s.productsLocal||data.PRODUCTS;
@@ -2826,7 +2837,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
           card(sp.callbackLog.map((c,i)=>React.createElement("div",{key:i,style:{fontSize:13,padding:"6px 0",borderBottom:"1px solid #eef1f6"}},c.date+" — "+c.note)));
       }
       return React.createElement("div",null,[
-        btn("Back to Suppliers",this.goSupMgrList),
+        btn("\u2190 Back to Suppliers",this.goSupMgrList),
         card([
           React.createElement("div",{key:"h",style:{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}},[
             React.createElement("div",null,[React.createElement("div",{style:{fontWeight:800,fontSize:18}},sp.name),React.createElement("div",{style:{fontSize:12,color:COLORS.textSoft,marginTop:2}},sp.category)]),
@@ -2851,10 +2862,10 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
         React.createElement("input",{value:supMgrSearch,onChange:this.setSupMgrSearch,placeholder:"Search suppliers…",style:{padding:8,border:"1px solid "+COLORS.border,borderRadius:7,width:260}}),
         selCount>0?btn(`Move to Archive (${selCount})`,this.moveSupMgrSelectedToArchive,"danger"):null,
       ]),
-      this.recordTable("suppliers",["","Supplier Name","Contact Person","Contact Number","Category","Status","Product Count","Action"],list.map(sp=>tr([
+      this.recordTable("suppliers",["","Supplier Name","Contact Person","Contact Number","Category","Status","Product Count","Actions"],list.map(sp=>tr([
         td(React.createElement("input",{type:"checkbox",checked:!!supMgrSelected[sp.id],onChange:this.toggleSupMgrSelect(sp.id)})),
         td(sp.name,{fontWeight:600}),td(sp.contact),td(sp.phone),td(sp.category),td(badge(sp.status)),td(sp.products.length),
-        td(btn("View",this.openSupMgrDetail(sp.id)))],sp.id))),
+        td(React.createElement("div",{className:"row-action-buttons"},[btn("View",this.openSupMgrDetail(sp.id)),btn("Edit",this.openSupMgrModal(sp)),btn("Archive",()=>this.archiveAction("archive","suppliers",[String(sp.id)]),"danger")]))],sp.id))),
       supMgrModalOpen?this.buildMgrSupplierModal():null,
     ]);
   }
@@ -3036,14 +3047,14 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
       const callbackRows = s.callbackLog.length===0 ? [React.createElement("div",{key:"e",style:{fontSize:13,color:COLORS.textMuted}},"No callbacks logged.")]
         : s.callbackLog.map((c,i)=>React.createElement("div",{key:i,style:{fontSize:13,padding:"6px 0",borderBottom:"1px solid #eef1f6"}},c.date+" — "+c.note));
       return React.createElement("div",null,[
-        btn("Back to Suppliers",this.closeSupplierDetail),
+        btn("\u2190 Back to Suppliers",this.closeSupplierDetail),
         sectionTitle(s.name,s.category),this.buildSupplierPerformance(s.id),
         card(infoRows,{marginBottom:14}),
         card([React.createElement("div",{key:"t",style:{fontWeight:800,marginBottom:8}},"Supplier Callback Log")].concat(callbackRows)),
       ]);
     }
     return React.createElement("div",null,[moduleTitle("Suppliers"),
-      this.recordTable("supplier-records",["Supplier","Category","Status","Details"],data.SUPPLIERS.map(s=>tr([td(s.name,{fontWeight:600}),td(s.category),td(badge(s.status)),td(btn("View",this.openSupplierDetail(s.id)))],s.id)))]);
+      this.recordTable("supplier-records",["Supplier","Category","Status","Actions"],data.SUPPLIERS.filter(s=>s.status==="Active"&&!s.archivedAt).map(s=>tr([td(s.name,{fontWeight:600}),td(s.category),td(badge(s.status)),td(React.createElement("div",{className:"row-action-buttons"},[btn("View",this.openSupplierDetail(s.id)),btn("Archive",()=>this.archiveAction("archive","suppliers",[String(s.id)]),"danger")]))],s.id)))]);
   }
   scheduleReport=()=>{
     clearTimeout(this.reportFilterTimer);this.reportRequestId=(this.reportRequestId||0)+1;this.reportController?.abort();
@@ -3259,15 +3270,15 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
         h("label",null,["Role ",h("select",{value:this.state.acctRoleFilter,onChange:e=>{this.setState({acctRoleFilter:e.target.value});this.setTableView("accounts",{page:1});}},[h("option",{value:""},"All roles"),...roles.map(r=>h("option",{value:r,key:r},r))])]),
         h("label",null,["Status ",h("select",{value:this.state.acctStatusFilter,onChange:e=>{this.setState({acctStatusFilter:e.target.value});this.setTableView("accounts",{page:1});}},[h("option",{value:""},"All Status"),...['Active','Inactive'].map(v=>h("option",{value:v,key:v},v))])])
       ]),
-      this.recordTable("accounts",["Name",this.state.role==="superadmin"?"Email":"Email / Username","Role","Status","Password Setup","Created","Last OTP login","Actions"],(accountsLocal||[]).filter(a=>(!this.state.acctRoleFilter||a.role===this.state.acctRoleFilter)&&(!this.state.acctStatusFilter||a.status===this.state.acctStatusFilter)).map(a=>tr([td(a.name),td([h("div",null,a.email),this.state.role!=="superadmin"?h("small",null,a.username||""):null]),td(a.role),td(h("span",{className:"sa-status "+(a.status==="Active"?"sa-status--healthy":"sa-status--inactive")},a.status.toUpperCase())),td(a.must_change_password?"Password Change Required":"Password Set"),td(a.dateCreated||"Not recorded"),td(a.lastOtpLogin||"Not recorded"),td([btn("Edit",this.openAcctModal("edit",a)),a.must_change_password?btn("Resend Setup Credentials",()=>this.authPost(`/api/accounts/${encodeURIComponent(a.role)}/${a.id}/resend-setup`,{}).then(r=>this.toast(r.message)).catch(e=>this.toast(e.message,"error"))):btn("Send Password Reset",()=>this.authPost(`/api/accounts/${encodeURIComponent(a.role)}/${a.id}/send-reset`,{}).then(r=>this.toast(r.message)).catch(e=>this.toast(e.message,"error"))),btn(a.status==="Active"?"Deactivate":"Activate",()=>this.changeAccountStatus(a))])],a.role+"-"+a.id))),
+      this.recordTable("accounts",["Name",this.state.role==="superadmin"?"Email":"Email / Username","Role","Status","Password Setup","Created","Last OTP login","Actions"],(accountsLocal||[]).filter(a=>(!this.state.acctRoleFilter||a.role===this.state.acctRoleFilter)&&(!this.state.acctStatusFilter||a.status===this.state.acctStatusFilter)).map(a=>tr([td(a.name),td([h("div",null,a.email),this.state.role!=="superadmin"?h("small",null,a.username||""):null]),td(a.role),td(h("span",{className:"sa-status "+(a.status==="Active"?"sa-status--healthy":"sa-status--inactive")},a.status.toUpperCase())),td(a.must_change_password?"Password Change Required":"Password Set"),td(a.dateCreated||"Not recorded"),td(a.lastOtpLogin||"Not recorded"),td(h("div",{className:"account-row-actions"},[btn("Edit",this.openAcctModal("edit",a)),a.must_change_password?btn("Resend Setup Credentials",()=>this.authPost(`/api/accounts/${encodeURIComponent(a.role)}/${a.id}/resend-setup`,{}).then(r=>this.toast(r.message)).catch(e=>this.toast(e.message,"error"))):btn("Send Password Reset",()=>this.authPost(`/api/accounts/${encodeURIComponent(a.role)}/${a.id}/send-reset`,{}).then(r=>this.toast(r.message)).catch(e=>this.toast(e.message,"error"))),btn(a.status==="Active"?"Deactivate":"Activate",()=>this.changeAccountStatus(a))]))],a.role+"-"+a.id))),
       acctModalOpen?h("div",{key:"modal",style:{position:"fixed",inset:0,background:"rgba(15,31,74,0.38)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:50,padding:16}},
         h("div",{role:"dialog","aria-modal":true,"aria-label":acctModalMode==="create"?"Create Account":"Edit Account",style:{width:400,maxHeight:"85vh",overflowY:"auto",background:"#fff",borderRadius:14,padding:20}},[
           h("h3",{key:"title"},acctModalMode==="create"?"Create Account":"Edit Account"),input("first_name","First Name"),input("last_name","Last Name"),input("email","Email","email"),this.state.role!=='superadmin'?input("username","Employee ID (optional)"):null,
-          this.state.role==="manager"?null:h("label",{key:"role"},["Role",h("select",{value:f.role,disabled:acctModalMode==="edit",onChange:this.setAcctField("role"),style:{width:"100%",padding:10,marginBottom:10}},roles.map(role=>h("option",{key:role,value:role},role)))]),
+          h('label',{key:'role',className:'field-group'},['Role',h('input',{value:acctModalMode==='create'?(this.state.role==='superadmin'?'Admin':this.state.role==='admin'?'Manager':'Cashier'):statusLabel(f.role),readOnly:true,'aria-readonly':true})]),
           h("p",null,"Temporary credentials are emailed to new accounts. Password setup is required on first login."),this.state.role!=="superadmin"?input("schedule","Schedule (optional)"):null,
           h("label",{key:"status"},["Status",h("select",{value:f.status,onChange:this.setAcctField("status"),style:{width:"100%",padding:10,marginBottom:10}},(acctModalMode==="create"?["Active"]:["Active","Inactive"]).map(status=>h("option",{key:status},status)))]),
           this.state.acctError?h("p",{key:"error",role:"alert",style:{color:COLORS.red}},this.state.acctError):null,
-          h("div",{key:"buttons",style:{display:"flex",gap:8}},[btn("Cancel",this.closeAcctModal),btn("Save",this.saveAccount,"primary")]),
+          h("div",{key:"buttons",style:{display:"flex",gap:8}},[btn("Cancel",this.closeAcctModal),h("button",{type:"button",className:"kita-button kita-button--primary",disabled:!!this.accountBusy,onClick:this.saveAccount},this.accountBusy?"Saving...":"Save")]),
         ])):null,
     ]);
   }
@@ -3489,7 +3500,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
         style:{padding:"10px 14px",borderBottom:"1px solid #eef1f6",cursor:"pointer",background:n.read_at?"#fff":"#f8faff"},
       })),
       toastWrapStyle:{position:"fixed",top:16,right:16,zIndex:100,display:"flex",flexDirection:"column"},toasts:s.toasts,
-      activeScreen:React.createElement(React.Fragment,null,activeScreen,this.buildConfirmation()),
+      activeScreen:React.createElement(React.Fragment,null,s.screenTrail?.length&&!['mgrDashboard','admDashboard','saDashboard','pos'].includes(s.screen)?h('div',{className:'page-back-toolbar'},h('button',{type:'button',className:'kita-button',onClick:this.navigateBack,'aria-label':'Back to previous page'},'\u2190 Back')):null,activeScreen,this.buildConfirmation()),
     };
   }
 }

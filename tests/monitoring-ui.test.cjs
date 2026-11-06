@@ -130,7 +130,7 @@ test('item-first PO suggests low stock and selects category and eligible supplie
 
 test('cashier accounts hide role selector and suppliers use labeled boxed navigation',()=>{
  const {app}=setup();app.state.role='manager';app.state.accountsLocal=[];app.state.acctModalOpen=true;app.state.acctModalMode='create';app.state.acctForm={role:'cashier',status:'Active'};
- let tree=JSON.stringify(app.buildMgrCashiers());assert.ok(!tree.includes('"key":"role"'));assert.ok(tree.includes('Create Account'));
+ let tree=JSON.stringify(app.buildMgrCashiers());assert.ok(tree.includes('"readOnly":true'));assert.ok(tree.includes('Create Account'));
  app.state.supMgrForm={name:'Supplier',paymentTerms:'30 Days Credit'};
  tree=JSON.stringify(app.buildMgrSupplierModal());assert.ok(!tree.includes('Payment Terms'));assert.ok(!tree.includes('30 Days Credit'));
  app.state.data={SUPPLIERS:[{id:1,name:'Supplier',status:'Active',callbackLog:[]}]};
@@ -213,4 +213,19 @@ test('session check ignores network outages and detects unauthorized reconnect',
  context.fetch=async()=>{throw Error('offline');};await app.checkSession();assert.equal(app.state.authStep,'in');
  context.fetch=async()=>({status:401,json:async()=>({deactivated:true,message:'Account deactivated'})});
  await app.checkSession();assert.equal(app.state.authStep,'login');assert.equal(app.state.loginError,'Account deactivated');
+});
+
+test('creation roles are fixed and Back preserves inventory filters',async()=>{
+ for(const [role,expected] of [['superadmin','admin'],['admin','manager'],['manager','cashier']]){
+  const {app}=setup();app.state.role=role;app.openAcctModal('create')();assert.equal(app.state.acctForm.role,expected);
+ }
+ const {app}=setup();app.state.screen='mgrInventory';app.state.inventorySupplierId='7';
+ app.state.purchaseData={};await app.goScreen('mgrCategories')();assert.equal(app.state.screen,'mgrCategories');
+ await app.navigateBack();assert.equal(app.state.screen,'mgrInventory');assert.equal(app.state.inventorySupplierId,'7');
+});
+
+test('inventory combines supplier and category filters and exposes compact Edit and Archive actions',()=>{
+ const {app}=setup();Object.assign(app.state,{role:'manager',inventorySupplierId:'2',inventoryCategory:'Food',data:{PRODUCTS:[{id:1,name:'Rice',category:'Food',supplierId:1,status:'Active',stock:0,minStock:2},{id:2,name:'Soap',category:'Household',supplierId:2,status:'Active',stock:5}],SUPPLIERS:[{id:2,name:'Linked supplier',status:'Active',products:[{productId:1}]}],CATEGORIES:[{name:'Food'}],SUBCATEGORIES:[],BRANDS:[]}});
+ const captured=[];app.recordTable=(key,headers,rows)=>{captured.push({key,rows});return {tag:'table',children:rows};};
+ const tree=JSON.stringify(app.buildStockBalance());assert.equal(captured[0].rows.length,1);assert.ok(tree.includes('Rice'));assert.ok(tree.includes('stock-condition-out'));assert.ok(tree.includes('Archive'));assert.ok(tree.includes('Edit'));assert.ok(!tree.includes('Edit Item'));
 });

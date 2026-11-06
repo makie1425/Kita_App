@@ -42,6 +42,12 @@ class StockReceiptWorkflowTest extends TestCase {
   $other=User::factory()->create(['role'=>'manager']);$this->assignWorkspace($other);
   $this->actingAs($other)->getJson('/api/supplier-accounts')->assertOk()->assertJsonCount(0,'balances');
  }
+ public function test_archive_cannot_remove_supplier_or_item_from_open_purchase_order():void {
+  $this->order(10);
+  $this->postJson('/api/inventory/workflows/archive',['kind'=>'suppliers','ids'=>[(string)$this->supplier]])->assertConflict();
+  $this->postJson('/api/inventory/workflows/archive',['kind'=>'products','ids'=>[(string)$this->product]])->assertConflict();
+  $this->assertDatabaseHas('suppliers',['id'=>$this->supplier,'status'=>'Active']);
+ }
  public function test_purchasing_listing_batches_database_reads():void {
   $old=$this->order(50);
   $this->postJson('/api/stock-receipts',$this->body($old,[$this->entry($old,45,5)]))->assertCreated();

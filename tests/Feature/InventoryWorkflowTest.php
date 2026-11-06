@@ -98,6 +98,25 @@ class InventoryWorkflowTest extends TestCase
         $this->postJson('/api/inventory/workflows/counts/'.$id, ['action' => 'Cancel', 'reason' => 'Restart'])->assertOk();
     }
 
+    public function test_archive_blocks_open_stock_counts_without_changing_product(): void
+    {
+        $id=$this->postJson('/api/inventory/workflows/counts',['mode'=>'Full'])->assertCreated()->json('id');
+        $this->postJson('/api/inventory/workflows/archive',['kind'=>'products','ids'=>['1']])->assertConflict();
+        $this->assertDatabaseHas('products',['id'=>1,'status'=>'Active']);
+        $this->postJson('/api/inventory/workflows/counts/'.$id,['action'=>'Cancel','reason'=>'Finished'])->assertOk();
+        $this->postJson('/api/inventory/workflows/archive',['kind'=>'products','ids'=>['1']])->assertOk();
+        $this->postJson('/api/inventory/workflows/archive',['kind'=>'products','ids'=>['1'],'action'=>'restore'])->assertOk();
+        $this->assertDatabaseHas('products',['id'=>1,'status'=>'Active','stock'=>10]);
+    }
+
+    public function test_inventory_supplier_filter_includes_linked_products_and_matches_stock_filter(): void
+    {
+        $supplier=DB::table('suppliers')->insertGetId(['name'=>'Linked supplier','workspace_id'=>$this->fixtureWorkspace]);
+        DB::table('supplier_products')->insert(['supplierId'=>$supplier,'productId'=>1,'costPrice'=>5,'workspace_id'=>$this->fixtureWorkspace]);
+        $this->getJson('/api/inventory-history?supplierId='.$supplier.'&activeOnly=1')->assertOk()->assertJsonCount(1,'products');
+        $this->getJson('/api/inventory-history?supplierId='.$supplier.'&stockCondition=out')->assertOk()->assertJsonCount(0,'products');
+    }
+
     public function test_archive_persists_and_cashiers_are_denied(): void
     {
         $this->postJson('/api/inventory/workflows/archive', ['kind' => 'products', 'ids' => ['1']])->assertOk();

@@ -2018,3 +2018,9 @@ button, .primary-button, .kita-button,
 .sidebar-nav .nav-icon { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; min-width: 24px; opacity: 1; color: inherit; }
 .sidebar-nav .nav-icon .ui-icon { display: block; width: 20px; height: 20px; flex: none; }
 .sidebar-nav .nav-label { min-width: 0; white-space: normal; overflow-wrap: normal; word-break: normal; line-height: 1.5; }
+
+.account-row-actions, .row-action-buttons { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.content-area :is(.account-row-actions,.row-action-buttons,.inventory-row-actions) .kita-button { min-height: 34px; padding: 7px 12px !important; margin: 0; font-size: 12px; white-space: nowrap; }
+.stock-condition-out > * { background: #fee2e2 !important; color: #b91c1c !important; }
+.page-back-toolbar { display: flex; margin-bottom: 16px; }
+.page-back-toolbar .kita-button { min-height: 34px; padding: 7px 12px !important; }

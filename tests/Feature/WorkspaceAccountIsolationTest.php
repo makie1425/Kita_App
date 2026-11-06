@@ -8,6 +8,14 @@ use Tests\TestCase;
 class WorkspaceAccountIsolationTest extends TestCase
 {
  use RefreshDatabase;
+ public function test_admin_can_create_only_manager_and_manager_cannot_create_manager():void {
+  $admin=$this->manager('Admin workspace');$admin->forceFill(['role'=>'admin'])->save();
+  DB::table('workspace_memberships')->where('user_id',$admin->id)->update(['user_role'=>'admin']);
+  $this->actingAs($admin)->postJson('/api/accounts',['first_name'=>'Blocked','last_name'=>'Cashier','email'=>'blocked@example.com','role'=>'cashier'])->assertForbidden();
+  $manager=$this->manager('Manager workspace');
+  $this->actingAs($manager)->postJson('/api/accounts',['first_name'=>'Blocked','last_name'=>'Manager','email'=>'blocked2@example.com','role'=>'manager'])->assertForbidden();
+  $this->assertDatabaseMissing('users',['email'=>'blocked@example.com']);
+ }
  public function test_super_admin_account_actions_cannot_reach_other_roles(): void {
   config(['workspaces.enabled'=>true]);
   $super=$this->manager('Super');$super->forceFill(['role'=>'superadmin'])->save();

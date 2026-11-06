@@ -91,11 +91,13 @@ class InventoryWorkflowController extends Controller
 
         return DB::transaction(function () use ($r, $d) {
             InventoryRules::lockActor($r);
+            DB::table('inventory_sequences')->where('name','purchase_orders')->lockForUpdate()->first();
             $key = $d['kind'] === 'categories' ? 'name' : 'id';
             $records = \App\Services\WorkspaceRead::table($d['kind'])->whereIn($key, $d['ids'])->orderBy($key)->lockForUpdate()->get();
             abort_unless($records->count() === count(array_unique($d['ids'])), 422, 'Some selected records no longer exist.');
             $action = $d['action'] ?? 'archive';
             if ($action !== 'archive') abort_if($records->contains(fn ($record) => $record->status !== 'Inactive'), 422, 'Only inactive records can be restored or deleted.');
+            if ($action === 'archive') \App\Services\ArchiveAvailability::check($d['kind'],$records);
             if ($action === 'delete') {
                 \App\Services\ArchiveReferences::ensureUnused($d['kind'], $records);
                 \App\Services\WorkspaceRead::table($d['kind'])->whereIn($key, $d['ids'])->delete();

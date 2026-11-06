@@ -87,7 +87,7 @@ class ProductMasterController extends Controller
     public function inventory(Request $request)
     {
         InventoryRules::authorize($request);
-        $request->validate(['from' => ['nullable', 'date_format:Y-m-d'], 'to' => ['nullable', 'date_format:Y-m-d', ...($request->filled('from') ? ['after_or_equal:from'] : [])], 'movementType'=>['nullable', Rule::in(array_keys(\App\Services\InventoryLedger::TYPES))]]);
+        $request->validate(['from' => ['nullable', 'date_format:Y-m-d'], 'to' => ['nullable', 'date_format:Y-m-d', ...($request->filled('from') ? ['after_or_equal:from'] : [])], 'movementType'=>['nullable', Rule::in(array_keys(\App\Services\InventoryLedger::TYPES))], 'stockCondition'=>['nullable',Rule::in(['reorder','out','unavailable'])], 'activeOnly'=>['nullable','boolean']]);
         $products = \App\Services\WorkspaceRead::table('products as p');
         $movements = \App\Services\WorkspaceRead::table('stock_movements as m')->joinSub(\App\Services\WorkspaceRead::table('products'), 'p', 'p.id', '=', 'm.productId');
         foreach (['category' => 'p.category', 'brandId' => 'p.brandId', 'subcategoryId' => 'p.subcategoryId', 'productId' => 'p.id'] as $key => $column) {
@@ -97,7 +97,7 @@ class ProductMasterController extends Controller
             }
         }
         if ($request->filled('supplierId')) {
-            $products->where('p.supplierId', $request->input('supplierId'));
+            $products->where(fn ($q)=>$q->where('p.supplierId',$request->input('supplierId'))->orWhereIn('p.id', WorkspaceRead::table('supplier_products')->where('supplierId',$request->input('supplierId'))->select('productId')));
             $movements->where('p.supplierId', $request->input('supplierId'));
         }
         if ($request->filled('from')) {
@@ -125,7 +125,11 @@ class ProductMasterController extends Controller
             $query->where('b.receivedDate', '<=', $request->date('to')->format('Y-m-d'));
         }
 
+        if ($request->boolean('activeOnly')) $products->where('p.status','Active')->whereNull('p.archivedAt');
         $current = collect(\App\Services\InventoryAvailability::products($products->orderByDesc('p.created_at')->orderByDesc('p.id')->get(['p.*'])->map(fn ($p) => (array) $p)->all()));
+        if ($request->filled('stockCondition')) $current=$current->filter(fn ($p)=>match ($request->input('stockCondition')) {
+            'reorder'=>(bool)$p['needsReorder'], 'out'=>$p['stockCondition']==='Out of stock', 'unavailable'=>(int)$p['unavailableStock']>0, default=>true
+        })->values();
         if ($request->boolean('lowStock')) $current = $current->where('needsReorder', true)->values();
         $movementCount = (clone $movements)->count();
         $movements->leftJoinSub(\App\Services\WorkspaceRead::table('users'), 'actor', fn ($join) => $join->on('actor.id', '=', 'm.userId')->on('actor.role', '=', 'm.userRole'))
