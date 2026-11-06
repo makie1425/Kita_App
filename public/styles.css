@@ -1934,7 +1934,7 @@ body:has(.inventory-batch-dialog[open]){overflow:hidden}
 .po-item-dialog header{display:flex;align-items:center;justify-content:space-between;padding:20px 24px;border-bottom:1px solid #edf1f7}
 .po-item-dialog h2{font-size:16px;margin:0}
 .po-close{border:0;background:none;color:#8ca0bd;font-size:24px;cursor:pointer}
-.po-item-fields{display:grid;gap:16px;padding:24px}
+.po-item-fields{display:grid;grid-template-columns:minmax(0,1fr);min-width:0;gap:16px;padding:24px}
 .po-item-fields label{display:grid;gap:6px;font-size:12px;min-width:0}
 .po-item-fields input,.po-item-fields select{width:100%;box-sizing:border-box;min-width:0;border:1px solid #dce6f7;background:#f7f9fc;border-radius:10px;padding:10px 12px;font:inherit;color:#23334e}
 .po-field-pair{display:grid;grid-template-columns:1fr 1fr;gap:16px}
@@ -1944,7 +1944,7 @@ body:has(.inventory-batch-dialog[open]){overflow:hidden}
 .po-item-error{background:#fff0f0;color:#b42318;padding:10px;border-radius:8px;font-size:12px;margin:0}
 @media(max-width:520px){.po-field-pair{grid-template-columns:1fr}.po-cart-toolbar{padding:14px;flex-wrap:wrap}.po-cart-toolbar input{max-width:100%;width:100%}.po-item-fields{padding:18px}}
 .po-low-stock{padding:12px;border:1px solid #fecaca;border-radius:10px;background:#fff7f7;color:#b42318;font-size:12px}
-.po-low-stock-list{display:grid;gap:6px;max-height:150px;overflow-y:auto;margin-top:8px}
+.po-low-stock-list{margin:8px 0 0;padding:0;list-style:none}
 .po-low-stock-list button{display:grid;gap:4px;padding:10px;text-align:left;border:1px solid #fecdca;border-radius:8px;background:#fff;color:#b42318;cursor:pointer;font:inherit}
 .po-low-stock-list button:hover,.po-low-stock-list button:focus-visible{background:#fee4e2;outline:2px solid #b42318;outline-offset:-2px}
 
@@ -2058,11 +2058,15 @@ button, .primary-button, .kita-button,
 .po-item-dialog header{background:#fafbfd;padding:18px 22px;align-items:flex-start}
 .po-item-dialog header small{display:block;color:#71829f;margin-top:5px;font-size:12px}
 .po-item-fields{padding:20px 22px;gap:16px}
-.po-item-dialog .po-low-stock{background:#fffdf0;border-color:#ffdc72;color:#92400e}
+.po-item-dialog .po-low-stock{min-width:0;background:#fffdf0;border-color:#ffdc72;color:#92400e}
 .po-suggestion-heading{display:flex;justify-content:space-between;gap:8px;align-items:center;font-size:11px}
 .po-suggestion-heading>span{background:#fff2c9;border-radius:12px;padding:3px 8px}
-.po-item-dialog .po-low-stock-list{display:flex;overflow-x:auto;max-height:none;gap:10px;padding-bottom:8px}
-.po-item-dialog .po-low-stock-list button{flex:0 0 190px;border-color:#ffdc72;color:#26344e;white-space:normal}
+.po-item-dialog .po-low-stock-list{display:flex;flex-wrap:nowrap;min-width:0;max-width:100%;overflow-x:scroll;overflow-y:hidden;gap:10px;padding:2px 2px 10px;scroll-snap-type:x proximity;overscroll-behavior-x:contain;scrollbar-width:thin;scrollbar-color:#b8c8dd #f0f4f9}
+.po-item-dialog .po-low-stock-list>li{flex:0 0 190px;min-width:0;scroll-snap-align:start}
+.po-item-dialog .po-low-stock-list::-webkit-scrollbar{height:7px}
+.po-item-dialog .po-low-stock-list::-webkit-scrollbar-thumb{background:#b8c8dd;border-radius:8px}
+.po-item-dialog .po-low-stock-list::-webkit-scrollbar-track{background:#f0f4f9}
+.po-item-dialog .po-low-stock-list button{box-sizing:border-box;width:100%;height:100%;min-width:0;overflow-wrap:anywhere;border-color:#ffdc72;color:#26344e;white-space:normal}
 .po-item-dialog .po-low-stock-list button:hover,.po-item-dialog .po-low-stock-list button:focus-visible{background:#fff8db;outline-color:#2563eb}
 .po-low-stock-list small,.po-low-stock-list button>span:not([class]){color:#71829f;font-size:11px}
 .po-stock-critical{color:#c21842;background:#fff0f3;border-radius:4px;padding:2px 5px;justify-self:start;font-size:10px}
@@ -2075,3 +2079,5 @@ button, .primary-button, .kita-button,
 .po-item-dialog input[readonly]{background:#f1f5f9;color:#71829f}
 .po-estimate{justify-self:end;background:#f6f8fc;border:1px solid #dce5f2;border-radius:6px;padding:8px 12px;font-weight:600}
 @media(max-width:480px){.po-field-triple{grid-template-columns:1fr 1fr}.po-field-triple>label:last-child{grid-column:1/-1}.po-item-fields{padding:16px}.po-suggestion-heading{flex-wrap:wrap}}
+
+.po-item-dialog .po-low-stock-list button[aria-pressed="true"]{border-color:#2563eb;box-shadow:0 0 0 1px #2563eb}

@@ -3,8 +3,8 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const vm=require('node:vm');
 const source=fs.readFileSync('public/app.js','utf8');
-function setup(){
- const context={React:{createElement:(tag,props,...children)=>({tag,props,children})},DCLogic:class{},window:{},document:{hidden:false},console,AbortController,URLSearchParams,setTimeout,clearTimeout,setInterval,clearInterval};
+function setup(realElements=false){
+ const context={React:{createElement:(tag,props,...children)=>({tag,...(realElements?{type:tag}:{}),props,children})},DCLogic:class{},window:{},document:{hidden:false},console,AbortController,URLSearchParams,setTimeout,clearTimeout,setInterval,clearInterval};
  vm.createContext(context);vm.runInContext(source+'\nglobalThis.App=Component;',context);
  const app=new context.App();app.setState=function(value){Object.assign(this.state,typeof value==='function'?value(this.state):value);};
  return {app,context};
@@ -250,4 +250,18 @@ test('supplier-first filters products and suggestions and resets incompatible it
  assert.ok(JSON.stringify(field('Item Name')).includes('Rice'));
  app.state.newReqCart=[{productId:2}];app.state.newReqSupplier='8';
  assert.equal(field('Supplier').props.disabled,true);assert.ok(!JSON.stringify(field('Item Name')).includes('Rice'));
+});
+
+test('low-stock cards remain a dedicated list outside shared action grouping',()=>{
+ const {app}=setup(true);app.state.newReqCart=[];app.state.purchaseItemDraft={};
+ app.state.data={PRODUCTS:Array.from({length:15},(_,i)=>({id:i+1,name:'Grocery item '+(i+1),category:'Food',supplierId:7,status:'Active',sellableStock:0,minStock:10,stockUnit:'Piece',unitPrice:30})),SUPPLIERS:[{id:7,name:'Supply',status:'Active'}],SUBCATEGORIES:[]};
+ const nodes=v=>!v||typeof v!=='object'?[]:Array.isArray(v)?v.flatMap(nodes):[v,...nodes(v.children)];
+ const list=nodes(app.buildItemPickerModal()).find(n=>n.props?.className==='po-low-stock-list');
+ assert.equal(list.tag,'ul');assert.equal(list.children.flat(Infinity).length,15);
+ assert.ok(list.children.flat(Infinity).every(n=>n.tag==='li'));
+ assert.ok(!nodes(list).some(n=>n.props?.className==='action-group'));
+ const cards=nodes(list).filter(n=>n.tag==='button');cards[2].props.onClick();
+ assert.equal(app.state.purchaseItemDraft.productId,3);
+ const selected=nodes(app.buildItemPickerModal()).filter(n=>n.tag==='button'&&n.props?.['aria-pressed']);
+ assert.equal(selected.length,1);
 });
