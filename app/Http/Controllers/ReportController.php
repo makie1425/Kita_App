@@ -32,7 +32,7 @@ class ReportController extends Controller
             'manager' => ['nullable', 'string', 'max:120'],
             'status' => ['nullable', 'string', 'max:60'],
             'audit' => ['nullable', Rule::in(['missing', 'damaged', 'flagged', 'none'])],
-            'expiryStatus' => ['nullable', Rule::in(['Nearly expired', 'Expired', 'Critical', 'Warning', 'Good', 'Unknown'])],
+            'expiryStatus' => ['nullable', Rule::in(['Nearly expired', 'Near Expiry', 'Expired', 'Critical', 'Warning', 'Good', 'Unknown'])],
         ]);
         $type = $filters['type'];
         if ($type === 'general') {
@@ -82,10 +82,10 @@ class ReportController extends Controller
             $query->join('transaction_lines as line', 'line.productId', '=', 'p.id')->join('transactions as t', 't.uuid', '=', 'line.transaction_uuid');
             $query->leftJoin('transaction_numbers as tn', 'tn.transaction_uuid', '=', 't.uuid');
             $dateColumn = 't.date';
-            $note .= ' Amounts are recorded line totals; refunds shown are cumulative, including refunds after the sale date. Includes every recorded transaction status.';
-            $columns = ['Transaction No.' => 'reference', 'Sale date' => 'date'] + $columns + ['Status' => 'status', 'Quantity' => 'quantity', 'Line total (PHP)' => 'amount', 'Refunded (PHP)' => 'refunded'];
+            $note .= ' Historical discount breakdowns may be unrecorded; blank amounts are not inferred. Amounts are recorded line totals; refunds shown are cumulative, including refunds after the sale date. Includes every recorded transaction status.';
+            $columns = ['Transaction No.' => 'reference', 'Sale date' => 'date'] + $columns + ['Status' => 'status', 'Quantity' => 'quantity', 'Promotion Discount (PHP)'=>'promotionDiscount', 'Customer Discount Type'=>'discountType', 'Senior/PWD/Employee Discount (PHP)'=>'customerDiscount', 'Price Override Discount (PHP)'=>'overrideDiscount', 'Line total (PHP)' => 'amount', 'Refunded (PHP)' => 'refunded'];
             $select[0] = 'line.name as product';
-            $select = array_merge($select, ['t.date', DB::raw('(SELECT MIN(clock_line.created_at) FROM transaction_lines AS clock_line WHERE clock_line.transaction_uuid = t.uuid) as recordedAt'), 't.uuid as reference', 'tn.id as numberId', 'tn.issued_date as numberDate', 't.status', 'line.qty as quantity', 'line.lineTotal as amount', 'line.refundedAmount as refunded']);
+            $select = array_merge($select, ['t.date', DB::raw('(SELECT MIN(clock_line.created_at) FROM transaction_lines AS clock_line WHERE clock_line.transaction_uuid = t.uuid) as recordedAt'), 't.uuid as reference', 'tn.id as numberId', 'tn.issued_date as numberDate', 't.status', 'line.qty as quantity', 'line.promotionDiscount','line.customerDiscount','line.overrideDiscount','t.discountType','line.lineTotal as amount', 'line.refundedAmount as refunded']);
         } elseif ($type === 'receiving') {
             $title = 'Stock Receiving Audit';
             $query->join('receiving_record_lines as rl', 'rl.productId', '=', 'p.id')->join('receiving_records as rr', 'rr.id', '=', 'rl.receivingId')->join('purchase_orders as po', 'po.id', '=', 'rr.poId')->leftJoin('suppliers as supplier', 'supplier.id', '=', 'po.supplierId');
@@ -196,14 +196,19 @@ class ReportController extends Controller
             $today = now()->timezone('Asia/Manila')->startOfDay();
             foreach ($rows as $row) {
                 $days = $row->expiryDate ? (int) $today->diffInDays(\Carbon\CarbonImmutable::parse($row->expiryDate, 'Asia/Manila')->startOfDay(), false) : null;
-                $row->status = $days === null ? 'Unknown' : ($days <= 0 ? 'Expired' : ($days <= 7 ? 'Critical' : ($days <= 30 ? 'Warning' : 'Good')));
+                $row->status = $days === null ? 'Unknown' : ($days <= 0 ? 'Expired' : ($days <= 30 ? 'Near Expiry' : 'Good'));
                 $row->batch = ($row->batch ?: 'Batch #'.$row->id).($row->lot && $row->lot!==$row->batch ? ' / '.$row->lot : '');
             }
-            $rows = $rows->sortBy(fn ($row) => [in_array($row->status, ['Critical', 'Warning']) ? 0 : ($row->status === 'Expired' ? 1 : 2), $row->expiryDate ?? '9999-12-31', $row->id])->values();
+            $rows = $rows->sortBy(fn ($row) => [in_array($row->status, ['Near Expiry']) ? 0 : ($row->status === 'Expired' ? 1 : 2), $row->expiryDate ?? '9999-12-31', $row->id])->values();
             if ($request->filled('expiryStatus')) {
-                $rows = ($filters['expiryStatus'] === 'Nearly expired'
-                    ? $rows->whereIn('status', ['Critical', 'Warning'])
-                    : $rows->where('status', $filters['expiryStatus']))->values();
+                $filter=$filters['expiryStatus'];
+                $rows = match($filter) {
+                    'Nearly expired','Near Expiry'=>$rows->where('status','Near Expiry'),
+                    'Critical'=>$rows->filter(fn($row)=>$row->expiryDate>$today->toDateString()&&$row->expiryDate<=$today->copy()->addDays(7)->toDateString()),
+                    'Warning'=>$rows->filter(fn($row)=>$row->expiryDate>$today->copy()->addDays(7)->toDateString()&&$row->expiryDate<=$today->copy()->addDays(30)->toDateString()),
+                    default=>$rows->where('status',$filter),
+                };
+                $rows=$rows->values();
             }
         }
         if ($type === 'inventory') {
@@ -231,12 +236,15 @@ class ReportController extends Controller
                 unset($row->numberId, $row->numberDate);
             }
         }
-        $moneyKeys = ['price', 'amount', 'refunded', 'cost', 'inventoryValue'];
+        $moneyKeys = ['price', 'promotionDiscount','customerDiscount','overrideDiscount','amount', 'refunded', 'cost', 'inventoryValue'];
         $numericKeys = array_merge($moneyKeys, ['stock', 'stockOnHand', 'sellableStock', 'expiredStock', 'recalledStock', 'reservedStock', 'minimum', 'quantity', 'remaining', 'change', 'before', 'after']);
         $summary = $type === 'expiry' ? [] : ['Records' => number_format($rows->count())];
         if ($type === 'sales') {
             $summary += ['Transactions' => number_format($rows->pluck('reference')->unique()->count()), 'Recorded line totals (PHP)' => number_format($rows->sum('amount'), 2), 'Cumulative refunds (PHP)' => number_format($rows->sum('refunded'), 2)];
             $summary['Recorded less refunds (PHP)'] = number_format($rows->sum('amount') - $rows->sum('refunded'), 2);
+            $summary['Recorded promotion discounts (PHP)']=number_format($rows->sum('promotionDiscount'),2);
+            $summary['Recorded customer discounts (PHP)']=number_format($rows->sum('customerDiscount'),2);
+            $summary['Recorded price override discounts (PHP)']=number_format($rows->sum('overrideDiscount'),2);
         } elseif ($type === 'inventory') {
             $summary += ['Items at reorder level' => number_format($rows->where('needsReorder', true)->count()), 'Inventory value (PHP)'=>number_format($rows->sum('inventoryValue'), 2)];
         } elseif (in_array($type, ['receipts', 'batches'])) {

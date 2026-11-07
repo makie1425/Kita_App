@@ -12,16 +12,16 @@ class ExpiryMonitoring
         if (config('workspaces.enabled')) {
             $workspaceId = WorkspaceRead::id();
             return $workspaceId
-                ? (int) (DB::table('workspace_expiry_settings')->where('workspace_id', $workspaceId)->value('days') ?? 7)
-                : 7;
+                ? (int) (DB::table('workspace_expiry_settings')->where('workspace_id', $workspaceId)->value('days') ?? 30)
+                : 30;
         }
 
-        return (int) (DB::table('inventory_settings')->where('name', 'expiry_days')->value('value') ?? 7);
+        return (int) (DB::table('inventory_settings')->where('name', 'expiry_days')->value('value') ?? 30);
     }
 
     public static function batches(?int $days = null)
     {
-        $days ??= self::days();
+        $days ??= PromotionEligibility::NEAR_DAYS;
         return WorkspaceRead::table('inventory_batches as b')->joinSub(WorkspaceRead::table('products'),'p', 'p.id', '=', 'b.productId')
             ->where('b.quantityRemaining', '>', 0)->where('b.recalled', false)
             ->whereNotNull('b.expiryDate')->where('b.expiryDate', '<=', now()->addDays($days)->toDateString())
@@ -56,7 +56,7 @@ class ExpiryMonitoring
             foreach ($groups as $workspace => $recipients) {
                 $workspaceId = config('workspaces.enabled') ? (int) $workspace : null;
                 $days = $workspaceId
-                    ? (int) (DB::table('workspace_expiry_settings')->where('workspace_id', $workspaceId)->value('days') ?? 7)
+                    ? (int) (DB::table('workspace_expiry_settings')->where('workspace_id', $workspaceId)->value('days') ?? 30)
                     : self::days();
                 $batches = $workspaceId
                     ? DB::table('inventory_batches as b')->join('products as p', 'p.id', '=', 'b.productId')

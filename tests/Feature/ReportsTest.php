@@ -129,15 +129,15 @@ class ReportsTest extends TestCase
             $this->insertFixture('inventory_batches', ['productId' => 1, 'supplierId' => 1, 'quantityReceived' => 2, 'quantityRemaining' => 2, 'unitCost' => 10, 'receivedDate' => '2026-10-01', 'source' => 'receiving', 'created_at' => now(), 'expiryDate' => now()->addDays($days)->toDateString()]);
         }
         $this->getJson('/reports/data?type=expiry')->assertOk()->assertJsonCount(4, 'rows')
-            ->assertJsonPath('rows.0.status', 'Critical')->assertJsonPath('rows.1.status', 'Warning')
+            ->assertJsonPath('rows.0.status', 'Near Expiry')->assertJsonPath('rows.1.status', 'Near Expiry')
             ->assertJsonPath('rows.2.status', 'Expired')->assertJsonPath('rows.3.status', 'Good');
-        $this->getJson('/reports/data?type=expiry&expiryStatus=Nearly%20expired')->assertOk()->assertJsonCount(2, 'rows')->assertJsonPath('rows.0.status', 'Critical');
+        $this->getJson('/reports/data?type=expiry&expiryStatus=Nearly%20expired')->assertOk()->assertJsonCount(2, 'rows')->assertJsonPath('rows.0.status', 'Near Expiry');
         $this->getJson('/reports/data?type=expiry&expiryStatus=Expired')->assertOk()->assertJsonCount(1, 'rows')->assertJsonPath('rows.0.status', 'Expired');
         $this->getJson('/reports/data?type=expiry&expiryStatus=Critical&category=Beverages')->assertOk()->assertJsonCount(1, 'rows');
         $this->getJson('/reports/data?type=expiry&from=2026-10-29&to=2026-10-29')->assertOk()->assertJsonCount(1, 'rows');
         $this->get('/reports/data?type=expiry&format=print')->assertOk()->assertSee('Printable Expiration');
         $csv = $this->get('/reports/data?type=expiry&format=csv')->assertOk()->streamedContent();
-        $this->assertStringContainsString('Critical', $csv);
+        $this->assertStringContainsString('Near Expiry', $csv);
         $this->get('/reports/data?type=expiry&format=pdf')->assertOk()->assertHeader('Content-Type', 'application/pdf');
     }
 

@@ -6,7 +6,7 @@ const ctx=vm.createContext({React:{createElement:(type,props,...children)=>({typ
 vm.runInContext(fs.readFileSync('public/app.js','utf8')+';globalThis.App=Component;',ctx);
 const app=new ctx.App(),messages=[],calls=[];
 app.toast=m=>messages.push(m);app.handleSessionResponse=()=>{};app.reloadPurchasing=async()=>{};
-app.state.data={BUSINESS_DATE:'2026-10-13',EXPIRY_ALERT_DAYS:14,PRODUCTS:[{id:1,name:'Milk',category:'Food',price:20,unitPrice:5,status:'Active'}],CATEGORIES:[{name:'Food',status:'Active'}],SUPPLIERS:[],BRANDS:[],SUBCATEGORIES:[],USERS:{manager:[]}};
+app.state.data={BUSINESS_DATE:'2026-10-13',EXPIRY_ALERT_DAYS:14,PRODUCTS:[{id:1,name:'Milk',category:'Food',promotionExpiry:'2026-10-23',price:20,unitPrice:5,status:'Active'}],CATEGORIES:[{name:'Food',status:'Active'}],SUPPLIERS:[],BRANDS:[],SUBCATEGORIES:[],USERS:{manager:[]}};
 app.state.productsLocal=app.state.data.PRODUCTS;app.state.role='manager';
 const nodes=n=>!n||typeof n!=='object'?[]:Array.isArray(n)?n.flatMap(nodes):[n,...nodes(n.children)];
 const text=n=>n==null?'':typeof n==='string'||typeof n==='number'?String(n):Array.isArray(n)?n.map(text).join(' '):text(n.children);

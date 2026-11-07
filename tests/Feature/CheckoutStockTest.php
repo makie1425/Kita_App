@@ -140,7 +140,7 @@ class CheckoutStockTest extends TestCase
 
     public function test_discount_reason_is_derived_without_manual_input(): void
     {
-        foreach (['senior' => 'Senior/PWD discount', 'employee' => 'Employee discount'] as $type => $reason) {
+        foreach (['senior' => 'Senior discount', 'pwd' => 'PWD discount', 'employee' => 'Employee discount'] as $type => $reason) {
             $uuid = 'TXN-auto-'.$type;
             $this->postJson('/api/transactions', array_replace($this->sale(), [
                 'uuid' => $uuid, 'discountType' => $type,

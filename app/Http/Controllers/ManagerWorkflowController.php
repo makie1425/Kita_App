@@ -32,8 +32,12 @@ class ManagerWorkflowController extends Controller
             abort_if($products->isEmpty(), 422, 'Select at least one product.');
             $overlaps = \App\Services\WorkspaceRead::table('promotions')->where('startDate', '<=', $d['endDate'])->where('endDate', '>=', $d['startDate'])->get();
             $links = \App\Services\WorkspaceRead::table('promotion_products')->whereIn('promotionId', $overlaps->pluck('id'))->get()->groupBy('promotionId');
+            $availability = collect(InventoryAvailability::products($products->map(fn($p)=>(array)$p)->all()))->keyBy('id');
+            $promotionDate = max(now()->timezone('Asia/Manila')->toDateString(),$d['startDate']);
             foreach ($products as $product) {
                 InventoryRules::product($product->id);
+                $reason=\App\Services\PromotionEligibility::reason($availability->get($product->id)??(array)$product,$d['type'],$promotionDate);
+                if($reason)throw \Illuminate\Validation\ValidationException::withMessages(['productIds'=>$product->name.': '.$reason]);
                 abort_if(round($product->price * (1 - $d['discountPct'] / 100), 2) < (float) $product->unitPrice, 422, 'Promotion would sell '.$product->name.' below cost.');
                 foreach ($overlaps as $promo) {
                     abort_if(($promo->type === 'Category-Wide' && $promo->category === $product->category) || ($links->get($promo->id)?->contains('productId', $product->id) ?? false), 422, 'An overlapping promotion already applies to '.$product->name.'.');
@@ -60,7 +64,7 @@ class ManagerWorkflowController extends Controller
             InventoryRules::lockActor($r);
             if (config('workspaces.enabled')) {
                 $workspaceId = \App\Services\WorkspaceWrite::requireId();
-                $old = DB::table('workspace_expiry_settings')->where('workspace_id', $workspaceId)->lockForUpdate()->value('days') ?? 7;
+                $old = DB::table('workspace_expiry_settings')->where('workspace_id', $workspaceId)->lockForUpdate()->value('days') ?? 30;
                 DB::table('workspace_expiry_settings')->updateOrInsert(
                     ['workspace_id' => $workspaceId],
                     ['days' => $d['days'], 'updated_at' => now(), 'created_at' => now()]

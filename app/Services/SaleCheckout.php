@@ -17,7 +17,7 @@ class SaleCheckout
             $itemsKey.'.*.qty' => ['required', 'integer', 'min:1', 'max:1000000'],
             $itemsKey.'.*.manualLookupQty' => ['sometimes', 'required', 'integer', 'min:0'],
             $itemsKey.'.*.overridden' => ['sometimes', 'boolean'],
-            'discountType' => ['sometimes', 'in:none,employee,senior'],
+            'discountType' => ['sometimes', 'in:none,employee,senior,pwd'],
             // Display totals are optional; reject malformed values but never trust them.
             'total' => ['sometimes', 'required', 'numeric', 'min:0', 'max:99999999.99', 'decimal:0,2'],
         ];
@@ -44,6 +44,7 @@ class SaleCheckout
         $promotionProducts = WorkspaceRead::table('promotion_products')->whereIn('promotionId', $promotions->pluck('id'))->get()->groupBy('promotionId');
         $lines = [];
         $subtotal = $total = 0;
+        $breakdown = ['promotionDiscount'=>0,'customerDiscount'=>0,'overrideDiscount'=>0];
         foreach (collect($data[$itemsKey])->sortBy('productId') as $item) {
             $manualLookupQty = array_key_exists('manualLookupQty', $item) ? (int) $item['manualLookupQty'] : null;
             if ($manualLookupQty !== null && $manualLookupQty > $item['qty']) {
@@ -54,7 +55,7 @@ class SaleCheckout
                 || ! WorkspaceRead::table('categories')->where('name', $product->category)->where('status', 'Active')->whereNull('archivedAt')->exists()) {
                 throw ValidationException::withMessages([$itemsKey => 'A cart product is unavailable for sale.']);
             }
-            InventoryAvailability::assertSellable($product, (int) $item['qty'], $itemsKey);
+            $availability = InventoryAvailability::assertSellable($product, (int) $item['qty'], $itemsKey);
             if ($product->price === null || ! is_numeric($product->price)) {
                 throw ValidationException::withMessages([$itemsKey => 'A cart product has an invalid selling price.']);
             }
@@ -65,18 +66,14 @@ class SaleCheckout
             $base = $unitPrice * $item['qty'];
             // Preserve the existing 15% override, followed by the selected discount priority.
             $effectiveUnit = ($item['overridden'] ?? false) ? (int) round($unitPrice * 85 / 100) : $unitPrice;
-            $rate = match ($discountType) {
-                'employee' => 10, 'senior' => 20, default => 0
-            };
-            if ($discountType === 'none') {
-                $promotion = $promotions->first(fn ($promo) => ($promo->type === 'Category-Wide' && $promo->category === $product->category)
-                    || ($promotionProducts->get($promo->id)?->contains('productId', $product->id) ?? false));
-                $rate = $promotion ? (float) $promotion->discountPct : 0;
-            }
-            if ($rate < 0 || $rate > 100) {
-                throw ValidationException::withMessages([$itemsKey => 'A product promotion has an invalid discount.']);
-            }
-            $net = (int) round($effectiveUnit * $item['qty'] * (100 - $rate) / 100);
+            $promotion = $promotions->first(fn ($promo) => (($promo->type === 'Category-Wide' && $promo->category === $product->category)
+                || ($promotionProducts->get($promo->id)?->contains('productId', $product->id) ?? false)) && PromotionEligibility::reason($availability,$promo->type)===null);
+            $rate = $promotion ? (float) $promotion->discountPct : 0;
+            if ($rate < 0 || $rate > 100) throw ValidationException::withMessages([$itemsKey=>'A product promotion has an invalid discount.']);
+            if ($base>9999999999) throw ValidationException::withMessages([$itemsKey=>'The order amount is too large.']);
+            $calculated=DiscountCalculation::line($base,$effectiveUnit*$item['qty'],$rate,$discountType);
+            $net=$calculated['net'];
+            foreach($breakdown as $key=>$value)$breakdown[$key]+=$calculated[$key];
             $subtotal += $base;
             $total += $net;
             if ($subtotal > 9999999999 || $total > 9999999999) {
@@ -87,12 +84,13 @@ class SaleCheckout
                 'qty' => (int) $item['qty'], 'unitPrice' => $unitPrice / 100,
                 'manualLookupQty' => $manualLookupQty,
                 'entryMethod' => $manualLookupQty === null ? null : ($manualLookupQty === 0 ? 'Barcode' : ($manualLookupQty === (int) $item['qty'] ? 'Manual lookup' : 'Mixed')),
+                'promotionDiscount'=>$calculated['promotionDiscount']/100,'customerDiscount'=>$calculated['customerDiscount']/100,'overrideDiscount'=>$calculated['overrideDiscount']/100,
                 'discountAmount' => ($base - $net) / 100, 'lineTotal' => $net / 100, 'stockBefore' => (int) $product->stock];
         }
         $approval = DiscountApproval::verify($request, $subtotal - $total);
 
         return ['lines' => $lines, 'subtotal' => $subtotal, 'total' => $total,
-            'discount' => $subtotal - $total, 'discountType' => $discountType, 'approval' => $approval];
+            'breakdown'=>$breakdown,'discount' => $subtotal - $total, 'discountType' => $discountType, 'approval' => $approval];
     }
 
     public static function save(Request $request, array $data, array $sale, string $status, string $paymentMode, int $tendered = 0, ?string $exchangeOriginal = null, int $exchangeCredit = 0, bool $notify = true): array
@@ -104,6 +102,7 @@ class SaleCheckout
             'cashierId' => $request->user()->id, 'cashierRole' => $request->user()->role, 'cashierEmail' => $request->user()->email,
             'date' => now()->toDateString(), 'refundDate' => null,
             'subtotal' => $sale['subtotal'] / 100, 'discountAmount' => $sale['discount'] / 100,
+            'promotionDiscount'=>($sale['breakdown']['promotionDiscount']??0)/100,'customerDiscount'=>($sale['breakdown']['customerDiscount']??0)/100,'overrideDiscount'=>($sale['breakdown']['overrideDiscount']??0)/100,
             'discountType' => $sale['discountType'], 'total' => $sale['total'] / 100,
             'paymentMode' => $paymentMode, 'tendered' => $tendered / 100, 'paid' => $paid / 100,
             'changeAmount' => ($status === 'Unused' ? $tendered - $paid : 0) / 100, 'referenceNo' => null,

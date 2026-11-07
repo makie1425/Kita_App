@@ -22,7 +22,8 @@ class DiscountApproval
         return ['manager_id' => $manager->id, 'requested_by' => $request->user()->id,
             'requested_by_role' => $request->user()->role, 'amount' => $discountCents / 100, 'reason' => match ($request->input('discountType', 'none')) {
                 'employee' => 'Employee discount',
-                'senior' => 'Senior/PWD discount',
+                'senior' => 'Senior discount',
+                'pwd' => 'PWD discount',
                 default => 'Promotion / price override',
             }];
     }

@@ -62,10 +62,11 @@ class ManagerChecklistTest extends TestCase
 
     public function test_expiry_window_is_saved_and_alerts_remain_deduplicated(): void
     {
-        $this->assertSame(0, ExpiryMonitoring::notify($this->manager));
+        $this->assertSame(30, ExpiryMonitoring::days());
+        $this->assertSame(1, ExpiryMonitoring::notify($this->manager));
         $this->patchJson('/api/inventory/expiry-settings', ['days' => 14])->assertOk();
         $this->assertSame(14, ExpiryMonitoring::days());
-        $this->assertSame(1, ExpiryMonitoring::notify($this->manager));
+        $this->assertSame(0, ExpiryMonitoring::notify($this->manager));
         $this->assertSame(0, ExpiryMonitoring::notify($this->manager));
         $this->getJson('/api/kita-data')->assertOk()->assertJsonPath('EXPIRY_ALERT_DAYS', 14)->assertJsonCount(1, 'EXPIRING_BATCHES');
         $this->patchJson('/api/inventory/expiry-settings', ['days' => 366])->assertUnprocessable();

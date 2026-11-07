@@ -306,7 +306,7 @@ class Component extends DCLogic {
     authStep:"login", loginPending:false, loginUsername:"", loginPassword:"", otpCode:"", otpEmail:"", loginError:"", loginTries:0, loginLocked:false, pendingRole:null,
     role:null, screen:null, toasts:[], sidebarOpen:false,tableViews:{},
     barcodeInput:"", cart:[], scannerConnected:true, manualLookupOpen:false, manualSearch:"",
-    seniorPwdOpen:false, seniorForm:{name:"",idNumber:""}, seniorApplied:false, seniorInfo:null, employeeDiscount:false,
+    seniorPwdOpen:false, seniorForm:{name:"",idNumber:"",type:"senior"}, seniorApplied:false, seniorInfo:null, employeeDiscount:false,
     overrideLine:null, overrideReason:"", overridePin:"",
     paymentMethod:"cash", ewalletProvider:"QR Ph", tendered:"", paymentState:"idle", reservationSeconds:45,
     commitOpen:false, lateWebhook:false, transactionResult:null,
@@ -366,12 +366,13 @@ class Component extends DCLogic {
       ]),
     ]);
   }
+  checkoutApprovalSignature=s=>JSON.stringify([s.authenticatedUser?.id,s.role,!!s.seniorApplied,s.seniorInfo?.name||'',s.seniorInfo?.idNumber||'',s.seniorInfo?.type||'senior',!!s.employeeDiscount,(s.cart||[]).map(l=>[String(l.productId),Number(l.qty),Number(l.originalPrice??l.unitPrice),Number(l.unitPrice),!!l.overridden,l.overrideReason||'',l.promo?.id??null,Number(l.promo?.discountPct||0)])]);
   componentDidUpdate() {
     // The custom logic runtime supplies no previous state. Keep our own snapshot
     // before triggering updates so nested state changes use the correct snapshot.
     const prevState=this.previousAppState||{};
     this.previousAppState=this.state;
-    if(this.state.discountManagerPin && (prevState.cart!==this.state.cart || prevState.seniorApplied!==this.state.seniorApplied || prevState.employeeDiscount!==this.state.employeeDiscount || prevState.role!==this.state.role)){
+    if(this.state.discountManagerPin && this.checkoutApprovalSignature(prevState)!==this.checkoutApprovalSignature(this.state)){
       this.setState({discountManagerPin:""});
     }
   }
@@ -416,7 +417,7 @@ class Component extends DCLogic {
     this.cartGeneration=(this.cartGeneration||0)+1;this.resetCheckoutChecks();
     this.confirmationResolve?.(false);this.confirmationResolve=null;
     if(window.KITA_AUTH){window.KITA_AUTH.user=null;if(csrfToken)window.KITA_AUTH.csrfToken=csrfToken;}
-    this.setState({...this.emptySessionState,screenTrail:[],authStep:'login',role:null,screen:null,authenticatedUser:null,data:null,cart:[],newReqCart:[],accountsLocal:null,purchaseData:null,supplierAccountsData:null,inventoryHistory:null,reportResult:null,saDashboard:null,confirmation:null,manualLookupOpen:false,seniorPwdOpen:false,overrideLine:null,acctModalOpen:false,discountManagerPin:'',approvalPin:'',approvalManagerId:'',currentApprovalPin:'',newApprovalPin:'',confirmApprovalPin:'',loginUsername:'',loginPassword:'',otpEmail:'',otpCode:'',mgrNotificationsLocal:[],notificationUnread:0,mgrNotifOpen:false,toasts:[],loginError:message||'Please sign in again.'});
+    this.setState({...this.emptySessionState,authStep:'login',role:null,screen:null,authenticatedUser:null,data:null,cart:[],newReqCart:[],accountsLocal:null,purchaseData:null,supplierAccountsData:null,inventoryHistory:null,reportResult:null,saDashboard:null,confirmation:null,manualLookupOpen:false,seniorPwdOpen:false,overrideLine:null,acctModalOpen:false,discountManagerPin:'',approvalPin:'',approvalManagerId:'',currentApprovalPin:'',newApprovalPin:'',confirmApprovalPin:'',loginUsername:'',loginPassword:'',otpEmail:'',otpCode:'',mgrNotificationsLocal:[],notificationUnread:0,mgrNotifOpen:false,toasts:[],loginError:message||'Please sign in again.'});
   };
   componentDidMount() {
     this.emptySessionState={...this.state};
@@ -527,7 +528,6 @@ class Component extends DCLogic {
       this.setState({otpCode:"",loginError:""}); this.enterApp(res.role,res.dashboard,res);
     }).catch(error=>this.setState({loginError:error.message,otpCode:"",...(error.message==="Your account has been deactivated. Please contact your operator."?{authStep:"login",loginPassword:"",otpEmail:""}:{})})).finally(()=>{this.loginBusy=false;this.setState({loginPending:false});});
   };
-  backToPassword=()=>this.setState({authStep:"login",otpCode:"",otpEmail:"",loginError:""});
   enterApp=(role,dashboard,user)=>{
     this.emptySessionState??={...this.state};
     this.sessionGeneration=(this.sessionGeneration||0)+1;
@@ -535,7 +535,7 @@ class Component extends DCLogic {
     if(user?.password_setup_required){window.location.assign("/password/setup");return;}
     role=String(role||"").toLowerCase().replace(/[ _-]/g,"");
     const d={cashier:"pos",manager:"mgrDashboard",admin:"admDashboard",superadmin:"saDashboard"}[role];
-    if(!d || !user?.name){ this.setState({screenTrail:[],authStep:"login",role:null,screen:null,loginError:"Your session could not be loaded. Refresh the page and sign in again."}); return; }
+    if(!d || !user?.name){ this.setState({authStep:"login",role:null,screen:null,loginError:"Your session could not be loaded. Refresh the page and sign in again."}); return; }
 this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificationsLocal:[],notificationUnread:0,notificationNext:null,mgrNotifOpen:false},()=>{this.reloadNotifications();this.reloadCatalog().catch(error=>this.setState({dataError:error.message}));if(role==="superadmin")this.reloadSaDashboard();if(["manager","admin"].includes(role))this.reloadPurchasing().catch(()=>{});if(role!=="cashier") this.reloadAccounts().catch(error=>this.toast(error.message,"error"));});
   };
   logout=()=>{ this.authPost((window.KITA_AUTH&&window.KITA_AUTH.logoutUrl)||"/logout",{}).then(res=>{ if(window.KITA_AUTH) window.KITA_AUTH.csrfToken=res.csrf_token; this.endClientSession('',res.csrf_token); this.newSale(); this.setState({role:null,authenticatedUser:null,mgrNotificationsLocal:[],notificationUnread:0,mgrNotifOpen:false,data:null,accountsLocal:null,purchaseData:null,purchaseReceivingId:null,purchaseRequestDetail:null,newReqCart:[],cart:[],discountManagerPin:"",approvalPin:"",approvalManagerId:"",newApprovalPin:"",confirmApprovalPin:"",currentApprovalPin:"",refundTxn:null,authStep:"login",screen:null,pendingRole:null,loginUsername:"",loginPassword:"",otpEmail:"",loginError:""}); }).catch(error=>this.toast(error.message,"error")); };
@@ -557,12 +557,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     const dirty=(this.state.screen==='mgrRequest'&&this.state.newReqCart?.length)||(this.state.screen==='mgrRegistration'&&!this.state.regSaved&&(this.state.regEditing||this.state.regProductName));
     return !dirty||await this.requestConfirmation('You have an unfinished form. Leave this page? Your form remains available until cleared or saved.',{title:'Leave Form'});
   };
-  navigateBack=async()=>{
-    if(!await this.confirmNavigation())return;
-    const trail=this.state.screenTrail||[];if(!trail.length)return;
-    this.setState({screen:trail[trail.length-1],screenTrail:trail.slice(0,-1),sidebarOpen:false});
-  };
-  goScreen=key=>async()=>{ if(key===this.state.screen)return;if(!await this.confirmNavigation())return;this.setState({screen:key,screenTrail:[...(this.state.screenTrail||[]),this.state.screen].filter(Boolean).slice(-20),sidebarOpen:false}); if(["mgrRequest","mgrRequestView","mgrPurchaseHistory","mgrPO","mgrSupplier","admSuppliers","admPurchasedOrders","admForwarded","admDisapproved","admReceivingApprovals"].includes(key)&&!this.state.purchaseData&&!this.state.purchaseLoading)this.reloadPurchasing().catch(()=>{}); if(key==="supplierAccounts")this.loadSupplierAccounts(); if(key==="purchaseOrders"&&!this.state.purchaseData&&!this.state.purchaseLoading)this.reloadPurchasing().catch(()=>{}); if(key==="saDashboard")this.reloadSaDashboard(); if(key==="saBackup")this.loadSaRecords("backup"); if(key==="saAudit")this.loadSaRecords("audit"); if(["mgrCashiers","admManagers","saAdmins"].includes(key)&&!this.state.accountsLocal)this.reloadAccounts().catch(error=>this.toast(error.message,"error")); if(key==="shift") this.reloadCatalog().catch(()=>this.toast("Could not refresh shift transactions.","error")); };
+  goScreen=key=>async()=>{ if(key===this.state.screen){this.setState({supMgrScreen:"list",supMgrDetailId:null,supplierDetailId:null,inventoryHistoryOpen:false,supplierBalanceDetail:null,sidebarOpen:false});return;}if(!await this.confirmNavigation())return;this.setState({screen:key,supMgrScreen:key==='mgrSupplier'?'list':this.state.supMgrScreen,supMgrDetailId:key==='mgrSupplier'?null:this.state.supMgrDetailId,supplierDetailId:key==='admSuppliers'?null:this.state.supplierDetailId,inventoryHistoryOpen:key==='mgrInventory'?false:this.state.inventoryHistoryOpen,sidebarOpen:false}); if(["mgrRequest","mgrRequestView","mgrPurchaseHistory","mgrPO","mgrSupplier","admSuppliers","admPurchasedOrders","admForwarded","admDisapproved","admReceivingApprovals"].includes(key)&&!this.state.purchaseData&&!this.state.purchaseLoading)this.reloadPurchasing().catch(()=>{}); if(key==="supplierAccounts")this.loadSupplierAccounts(); if(key==="purchaseOrders"&&!this.state.purchaseData&&!this.state.purchaseLoading)this.reloadPurchasing().catch(()=>{}); if(key==="saDashboard")this.reloadSaDashboard(); if(key==="saBackup")this.loadSaRecords("backup"); if(key==="saAudit")this.loadSaRecords("audit"); if(["mgrCashiers","admManagers","saAdmins"].includes(key)&&!this.state.accountsLocal)this.reloadAccounts().catch(error=>this.toast(error.message,"error")); if(key==="shift") this.reloadCatalog().catch(()=>this.toast("Could not refresh shift transactions.","error")); };
 
   simScannerDisconnect=()=>{ this.setState({scannerConnected:false}); this.toast("Scanner disconnected — use manual entry.","warn"); };
   simPaymentTimeout=()=>{ if(this.state.paymentState==="processing"||this.state.paymentState==="pending"){ this.setState({paymentState:"timeout"}); this.toast("Payment timed out.","error"); } else this.toast("Start an e-wallet payment first.","warn"); };
@@ -596,7 +591,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
   resetCheckoutChecks=()=>{
     for(const controller of this.stockControllers||[])controller.abort();
     this.stockControllers=new Set();this.stockSelectionQueue=null;this.stockAddBatch=null;this.stockSelections=0;this.stockCheckoutChecking=false;this.stockCheckoutToken=null;this.lastStockSelectionIds=[];this.barcodeCatalogLookup=null;
-    this.setState({stockSelectionPending:0,checkoutStockChecking:false,checkoutStockError:'',barcodeCatalogLookup:false});
+    this.setState({stockSelectionPending:0,checkoutStockChecking:false,checkoutStockError:'',barcodeCatalogLookup:false,quantityDrafts:{},quantityErrors:{}});
   };
   refreshStockAvailability=async(productId,quantity,productIds)=>{
     const actor=this.state.authenticatedUser,requestId=(this.stockRequestId||0)+1;this.stockRequestId=requestId;
@@ -615,7 +610,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
         this.stockAppliedId=requestId;
         const fresh=new Map(body.products.map(p=>[String(p.id),p]));
         const merge=items=>(items||[]).map(p=>fresh.has(String(p.id))?{...p,...fresh.get(String(p.id))}:p);
-        await this.checkoutSetState(s=>({productsLocal:merge(s.productsLocal||s.data?.PRODUCTS),data:s.data?{...s.data,BUSINESS_DATE:body.businessDate,PRODUCTS:merge(s.data.PRODUCTS)}:s.data,stockAvailabilityError:'',stockCheckedAt:body.checkedAt,...(Array.isArray(body.activePromotions)?{checkoutPromotions:body.activePromotions,cart:s.cart.map(l=>({...l,promo:body.activePromotions.find(p=>(p.productIds||[]).includes(l.productId)||(p.type==='Category-Wide'&&p.category===(fresh.get(String(l.productId))||(s.productsLocal||[]).find(x=>x.id===l.productId))?.category))||null}))}:{})}));
+        await this.checkoutSetState(s=>({productsLocal:merge(s.productsLocal||s.data?.PRODUCTS),data:s.data?{...s.data,BUSINESS_DATE:body.businessDate,PRODUCTS:merge(s.data.PRODUCTS)}:s.data,stockAvailabilityError:'',stockCheckedAt:body.checkedAt,...(Array.isArray(body.activePromotions)?{checkoutPromotions:body.activePromotions,cart:s.cart.map(l=>({...l,promo:body.activePromotions.find(p=>((p.productIds||[]).some(id=>String(id)===String(l.productId))||(p.type==='Category-Wide'&&p.category===(fresh.get(String(l.productId))||(s.productsLocal||[]).find(x=>x.id===l.productId))?.category))&&!this.promotionReason(fresh.get(String(l.productId))||(s.productsLocal||[]).find(x=>x.id===l.productId),p.type,body.businessDate))||null}))}:{})}));
       }
       return body.products;
     }catch(error){throw new Error(error.name==='AbortError'?'Stock check timed out. Try again before selling.':error.message);}finally{clearTimeout(timer);this.stockControllers?.delete(controller);}
@@ -644,7 +639,22 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     finally{if(this.stockCheckoutToken===token){this.stockCheckoutChecking=false;this.setState({checkoutStockChecking:false});}}
   };
   promoStatus=(p)=>{ const today=this.state.data?.BUSINESS_DATE||new Date().toISOString().slice(0,10); if(today<p.startDate) return "Scheduled"; if(today>p.endDate) return "Expired"; return "Active"; };
-  activePromo=(productId)=>{ const list=this.state.checkoutPromotions??this.state.promotionsLocal; if(!list) return null; const product=(this.state.productsLocal||this.state.data?.PRODUCTS||[]).find(p=>p.id===productId);return list.find(pr=>((pr.productIds||[]).includes(productId)||(pr.type==='Category-Wide'&&pr.category===product?.category)) && this.promoStatus(pr)==="Active") || null; };
+  promotionReason=(product,type=this.state.promoType,date)=>{
+    if(!product||product.status!=='Active'||product.archivedAt)return 'This product is inactive or archived.';
+    const today=this.state.data?.BUSINESS_DATE||new Date().toISOString().slice(0,10),reference=date||today;
+    const expiry=Object.prototype.hasOwnProperty.call(product,'promotionExpiry')?product.promotionExpiry:product.expiry;
+    const days=expiry?Math.round((Date.parse(expiry+'T00:00:00Z')-Date.parse(reference+'T00:00:00Z'))/86400000):null;
+    if(days!==null&&days<=0)return 'This product is expired and cannot be selected for promotion.';
+    if(days===1)return 'This product expires tomorrow and is no longer eligible for promotion.';
+    if(type==='Near-Expiry'&&(days===null||days>30))return 'Near-expiry promotions require stock expiring within 30 days.';
+    if(Number(product.expiredStock)>0&&Number(product.sellableStock)<=0)return 'This product has no unexpired stock available for promotion.';
+    return '';
+  };
+  activePromo=productId=>{
+    const list=this.state.checkoutPromotions??this.state.promotionsLocal;if(!list)return null;
+    const product=(this.state.productsLocal||this.state.data?.PRODUCTS||[]).find(p=>String(p.id)===String(productId));
+    return list.find(pr=>((pr.productIds||[]).some(id=>String(id)===String(productId))||(pr.type==='Category-Wide'&&pr.category===product?.category))&&this.promoStatus(pr)==='Active'&&!this.promotionReason(product,pr.type))||null;
+  };
   addProductToCart=(p,manual,source='scan')=>{
     if(this.checkoutInFlight||this.stockCheckoutChecking||this.state.paymentState==='processing')return Promise.resolve(false);
     const generation=this.cartGeneration||0,actor=this.state.authenticatedUser;
@@ -675,22 +685,39 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
       overridden:false,overrideReason:"",overrideApprover:"",promo,pulse:false}]}));
     this.toast(`Added "${p.name}"${manual?" (Manual Entry)":""}${promo?" — promo "+promo.name+" applied":""}.`);
   };
-  stepQty=(lineId,delta)=>()=>this.queueStockSelection(async current=>{
-    const line=this.state.cart.find(l=>l.lineId===lineId);
-    if(!line) return;
-    const product=delta>0?(await this.refreshStockAvailability(line.productId,line.qty+delta))[0]:(this.state.productsLocal||this.state.data?.PRODUCTS||[]).find(p=>p.id===line.productId);
-    if(!current())return;
-    if(delta>0 && (!product || line.qty+delta>this.sellableStock(product))){ this.toast(`Only ${this.sellableStock(product)} units of ${line.name} are available.`,"error"); return; }
-    await this.checkoutSetState(s=>({cart:s.cart.map(l=>{
-      if(l.lineId!==lineId)return l;
-      const qty=Math.max(1,l.qty+delta),change=qty-l.qty;
-      let manualQty=l.manualQty||0;
-      if(change>0&&l.lastEntryMethod==="Manual lookup")manualQty+=change;
-      if(change<0&&(l.lastEntryMethod==="Manual lookup"?manualQty>0:l.qty===manualQty))manualQty+=change;
-      return {...l,qty,manualQty,manual:manualQty>0};
-    })}));
-  });
-  removeLine=lineId=>()=>this.setState(s=>({cart:s.cart.filter(l=>l.lineId!==lineId)}));
+  setCartQuantityDraft=lineId=>e=>{
+    const value=e.target.value;
+    if(!/^[0-9]*$/.test(value)){this.setState(s=>({quantityErrors:{...s.quantityErrors,[lineId]:'Enter whole numbers only.'}}));return;}
+    this.setState(s=>({quantityDrafts:{...s.quantityDrafts,[lineId]:value},quantityErrors:{...s.quantityErrors,[lineId]:undefined}}));
+  };
+  updateCartQuantity=(lineId,raw)=>{
+    if(this.stockSelections||this.stockCheckoutChecking||this.checkoutInFlight||this.state.paymentState==='processing')return Promise.resolve(false);
+    const qty=Number(raw),line=this.state.cart.find(l=>l.lineId===lineId);
+    if(!line)return Promise.resolve(false);
+    if(!/^[0-9]+$/.test(String(raw))||!Number.isInteger(qty)||qty<1||qty>1000000){this.setState(s=>({quantityErrors:{...s.quantityErrors,[lineId]:'Enter a whole quantity between 1 and 1,000,000.'}}));return Promise.resolve(false);}
+    if(qty===line.qty){this.setState(s=>({quantityDrafts:{...s.quantityDrafts,[lineId]:undefined},quantityErrors:{...s.quantityErrors,[lineId]:undefined}}));return Promise.resolve(true);}
+    return this.queueStockSelection(async current=>{
+      try{
+        if(qty>line.qty)await this.refreshStockAvailability(line.productId,qty);
+        if(!current()||!this.state.cart.some(l=>l.lineId===lineId))return false;
+        await this.checkoutSetState(s=>({cart:s.cart.map(l=>{
+          if(l.lineId!==lineId)return l;
+          const change=qty-l.qty;let manualQty=l.manualQty||0;
+          if(change>0&&l.lastEntryMethod==='Manual lookup')manualQty+=change;
+          if(change<0&&(l.lastEntryMethod==='Manual lookup'?manualQty>0:l.qty===manualQty))manualQty+=change;
+          manualQty=Math.max(0,Math.min(qty,manualQty));return {...l,qty,manualQty,manual:manualQty>0};
+        }),quantityDrafts:{...s.quantityDrafts,[lineId]:undefined},quantityErrors:{...s.quantityErrors,[lineId]:undefined}}));
+        return true;
+      }catch(error){if(current())this.setState(s=>({quantityErrors:{...s.quantityErrors,[lineId]:error.message}}));throw error;}
+    });
+  };
+  stepQty=(lineId,delta)=>()=>{
+    const line=this.state.cart.find(l=>l.lineId===lineId);if(!line)return Promise.resolve(false);
+    const raw=this.state.quantityDrafts?.[lineId]??line.qty;
+    if(!/^[0-9]+$/.test(String(raw)))return this.updateCartQuantity(lineId,raw);
+    return this.updateCartQuantity(lineId,String(Math.max(1,Number(raw)+delta)));
+  };
+  removeLine=lineId=>()=>this.setState(s=>({cart:s.cart.filter(l=>l.lineId!==lineId),quantityDrafts:{...s.quantityDrafts,[lineId]:undefined},quantityErrors:{...s.quantityErrors,[lineId]:undefined}}));
   openManualLookup=()=>this.setState({manualLookupOpen:true,manualSearch:"",manualCategory:"",manualSubcategoryId:"",manualLookupPage:0});
   closeManualLookup=()=>this.setState({manualLookupOpen:false});
   setManualSearch=e=>this.setState({manualSearch:e.target.value,manualLookupPage:0});
@@ -700,9 +727,9 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
   closeSeniorPwd=()=>this.setState({seniorPwdOpen:false});
   setSeniorField=field=>e=>this.setState(s=>({seniorForm:{...s.seniorForm,[field]:e.target.value}}));
   applySeniorPwd=()=>{ const {name,idNumber}=this.state.seniorForm; if(!name||!idNumber){ this.toast("Name and ID number are required.","error"); return; }
-    this.setState({seniorApplied:true,seniorInfo:{name,idNumber},seniorPwdOpen:false}); this.toast("Senior/PWD 20% discount + VAT exemption applied."); };
+    const type=this.state.seniorForm.type==='pwd'?'pwd':'senior';this.setState({seniorApplied:true,seniorInfo:{name,idNumber,type},employeeDiscount:false,seniorPwdOpen:false});this.toast((type==='pwd'?'PWD':'Senior')+' 10% discount applied after promotion.'); };
   removeSenior=()=>this.setState({seniorApplied:false,seniorInfo:null});
-  toggleEmployeeDiscount=()=>this.setState(s=>({employeeDiscount:!s.employeeDiscount}));
+  toggleEmployeeDiscount=()=>this.setState(s=>({employeeDiscount:!s.employeeDiscount,seniorApplied:false,seniorInfo:null}));
 
   openOverride=lineId=>()=>this.setState({overrideLine:lineId,overrideReason:"",overridePin:""});
   closeOverride=()=>this.setState({overrideLine:null});
@@ -723,22 +750,24 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     if(Math.round(tendered*100)<Math.round(total*100)){this.toast("Tendered amount is less than the total due.","error");return null;}
     return tendered;
   };
+  checkoutLineAmounts=line=>{
+    const base=Math.round(Number(line.originalPrice??line.unitPrice)*100)*line.qty,effective=Math.round(Number(line.unitPrice)*100)*line.qty;
+    const promotionRate=this.state.employeeDiscount?0:Number(line.promo?.discountPct||0),basisPoints=Math.round(promotionRate*100);
+    const afterPromotion=Math.round(effective*(10000-basisPoints)/10000),rate=this.state.employeeDiscount||this.state.seniorApplied?10:0,net=Math.round(afterPromotion*(100-rate)/100);
+    return {base,net,promotionDiscount:effective-afterPromotion,customerDiscount:afterPromotion-net,overrideDiscount:base-effective};
+  };
   computeTotals=()=>{
-    const {cart,seniorApplied,employeeDiscount}=this.state;
-    let subtotal=0,discount=0,vatExempt=0;
-    cart.forEach(l=>{
-      const base=Math.round(Number(l.originalPrice??l.unitPrice)*100)*l.qty;
-      const unit=Math.round(Number(l.unitPrice)*100);
-      const rate=employeeDiscount?10:seniorApplied?20:Number(l.promo?.discountPct||0);
-      const net=Math.round(unit*l.qty*(100-rate)/100);
-      subtotal+=base;discount+=base-net;
-      vatExempt+=net;
-    });
-    return {subtotal:subtotal/100,vatable:0,vatExempt:vatExempt/100,vat:0,discount:discount/100,grandTotal:(subtotal-discount)/100};
+    const totals={subtotal:0,discount:0,promotionDiscount:0,customerDiscount:0,overrideDiscount:0,grandTotal:0,vatable:0,vatExempt:0,vat:0};
+    for(const line of this.state.cart){const amount=this.checkoutLineAmounts(line);totals.subtotal+=amount.base;totals.grandTotal+=amount.net;for(const key of ['promotionDiscount','customerDiscount','overrideDiscount'])totals[key]+=amount[key];}
+    totals.discount=totals.subtotal-totals.grandTotal;totals.vatExempt=totals.grandTotal;
+    for(const key of Object.keys(totals))totals[key]/=100;return totals;
   };
   startPayment=async()=>{
     if(this.overrideDeclining){this.toast('Wait for the manager decision to finish.','error');return;}
     if(this.stockSelections||this.stockCheckoutChecking)return;
+    if(Object.values(this.state.quantityErrors||{}).some(Boolean)){this.toast('Correct the highlighted quantity before payment.','error');return;}
+    const edited=this.state.cart.find(line=>this.state.quantityDrafts?.[line.lineId]!==undefined&&String(this.state.quantityDrafts[line.lineId])!==String(line.qty));
+    if(edited){await this.updateCartQuantity(edited.lineId,this.state.quantityDrafts[edited.lineId]);return;}
     if(this.checkoutInFlight || this.state.paymentState==="processing") return;
     if(this.state.cart.length===0){ this.toast("Cart is empty.","error"); return; }
     const generation=this.cartGeneration||0,actor=this.state.authenticatedUser;
@@ -802,7 +831,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
       paymentMode: this.state.paymentMethod==="cash"?"Cash":this.state.ewalletProvider,
       tendered, paid:totals.grandTotal, change:Math.max(0,tendered-totals.grandTotal),
       referenceNo: this.state.paymentMethod==="cash"?null:(refCodes[this.state.ewalletProvider]||"RF-")+Math.floor(70000000+Math.random()*9999999),
-      status:"Unused", seniorApplied:this.state.seniorApplied, employeeDiscount:this.state.employeeDiscount };
+      status:"Unused", discountType:this.discountApprovalPayload().discountType,seniorApplied:this.state.seniorApplied, employeeDiscount:this.state.employeeDiscount };
 
     return this.authPost((window.KITA_AUTH&&window.KITA_AUTH.transactionUrl)||"/api/transactions",{
       ...this.discountApprovalPayload(),
@@ -812,7 +841,8 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     }).then(response=>{
       const saved=response.transaction;
       Object.assign(result,{date:saved.date,cashier:saved.cashier,total:saved.total,status:saved.status,paid:saved.paid,tendered:saved.tendered,change:saved.change,referenceNo:saved.referenceNo});
-      result.totals={...result.totals,subtotal:saved.subtotal,discount:saved.discountAmount,grandTotal:saved.total};
+      result.discountType=saved.discountType;result.cart=result.cart.map(line=>({...line,...saved.lines?.find(l=>String(l.productId)===String(line.productId))}));
+      result.totals={...result.totals,subtotal:saved.subtotal,discount:saved.discountAmount,promotionDiscount:saved.promotionDiscount,customerDiscount:saved.customerDiscount,overrideDiscount:saved.overrideDiscount,grandTotal:saved.total};
       this.setState(s=>({transactionResult:result,paymentState:"paid",productsLocal:(s.productsLocal||s.data?.PRODUCTS||[]).map(p=>{
         const sold=result.cart.find(l=>l.productId===p.id);
         return sold?{...p,stock:Math.max(0,p.stock-sold.qty),sellableStock:Math.max(0,this.sellableStock(p)-sold.qty)}:p;
@@ -827,7 +857,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
   };
   newSale=()=>{this.cartGeneration=(this.cartGeneration||0)+1;this.resetCheckoutChecks();this.checkoutUuid=null;this.setState({cart:[],seniorApplied:false,seniorInfo:null,employeeDiscount:false,paymentState:"idle",tendered:"",transactionResult:null,lateWebhook:false,discountManagerId:"",discountManagerPin:""});};
   discountNeedsApproval=()=>this.computeTotals().discount>0 || this.state.cart.some(l=>l.overridden);
-  discountApprovalPayload=()=>({discountType:this.state.employeeDiscount?"employee":this.state.seniorApplied?"senior":"none",discount_manager_id:this.state.discountManagerId||null,discount_manager_pin:this.state.discountManagerPin||null});
+  discountApprovalPayload=()=>({discountType:this.state.employeeDiscount?"employee":this.state.seniorApplied?(this.state.seniorInfo?.type==='pwd'?'pwd':'senior'):"none",discount_manager_id:this.state.discountManagerId||null,discount_manager_pin:this.state.discountManagerPin||null});
   buildDiscountApproval(){
     const h=React.createElement;
     return h("div",{key:"discount-approval",style:{marginTop:12}},[
@@ -858,12 +888,12 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
   };
 
   saveExpiryWindow=async()=>{
-    const days=Number(this.state.expiryAlertDays??this.state.data?.EXPIRY_ALERT_DAYS??7);
+    const days=Number(this.state.expiryAlertDays??this.state.data?.EXPIRY_ALERT_DAYS??30);
     try{const r=await this.authPost('/api/inventory/expiry-settings',{days},'PATCH');await this.reloadCatalog();this.setState({expiryDays:days});this.toast(r.message);}catch(e){this.toast(e.message,'error');}
   };
   buildExpirySettings(){
     const h=React.createElement;
-    return h('div',{className:'purchase-filters'},[h('label',null,['Notification window (days)',h('input',{type:'number',min:0,max:365,value:this.state.expiryAlertDays??this.state.data?.EXPIRY_ALERT_DAYS??7,onChange:e=>this.setState({expiryAlertDays:e.target.value})})]),btn('Save alert window',this.saveExpiryWindow)]);
+    return h('div',{className:'purchase-filters'},[h('label',null,['Notification window (days)',h('input',{type:'number',min:0,max:365,value:this.state.expiryAlertDays??this.state.data?.EXPIRY_ALERT_DAYS??30,onChange:e=>this.setState({expiryAlertDays:e.target.value})})]),btn('Save alert window',this.saveExpiryWindow)]);
   }
   loadRecallTrace=async(batchId)=>{
     this.setState({recallTraceError:'',recallTrace:null});
@@ -1247,8 +1277,9 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
   openPromoPicker=()=>this.setState({promoPickerOpen:true,promoPickerSearch:"",promoPickerChecked:Object.fromEntries(this.state.promoSelectedItems.map(id=>[id,true]))});
   closePromoPicker=()=>this.setState({promoPickerOpen:false});
   setPromoPickerSearch=e=>this.setState({promoPickerSearch:e.target.value});
-  togglePromoPickerCheck=id=>()=>this.setState(s=>({promoPickerChecked:{...s.promoPickerChecked,[id]:!s.promoPickerChecked[id]}}));
-  confirmPromoPicker=()=>{ const ids=Object.keys(this.state.promoPickerChecked).filter(k=>this.state.promoPickerChecked[k]).map(Number); this.setState({promoSelectedItems:ids,promoPickerOpen:false}); };
+  togglePromoPickerCheck=id=>()=>{const p=this.state.data.PRODUCTS.find(p=>String(p.id)===String(id)),reason=this.promotionReason(p,this.state.promoType,this.promotionReferenceDate());if(reason){this.toast(reason,'error');return;}this.setState(s=>({promoPickerChecked:{...s.promoPickerChecked,[id]:!s.promoPickerChecked[id]}}));};
+  promotionReferenceDate=()=>[this.state.data?.BUSINESS_DATE||new Date().toISOString().slice(0,10),this.state.promoStartDate||''].sort().at(-1);
+  confirmPromoPicker=()=>{ const ids=Object.keys(this.state.promoPickerChecked).filter(k=>this.state.promoPickerChecked[k]&&!this.promotionReason(this.state.data.PRODUCTS.find(p=>String(p.id)===k),this.state.promoType,this.promotionReferenceDate())).map(Number); this.setState({promoSelectedItems:ids,promoPickerOpen:false}); };
   removePromoSelectedItem=id=>()=>this.setState(s=>({promoSelectedItems:s.promoSelectedItems.filter(x=>x!==id)}));
   setPromoStartDate=e=>this.setState({promoStartDate:e.target.value});
   setPromoEndDate=e=>this.setState({promoEndDate:e.target.value});
@@ -1257,8 +1288,8 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
   setPromoCategory=e=>this.setState({promoCategory:e.target.value});
   setPromoDiscountPct=e=>this.setState({promoDiscountPct:e.target.value});
   resetPromoForm=()=>this.setState({promoSelectedItems:[],promoStartDate:"",promoEndDate:"",promoType:"Near-Expiry",promoOccasionName:"",promoCategory:"",promoDiscountPct:""});
-  quickPromoFromNearExpiry=productId=>()=>{ this.setState({screen:"mgrPromotions",promoSelectedItems:[productId],promoType:"Near-Expiry",promoStartDate:this.state.data.BUSINESS_DATE,promoEndDate:this.state.data.BUSINESS_DATE,promoDiscountPct:""}); };
-  quickPromoFromLeastSales=productId=>()=>{ this.setState({screen:"mgrPromotions",promoSelectedItems:[productId],promoType:"Slow-Moving",promoStartDate:this.state.data.BUSINESS_DATE,promoEndDate:this.state.data.BUSINESS_DATE,promoDiscountPct:""}); };
+  quickPromoFromNearExpiry=productId=>()=>{const p=this.state.data.PRODUCTS.find(p=>String(p.id)===String(productId)),reason=this.promotionReason(p,'Near-Expiry');if(reason){this.toast(reason,'error');return;} this.setState({screen:"mgrPromotions",promoSelectedItems:[productId],promoType:"Near-Expiry",promoStartDate:this.state.data.BUSINESS_DATE,promoEndDate:this.state.data.BUSINESS_DATE,promoDiscountPct:""}); };
+  quickPromoFromLeastSales=productId=>()=>{const p=this.state.data.PRODUCTS.find(p=>String(p.id)===String(productId)),reason=this.promotionReason(p,'Slow-Moving');if(reason){this.toast(reason,'error');return;} this.setState({screen:"mgrPromotions",promoSelectedItems:[productId],promoType:"Slow-Moving",promoStartDate:this.state.data.BUSINESS_DATE,promoEndDate:this.state.data.BUSINESS_DATE,promoDiscountPct:""}); };
   copyPromotion=promo=>()=>{ this.setState({promoSelectedItems:[...promo.productIds],promoType:promo.type,promoOccasionName:promo.occasionName||"",promoCategory:promo.category||"",promoDiscountPct:String(promo.discountPct),promoStartDate:"",promoEndDate:""}); this.toast("Promotion copied — set new dates and save."); };
   savePromotion=async()=>{
     if(this.promotionSaving)return;
@@ -1266,6 +1297,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     if(!promoStartDate||!promoEndDate||promoStartDate>promoEndDate){ this.toast("Pick a valid start/end date range.","error"); return; }
     const pct=parseFloat(promoDiscountPct); if(isNaN(pct)||pct<=0||pct>=100){ this.toast("Enter a valid discount percentage.","error"); return; }
     let productIds = promoType==="Category-Wide" ? data.PRODUCTS.filter(p=>p.category===promoCategory).map(p=>p.id) : promoSelectedItems;
+    for(const id of productIds){const p=data.PRODUCTS.find(p=>String(p.id)===String(id)),reason=this.promotionReason(p,promoType,this.promotionReferenceDate());if(reason){this.toast((p?.name||'Product')+': '+reason,'error');return;}}
     if(!productIds.length){ this.toast(promoType==="Category-Wide"?"Select a category.":"Select at least one item.","error"); return; }
     for(const pid of productIds){ const p=data.PRODUCTS.find(pp=>pp.id===pid); const promoPrice=p.price*(1-pct/100);
       if(promoPrice<Number(p.unitPrice??p.cost)){ this.toast(`"${p.name}": this discount would sell below cost — ${peso(p.unitPrice??p.cost)} minimum.`,"error"); return; } }
@@ -1326,7 +1358,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     if(transactionResult) return this.buildTransactionView(transactionResult);
     const totals=this.computeTotals();
     const stockBusy=!!(this.state.stockSelectionPending||this.state.checkoutStockChecking||this.state.barcodeCatalogLookup),controlsBusy=stockBusy||paymentState==='processing'||!!this.checkoutInFlight;
-    const priorityNote = employeeDiscount ? "Applied: Employee Discount (10%) — Senior/PWD & Promotions not stacked" : seniorApplied ? "Applied: Senior/PWD Discount (20% + VAT exemption) — Promotions not stacked" : null;
+    const priorityNote=employeeDiscount?"Employee discount: 10%.":seniorApplied?"Promotion discount applies first, followed by the selected 10% customer discount.":null;
     const cartRows=cart.map(l=>tr([
       td(React.createElement("div",null,[
         React.createElement("div",{key:"n",style:{fontWeight:700}},l.name),
@@ -1335,9 +1367,9 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
         l.overridden?React.createElement("span",{key:"o",title:`Approved by ${l.overrideApprover} — ${l.overrideReason}`,style:{fontSize:10,fontWeight:700,color:COLORS.amber,background:COLORS.amberBg,padding:"2px 6px",borderRadius:6,marginRight:6}},"Overridden"):null,
         (l.promo && !employeeDiscount && !seniorApplied)?React.createElement("span",{key:"p",style:{fontSize:10,fontWeight:700,color:COLORS.purple,background:COLORS.purpleBg,padding:"2px 6px",borderRadius:6}},"Promo: "+l.promo.name):null,
       ])),
-      td(React.createElement("div",{style:{display:"flex",alignItems:"center",gap:6,animation:l.pulse?"pulse .3s ease 2":"none"}},[
+      td(React.createElement("div",{className:"checkout-quantity-control",style:{display:"flex",alignItems:"center",gap:6,animation:l.pulse?"pulse .3s ease 2":"none"}},[
         React.createElement("button",{key:"m",onClick:this.stepQty(l.lineId,-1),disabled:controlsBusy,style:{width:24,height:24,borderRadius:6,border:"1px solid "+COLORS.border,background:"#fff",cursor:"pointer"}},"−"),
-        React.createElement("span",{key:"q",style:{minWidth:20,textAlign:"center",fontWeight:700}},l.qty),
+        React.createElement('div',{key:'q',className:'checkout-quantity-field'},[React.createElement('input',{type:'text',inputMode:'numeric',pattern:'[0-9]*',maxLength:7,'aria-label':'Quantity for '+l.name,'aria-invalid':!!this.state.quantityErrors?.[l.lineId],disabled:controlsBusy,value:this.state.quantityDrafts?.[l.lineId]??String(l.qty),onChange:this.setCartQuantityDraft(l.lineId),onBlur:e=>this.updateCartQuantity(l.lineId,e.target.value),onKeyDown:e=>{if(e.key==='Enter'){e.preventDefault();this.updateCartQuantity(l.lineId,e.target.value);}}}),this.state.quantityErrors?.[l.lineId]?React.createElement('small',{role:'alert'},this.state.quantityErrors[l.lineId]):null]),
         React.createElement("button",{key:"p",onClick:this.stepQty(l.lineId,1),disabled:controlsBusy,style:{width:24,height:24,borderRadius:6,border:"1px solid "+COLORS.border,background:"#fff",cursor:"pointer"}},"+"),
       ])),
       td(l.overridden?React.createElement("div",null,[React.createElement("span",{key:"s",style:{textDecoration:"line-through",color:COLORS.textMuted,marginRight:6}},peso(l.originalPrice)),React.createElement("span",{key:"n",style:{color:COLORS.green}},peso(l.unitPrice))]):peso(l.unitPrice)),
@@ -1370,15 +1402,15 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
         card([React.createElement("div",{key:"t",style:{fontWeight:800,marginBottom:10}},"3. Discounts"),
           React.createElement("div",{key:"row",style:{display:"flex",flexDirection:"column",gap:8}},[
             React.createElement("label",{key:"emp",style:{display:"flex",alignItems:"center",gap:8,fontSize:13,fontWeight:600}},[React.createElement("input",{key:"cb",type:"checkbox",checked:employeeDiscount,onChange:this.toggleEmployeeDiscount}),"Employee Discount (10%)"]),
-            seniorApplied?React.createElement("div",{key:"chip",style:{background:COLORS.greenBg,color:COLORS.green,padding:"8px 10px",borderRadius:8,fontSize:12,fontWeight:700,display:"flex",justifyContent:"space-between"}},[React.createElement("span",{key:"n"},`Senior/PWD: ${seniorInfo.name}`),React.createElement("span",{key:"x",onClick:this.removeSenior,style:{cursor:"pointer"}},"✕")])
+            seniorApplied?React.createElement("div",{key:"chip",style:{background:COLORS.greenBg,color:COLORS.green,padding:"8px 10px",borderRadius:8,fontSize:12,fontWeight:700,display:"flex",justifyContent:"space-between"}},[React.createElement("span",{key:"n"},`${seniorInfo?.type==='pwd'?'PWD':'Senior'} (10%): ${seniorInfo.name}`),React.createElement("span",{key:"x",onClick:this.removeSenior,style:{cursor:"pointer"}},"✕")])
               :React.createElement("button",{key:"btn",onClick:this.openSeniorPwd,style:{padding:"9px 10px",background:"#fff",border:"1px solid "+COLORS.border,borderRadius:8,fontWeight:700,fontSize:12,cursor:"pointer"}},"Apply Senior/PWD Discount"),
           ]),
           priorityNote?React.createElement("div",{key:"pn",style:{marginTop:8,fontSize:11,color:COLORS.textSoft,fontStyle:"italic"}},priorityNote):null,
           this.discountNeedsApproval()?this.buildDiscountApproval():null,
         ]),
         card([React.createElement("div",{key:"t",style:{fontWeight:800,marginBottom:10}},"4. Summary"),
-          ...[["Subtotal",totals.subtotal],["VAT-Exempt Sales",totals.vatExempt],["Discount",-totals.discount]].map(([l,v],i)=>
-            React.createElement("div",{key:i,style:{display:"flex",justifyContent:"space-between",fontSize:13,padding:"4px 0",color:l==="Discount"&&v<0?COLORS.red:COLORS.textSoft}},[React.createElement("span",{key:"l"},l),React.createElement("span",{key:"v",style:{fontFamily:"'JetBrains Mono',monospace"}},peso(v))])),
+          ...[["Subtotal",totals.subtotal],["Promotion Discount",-totals.promotionDiscount],[employeeDiscount?"Employee Discount (10%)":seniorApplied?(seniorInfo?.type==='pwd'?"PWD Discount (10%)":"Senior Discount (10%)"):"Customer Discount",-totals.customerDiscount],["Price Override Discount",-totals.overrideDiscount],["VAT-Exempt Sales",totals.vatExempt]].filter(([label,value])=>!["Price Override Discount"].includes(label)||value!==0).map(([l,v],i)=>
+            React.createElement("div",{key:i,style:{display:"flex",justifyContent:"space-between",fontSize:13,padding:"4px 0",color:v<0?COLORS.red:COLORS.textSoft}},[React.createElement("span",{key:"l"},l),React.createElement("span",{key:"v",style:{fontFamily:"'JetBrains Mono',monospace"}},peso(v))])),
           React.createElement("div",{key:"tot",style:{display:"flex",justifyContent:"space-between",fontSize:17,fontWeight:800,marginTop:10,paddingTop:10,borderTop:"1px solid "+COLORS.border}},[React.createElement("span",{key:"l"},"Total"),React.createElement("span",{key:"v",style:{fontFamily:"'JetBrains Mono',monospace"}},peso(totals.grandTotal))]),
         ]),
         card([React.createElement("div",{key:"t",style:{fontWeight:800,marginBottom:10}},"5. Payment"),
@@ -1394,7 +1426,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
           (paymentState==="failed"||paymentState==="timeout")?React.createElement("div",{key:"fail",style:{background:COLORS.redBg,color:COLORS.red,padding:"10px",borderRadius:8,fontSize:12,fontWeight:700,marginBottom:8}},[React.createElement("div",{key:"m"},paymentState==="timeout"?"Timed out — reservation released.":"Payment failed."),React.createElement("div",{key:"a",style:{display:"flex",gap:8,marginTop:6}},[btn("Retry",this.retryPayment),btn("Switch to Cash",this.switchToCash)])]):null,
           paymentState==="cancelled"?React.createElement("div",{key:"c",style:{background:COLORS.redBg,color:COLORS.red,padding:"10px",borderRadius:8,fontSize:12,fontWeight:700,marginBottom:8}},"Payment cancelled."):null,
           React.createElement("div",{key:"actions",style:{display:"flex",gap:8}},[
-            (paymentState==="idle"||paymentState==="failed"||paymentState==="timeout"||paymentState==="cancelled")?React.createElement("button",{key:"pay",onClick:this.startPayment,disabled:controlsBusy||!!this.state.checkoutStockError||!cart.length,"aria-busy":stockBusy,style:{flex:1,padding:"11px",background:COLORS.brand,color:"#fff",border:"none",borderRadius:8,fontWeight:800,cursor:"pointer"}},this.state.checkoutStockChecking?"Checking Stock...":this.state.stockSelectionPending?"Adding Products...":"Complete Sale "+peso(totals.grandTotal)):null,
+            (paymentState==="idle"||paymentState==="failed"||paymentState==="timeout"||paymentState==="cancelled")?React.createElement("button",{key:"pay",onClick:this.startPayment,disabled:controlsBusy||!!this.state.checkoutStockError||Object.values(this.state.quantityErrors||{}).some(Boolean)||!cart.length,"aria-busy":stockBusy,style:{flex:1,padding:"11px",background:COLORS.brand,color:"#fff",border:"none",borderRadius:8,fontWeight:800,cursor:"pointer"}},this.state.checkoutStockChecking?"Checking Stock...":this.state.stockSelectionPending?"Adding Products...":"Complete Sale "+peso(totals.grandTotal)):null,
             (paymentState==="pending"||paymentState==="processing")?React.createElement("button",{key:"cancel",onClick:this.cancelPayment,style:{flex:1,padding:"11px",background:"#fff",border:"1px solid "+COLORS.border,borderRadius:8,fontWeight:700,cursor:"pointer"}},"Cancel"):null,
           ]),
         ]),
@@ -1455,7 +1487,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
   }
   buildSeniorModal(){ const {seniorForm}=this.state; return React.createElement("div",{key:"sm",style:{position:"fixed",inset:0,background:"rgba(15,31,74,0.38)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:50}},
     React.createElement("div",{style:{width:360,maxWidth:'calc(100vw - 32px)',maxHeight:'calc(100dvh - 32px)',overflowY:'auto',background:"#fff",borderRadius:14,padding:20}},[
-      React.createElement("div",{key:"t",style:{fontWeight:800,marginBottom:10}},"Senior Citizen / PWD Discount"),
+      React.createElement("div",{key:"t",style:{fontWeight:800,marginBottom:10}},"Customer Discount (10%)"),React.createElement("label",null,["Discount Type",React.createElement("select",{value:seniorForm.type||"senior",onChange:this.setSeniorField("type"),"aria-label":"Customer discount type"},[React.createElement("option",{value:"senior"},"Senior (10%)"),React.createElement("option",{value:"pwd"},"PWD (10%)")])]),
       React.createElement("input",{key:"n",value:seniorForm.name,onChange:this.setSeniorField("name"),placeholder:"Full name",style:{width:"100%",padding:"9px 10px",border:"1px solid "+COLORS.border,borderRadius:8,marginBottom:8}}),
       React.createElement("input",{key:"id",value:seniorForm.idNumber,onChange:this.setSeniorField("idNumber"),placeholder:"Senior/PWD ID number",style:{width:"100%",padding:"9px 10px",border:"1px solid "+COLORS.border,borderRadius:8,marginBottom:12}}),
       React.createElement("div",{key:"a",style:{display:"flex",gap:8}},[React.createElement("button",{key:"c",onClick:this.closeSeniorPwd,style:{flex:1,padding:10,background:"#f7f9fc",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer"}},"Cancel"),React.createElement("button",{key:"a",onClick:this.applySeniorPwd,style:{flex:1,padding:10,background:COLORS.brand,color:"#fff",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer"}},"Apply Discount")]),
@@ -1486,7 +1518,8 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
           ])),
         ]),
         h("div",{key:"totals",className:"receipt-section"},[
-          row("Subtotal",amount(t.totals.subtotal)),row("Discount","-"+amount(t.totals.discount)),
+          row("Subtotal",amount(t.totals.subtotal)),
+          ...(t.totals.promotionDiscount==null?[row('Discount','-'+amount(t.totals.discount))]:[row('Promotion Discount','-'+amount(t.totals.promotionDiscount)),row(t.discountType==='pwd'?'PWD Discount':t.discountType==='employee'?'Employee Discount':t.discountType==='senior'?'Senior Discount':'Customer Discount','-'+amount(t.totals.customerDiscount)),...(Number(t.totals.overrideDiscount)>0?[row('Price Override Discount','-'+amount(t.totals.overrideDiscount))]:[])]),
           row("TOTAL (\u20B1)",amount(t.totals.grandTotal),"receipt-total"),
           row("Items purchased",String(t.cart.reduce((sum,line)=>sum+Number(line.qty),0))),
         ]),
@@ -1507,14 +1540,14 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
         ]),
       ]),
       btn('Print receipt',()=>window.print()),
-      h("button",{key:"new",onClick:exchange?()=>this.setState({exchangeReceiptOpen:false}):this.newSale,className:"primary-button receipt-new-sale"},exchange?"Back to returns":"Start New Sale"),
+      h("button",{key:"new",onClick:exchange?()=>this.setState({exchangeReceiptOpen:false}):this.newSale,className:"primary-button receipt-new-sale"},exchange?"Close Receipt":"Start New Sale"),
     ]);
   }
 
   buildRefunds(){
     const {data,refundTxn,refundLookup,refundError}=this.state;
     if(!data) return null;
-    if(this.state.exchangeReceiptOpen&&this.state.exchangeTransaction){const t=this.state.exchangeTransaction;return this.buildTransactionView({...t,cart:t.lines,totals:{subtotal:t.subtotal,discount:t.discountAmount,grandTotal:t.total,vatExempt:t.total}},true);}
+    if(this.state.exchangeReceiptOpen&&this.state.exchangeTransaction){const t=this.state.exchangeTransaction;return this.buildTransactionView({...t,cart:t.lines,totals:{subtotal:t.subtotal,discount:t.discountAmount,promotionDiscount:t.promotionDiscount,customerDiscount:t.customerDiscount,overrideDiscount:t.overrideDiscount,grandTotal:t.total,vatExempt:t.total}},true);}
     const field=(key,label,type="text")=>React.createElement("input",{key,type,placeholder:label,"aria-label":label,value:this.state[key]||"",onChange:e=>this.setState({[key]:e.target.value}),maxLength:type==="password"?4:255,...(type==="number"?{min:0,step:"0.01"}:{}),inputMode:type==="password"?"numeric":undefined,autoComplete:"off",style:{padding:10,marginBottom:10,width:"100%",boxSizing:"border-box"}});
     return React.createElement("div",null,[
       moduleTitle("Refunds, Exchanges & Voids"),
@@ -1522,6 +1555,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
       refundError?React.createElement("p",{key:"error",role:"alert",style:{color:COLORS.red}},refundError):null,
       refundTxn?card([
         React.createElement("h3",{key:"transaction"},refundTxn.uuid+" ? "+peso(refundTxn.total)+" ? "+refundTxn.status),
+        refundTxn.promotionDiscount!=null?React.createElement('dl',{className:'transaction-discount-breakdown'},[['Promotion Discount',refundTxn.promotionDiscount],[refundTxn.discountType==='pwd'?'PWD Discount':refundTxn.discountType==='senior'?'Senior Discount':refundTxn.discountType==='employee'?'Employee Discount':'Customer Discount',refundTxn.customerDiscount],['Price Override Discount',refundTxn.overrideDiscount]].map(([label,value])=>React.createElement('div',{key:label},[React.createElement('dt',null,label),React.createElement('dd',null,peso(value))]))):null,
         this.state.approvalResult?React.createElement("p",{key:"result"},this.state.approvalResult):null,
         this.state.exchangeTransaction?btn('View replacement receipt',()=>this.setState({exchangeReceiptOpen:true})):null,
         ["Unused","Paid","Partially Refunded"].includes(refundTxn.status)?React.createElement("div",{key:"actions"},[
@@ -1677,7 +1711,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
           h('small',null,'Batch: '+x.p.batch),
           h('p',{className:x.days<=0?'dashboard-stock-alert':null},x.days<=0?'Expired - blocked from sale':x.days+' day(s) left'),
         ]),
-        manager&&x.days>0?btn('Create promotion',this.quickPromoFromNearExpiry(x.p.id),'primary'):badge(x.days<=0?'Expired':'Near expiry'),
+        manager&&x.days>1?btn('Create promotion',this.quickPromoFromNearExpiry(x.p.id),'primary'):badge(x.days<=0?'Expired':'Near expiry'),
       ])):h('p',{role:'status',className:'record-empty'},'Nothing near expiry.')),
       manager?btn('View Near-Expiry Monitoring',()=>{this.setState({screen:'mgrInventory',invTab:'expiry'});this.loadInventoryWorkflows();}):null,
     ]);
@@ -2130,7 +2164,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
         ]),
         this.state.receiveError?h('p',{role:'alert',className:'inspection-error'},this.state.receiveError):null
       ])),
-      h('footer',{className:'inspection-footer'},[h('div',{className:'inspection-totals'},[h('div',null,[h('small',null,'Current PO accepted'),h('strong',null,primary.reduce((n,e)=>n+this.inspectionAccepted(e),0)+' units')]),h('div',null,[h('small',null,'Previous PO accepted'),h('strong',null,extra.reduce((n,e)=>n+this.inspectionAccepted(e),0)+' units')]),h('div',null,[h('small',null,'Total accepted'),h('strong',null,accepted+' '+quantityLabel)])]),h('div',{className:'inspection-footer-actions'},[h('button',{type:'button',className:'receive-cancel',disabled:!!this.state.receivingSaving,onClick:this.state.inspectionReview?()=>this.setState({inspectionReview:false}):close},this.state.inspectionReview?'Back':'Cancel'),h('button',{type:'button',className:'primary-button',disabled:!!this.state.receivingSaving,onClick:this.state.inspectionReview?this.submitInspection:this.reviewInspection},this.state.receivingSaving?'Saving...':this.state.inspectionReview?'Confirm Stock Receipt':'Review & Confirm')])])
+      h('footer',{className:'inspection-footer'},[h('div',{className:'inspection-totals'},[h('div',null,[h('small',null,'Current PO accepted'),h('strong',null,primary.reduce((n,e)=>n+this.inspectionAccepted(e),0)+' units')]),h('div',null,[h('small',null,'Previous PO accepted'),h('strong',null,extra.reduce((n,e)=>n+this.inspectionAccepted(e),0)+' units')]),h('div',null,[h('small',null,'Total accepted'),h('strong',null,accepted+' '+quantityLabel)])]),h('div',{className:'inspection-footer-actions'},[h('button',{type:'button',className:'receive-cancel',disabled:!!this.state.receivingSaving,onClick:this.state.inspectionReview?()=>this.setState({inspectionReview:false}):close},this.state.inspectionReview?'Edit Receipt':'Cancel'),h('button',{type:'button',className:'primary-button',disabled:!!this.state.receivingSaving,onClick:this.state.inspectionReview?this.submitInspection:this.reviewInspection},this.state.receivingSaving?'Saving...':this.state.inspectionReview?'Confirm Stock Receipt':'Review & Confirm')])])
     ]));
   }
 
@@ -2286,7 +2320,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
       detail?h('dialog',{className:'purchase-details-dialog po-order-dialog','aria-labelledby':'supplier-balance-title',ref:node=>{if(node&&!node.open)node.showModal();},onCancel:e=>{e.preventDefault();this.setState({supplierBalanceDetail:null});}},[
         h('header',{className:'po-dialog-header'},[h('h2',{id:'supplier-balance-title'},detail.supplier+' / '+detail.reportPo),btn('Close',()=>this.setState({supplierBalanceDetail:null}))]),
         h('div',{className:'po-dialog-body'},[h('p',null,detail.name+' / '+amount(detail)),h('p',null,detail.remarks),this.recordTable('supplier-obligation-history',['Date and Time','Type','Accepted Qty','Damaged Qty','Remarks'],(detail.history||[]).map(e=>tr([td(e.created_at),td(e.type),td(e.accepted),td(e.damaged),td(e.reason||'')],e.id)))]),
-        h('footer',{className:'dialog-actions'},[btn('Back to Supplier',()=>this.setState({supplierBalanceDetail:null}))])]):null,
+        h('footer',{className:'dialog-actions'},[btn('Close',()=>this.setState({supplierBalanceDetail:null}))])]):null,
       h('details',null,[h('summary',null,'Historical payment and credit entries'),this.recordTable('supplier-payment-history',['Date','Receipt ID','Type','Amount','Reference','Remarks'],(d?.settlements||[]).filter(e=>!s.accountSupplier||(d?.receipts||[]).some(r=>r.id===e.receiptId&&String(r.supplierId)===String(s.accountSupplier))).map(e=>tr([td(e.date),td(e.receiptId),td(e.kind),td(peso(e.amount)),td(e.reference),td(e.voidedAt?'Voided: '+e.voidReason:e.notes)],e.id)))])]);
   }
   buildPurchaseStatusList(declined=false){
@@ -2395,7 +2429,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     if(s.workflowLoading&&!d)return h('div',null,[...common,loadingStatus('Loading inventory records...')]);
     if(!d)return h('div',null,[...common,h('p',null,'Load inventory records to continue.')]);
     if(tab==='expiry'){
-      const days=Number(s.expiryDays??s.data?.EXPIRY_ALERT_DAYS??7),batches=d.batches.filter(b=>b.expiryDate&&Math.ceil((new Date(b.expiryDate)-new Date(d.today))/86400000)<=days).sort((a,b)=>a.expiryDate.localeCompare(b.expiryDate));
+      const days=Number(s.expiryDays??s.data?.EXPIRY_ALERT_DAYS??30),batches=d.batches.filter(b=>b.expiryDate&&Math.ceil((new Date(b.expiryDate)-new Date(d.today))/86400000)<=days).sort((a,b)=>a.expiryDate.localeCompare(b.expiryDate));
       return h('div',null,[...common,h('a',{className:'kita-button',href:'/reports/data?type=expiry&format=print&to='+new Date(new Date(d.today+'T00:00:00Z').getTime()+days*86400000).toISOString().slice(0,10),target:'_blank',rel:'noopener'},'Print Expiration Report'),this.buildExpirySettings(),h('label',null,['Show expiry within days (including expired stock)',h('input',{type:'number',min:0,max:3650,value:days,onChange:e=>this.setState({expiryDays:Math.max(0,Number(e.target.value)||0)})})]),this.recordTable('live-expiry',['Product ID','Product','Category','Manufacturer','Batch','Expiry','Days left','Remaining','Unit','Status','Action'],batches.map(b=>tr([td(b.productId),td(b.name),td(b.category||'Not recorded'),td(b.manufacturer||'Not recorded'),td(b.batchNumber||'No batch label'),td(b.expiryDate),td(Math.ceil((new Date(b.expiryDate)-new Date(d.today))/86400000)),td(b.quantityRemaining),td(b.stockUnit),td(b.expiryDate<=d.today?'Expired - blocked':'Expiring soon'),td(btn('Pull out',()=>this.setState({invTab:'writeoffs',workflowKey:null,workflowForm:{type:'Disposal',batchId:b.id,quantity:b.quantityRemaining,reason:b.expiryDate<=d.today?'Expired stock':'Short shelf life - manual pull-out'}})))],b.id)))]);
     }
     if(tab==='reconciliation'){
@@ -2682,7 +2716,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     const field=(key,label,options)=>h('label',{key},[label,options?h('select',{value:f[key]||'',onChange:e=>this.setInventoryHistoryFilter(key,e.target.value)},[h('option',{value:''},'All'),...options.map(([value,text])=>h('option',{key:value,value},text))]):h('input',{type:'date',value:f[key]||'',onChange:e=>this.setInventoryHistoryFilter(key,e.target.value)})]);
     const schema=this.inventorySchema(kind),rows=this.inventoryRows(kind),busy=this.state.inventoryHistoryLoading,blocked=!history||busy||!!this.state.inventoryHistoryError;
     return h('div',{className:'inventory-workspace'},[sectionTitle(titles[kind]),
-      !embedded?h('div',{className:'inventory-view-tabs'},[btn(kind==='batches'?'\u2190 Back to Stock Receiving':'\u2190 Back to Inventory',()=>this.setState({inventoryHistoryOpen:false})),...Object.entries(titles).filter(([view])=>view===kind).map(([view,label])=>h('button',{type:'button',className:'kita-button','aria-pressed':kind===view,onClick:()=>{const filters={...f};delete filters.from;delete filters.to;delete filters.lowStock;delete filters.movementType;this.setState({inventoryView:view,inventoryFilters:filters,inventoryAppliedFilters:filters});this.loadInventoryHistory(filters);}},label))]):null,
+      !embedded?h('div',{className:'inventory-view-tabs'},[ ...Object.entries(titles).filter(([view])=>view===kind).map(([view,label])=>h('button',{type:'button',className:'kita-button','aria-pressed':kind===view,onClick:()=>{const filters={...f};delete filters.from;delete filters.to;delete filters.lowStock;delete filters.movementType;this.setState({inventoryView:view,inventoryFilters:filters,inventoryAppliedFilters:filters});this.loadInventoryHistory(filters);}},label))]):null,
       h('div',{className:'purchase-filters'},[field('category','Category',d.CATEGORIES.map(c=>[c.name,c.name])),this.buildSubcategorySelect(f.category,f.subcategoryId,e=>this.setInventoryHistoryFilter('subcategoryId',e.target.value),{includeInactive:true}),field('brandId','Brand',(d.BRANDS||[]).map(c=>[c.id,c.name])),field('productId','Item',d.PRODUCTS.filter(p=>(!f.category||p.category===f.category)&&(!f.subcategoryId||String(p.subcategoryId)===String(f.subcategoryId))&&(!f.brandId||String(p.brandId)===String(f.brandId))&&(kind==='batches'||!f.supplierId||String(p.supplierId)===String(f.supplierId))).map(c=>[c.id,c.name+' #'+c.id])),field('supplierId',kind==='batches'?'Receipt supplier':'Default item supplier',d.SUPPLIERS.map(c=>[c.id,c.name])),...(kind==='products'?[field('lowStock','Stock filter',[['1','Reorder level reached']])]:[field('from',kind==='movements'?'Posted from':'Receipt date from'),field('to',kind==='movements'?'Posted to':'Receipt date to')]),kind==='movements'?field('movementType','Transaction type',Object.entries(history?.movementTypes||{})):null]),
       h('div',{className:'inventory-view-tabs'},[h('button',{className:'kita-button',disabled:busy,onClick:this.applyInventoryFilters},busy?'Refreshing...':'Refresh'),btn('Clear filters',()=>{this.setState({inventoryFilters:{},inventoryAppliedFilters:{}});this.loadInventoryHistory({});}),h('button',{className:'kita-button',disabled:blocked,onClick:this.exportInventoryHistory(kind)},'Download CSV'),h('button',{className:'kita-button',disabled:blocked,onClick:this.printInventoryHistory(kind)},'Print')]),
       null,
@@ -2741,7 +2775,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     ])]);
   }
   productLabel=p=>[p.name,p.variantLabel,(this.state.data?.BRANDS||[]).find(b=>String(b.id)===String(p.brandId))?.name,p.size?Number(p.size):null,p.sizeUnit].filter(Boolean).join(' ');
-  editProductMaster=p=>this.setState({screenTrail:[...(this.state.screenTrail||[]),this.state.screen].filter(Boolean),screen:'mgrRegistration',regEditing:p.id,registrationNotice:null,registrationError:"",regParentId:p.parentId||'',regVariantLabel:p.variantLabel||'',regStockId:String(p.id),regProductName:p.name,regManufacturer:p.manufacturer||'',regCategory:p.category,regBrandId:p.brandId||'',regSubcategoryId:p.subcategoryId||'',regSize:p.size||'',regSizeUnit:p.sizeUnit||'',regReorderLevel:p.minStock||0,regScannedBarcode:p.barcode||'',regSupplier:(this.state.data.SUPPLIERS.find(s=>s.id===p.supplierId)||{}).name||'',regStockUnit:p.stockUnit||p.unit,regPurchaseUnit:p.purchaseUnit||p.unit,regConversionFactor:p.conversionFactor||1,regUnitPrice:String(p.unitPrice??0),regRetailPrice:String(p.price??0),regStatus:p.status,regSaved:false,regBatch:'',regLot:'',regExpiry:'',regEditReason:''});
+  editProductMaster=p=>this.setState({screen:'mgrRegistration',regEditing:p.id,registrationNotice:null,registrationError:"",regParentId:p.parentId||'',regVariantLabel:p.variantLabel||'',regStockId:String(p.id),regProductName:p.name,regManufacturer:p.manufacturer||'',regCategory:p.category,regBrandId:p.brandId||'',regSubcategoryId:p.subcategoryId||'',regSize:p.size||'',regSizeUnit:p.sizeUnit||'',regReorderLevel:p.minStock||0,regScannedBarcode:p.barcode||'',regSupplier:(this.state.data.SUPPLIERS.find(s=>s.id===p.supplierId)||{}).name||'',regStockUnit:p.stockUnit||p.unit,regPurchaseUnit:p.purchaseUnit||p.unit,regConversionFactor:p.conversionFactor||1,regUnitPrice:String(p.unitPrice??0),regRetailPrice:String(p.price??0),regStatus:p.status,regSaved:false,regBatch:'',regLot:'',regExpiry:'',regEditReason:''});
   buildMgrRegistration(){
     const h=React.createElement,s=this.state,data=s.data;
     const products=s.productsLocal||data.PRODUCTS;
@@ -2813,15 +2847,15 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
   buildPromoPickerModal(){
     const {data,promoPickerSearch,promoPickerChecked}=this.state; const q=promoPickerSearch.toLowerCase();
     const items=data.PRODUCTS.filter(p=>searchMatches(p.name,q));
-    const count=Object.values(promoPickerChecked).filter(Boolean).length;
+    const count=Object.entries(promoPickerChecked).filter(([id,selected])=>selected&&!this.promotionReason(data.PRODUCTS.find(p=>String(p.id)===id),this.state.promoType,this.promotionReferenceDate())).length;
     return React.createElement("div",{style:{position:"fixed",inset:0,background:"rgba(15,31,74,0.38)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:50,padding:20}},
       React.createElement("div",{style:{width:520,maxWidth:"92vw",maxHeight:"78vh",background:"#fff",borderRadius:14,padding:20,display:"flex",flexDirection:"column",boxSizing:"border-box"}},[
         React.createElement("div",{key:"t",style:{fontWeight:800,marginBottom:10}},"Select Item(s) for Promotion"),
         React.createElement("input",{key:"s",value:promoPickerSearch,onChange:this.setPromoPickerSearch,placeholder:"Search…",style:{padding:8,border:"1px solid "+COLORS.border,borderRadius:7,marginBottom:10}}),
         React.createElement("div",{key:"list",style:{flex:1,overflowY:"auto",border:"1px solid "+COLORS.border,borderRadius:8}},
           items.map(p=>React.createElement("label",{key:p.id,style:{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderBottom:"1px solid #eef1f6",cursor:"pointer"}},[
-            React.createElement("input",{key:"cb",type:"checkbox",checked:!!promoPickerChecked[p.id],onChange:this.togglePromoPickerCheck(p.id)}),
-            React.createElement("div",{key:"n",style:{flex:1,fontSize:13,fontWeight:600}},p.name),
+            React.createElement("input",{key:"cb",type:"checkbox",disabled:!!this.promotionReason(p,this.state.promoType,this.promotionReferenceDate()),checked:!!promoPickerChecked[p.id]&&!this.promotionReason(p,this.state.promoType,this.promotionReferenceDate()),onChange:this.togglePromoPickerCheck(p.id)}),
+            React.createElement("div",{key:"n",style:{flex:1,fontSize:13,fontWeight:600}},[p.name,this.promotionReason(p,this.state.promoType,this.promotionReferenceDate())?React.createElement('small',{className:'promotion-ineligible'},this.promotionReason(p,this.state.promoType,this.promotionReferenceDate())):null]),
             React.createElement("div",{key:"p",style:{fontSize:12,color:COLORS.textSoft}},peso(p.price)),
           ]))),
         React.createElement("div",{key:"footer",style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:14}},[
@@ -2899,7 +2933,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
           card(sp.callbackLog.map((c,i)=>React.createElement("div",{key:i,style:{fontSize:13,padding:"6px 0",borderBottom:"1px solid #eef1f6"}},c.date+" — "+c.note)));
       }
       return React.createElement("div",null,[
-        btn("\u2190 Back to Suppliers",this.goSupMgrList),
+
         card([
           React.createElement("div",{key:"h",style:{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}},[
             React.createElement("div",null,[React.createElement("div",{style:{fontWeight:800,fontSize:18}},sp.name),React.createElement("div",{style:{fontSize:12,color:COLORS.textSoft,marginTop:2}},sp.category)]),
@@ -2948,7 +2982,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     const avgDiscount=promotionsLocal.length?Math.round(promotionsLocal.reduce((s,p)=>s+p.discountPct,0)/promotionsLocal.length):0;
     const endingThisWeek=promotionsLocal.filter(p=>{ const d=Math.round((new Date(p.endDate)-new Date(today))/86400000); return this.promoStatus(p)==="Active" && d>=0 && d<=7; }).length;
     const durationDays = (promoStartDate&&promoEndDate) ? Math.round((new Date(promoEndDate)-new Date(promoStartDate))/86400000) : null;
-    const nearExpiry=this.expiringBatches().filter(x=>x.days>0).slice(0,5);
+    const nearExpiry=this.expiringBatches().filter(x=>x.days>1&&x.days<=30).slice(0,5);
     const byProduct={}; data.SALES_LOG.forEach(t=>{ byProduct[t.productId]=(byProduct[t.productId]||0)+t.qty*t.amount; });
     const leastSales=Object.entries(byProduct).map(([id,rev])=>({p:data.PRODUCTS.find(p=>p.id===Number(id)),rev})).filter(x=>x.p).sort((a,b)=>a.rev-b.rev).slice(0,5);
     const stepHeader=(n,label)=>React.createElement("div",{style:{display:"flex",alignItems:"center",gap:12,marginBottom:14}},[
@@ -3109,7 +3143,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
       const callbackRows = s.callbackLog.length===0 ? [React.createElement("div",{key:"e",style:{fontSize:13,color:COLORS.textMuted}},"No callbacks logged.")]
         : s.callbackLog.map((c,i)=>React.createElement("div",{key:i,style:{fontSize:13,padding:"6px 0",borderBottom:"1px solid #eef1f6"}},c.date+" — "+c.note));
       return React.createElement("div",null,[
-        btn("\u2190 Back to Suppliers",this.closeSupplierDetail),
+
         sectionTitle(s.name,s.category),this.buildSupplierPerformance(s.id),
         card(infoRows,{marginBottom:14}),
         card([React.createElement("div",{key:"t",style:{fontWeight:800,marginBottom:8}},"Supplier Callback Log")].concat(callbackRows)),
@@ -3329,14 +3363,14 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     const input=(key,label,type="text")=>h("label",{key,style:{display:"block",fontSize:12,fontWeight:700,marginBottom:10}},[label,h("input",{type,value:f[key]||"",onChange:this.setAcctField(key),autoComplete:type==="password"?"new-password":"off",style:{width:"100%",boxSizing:"border-box",padding:10,marginTop:4,border:"1px solid "+COLORS.border,borderRadius:8}})]);
     return h("div",null,[moduleTitle(title),btn("Create Account",this.openAcctModal("create"),"primary"),
       h("div",{className:"sa-filters"},[
-        h("label",null,["Role ",h("select",{value:this.state.acctRoleFilter,onChange:e=>{this.setState({acctRoleFilter:e.target.value});this.setTableView("accounts",{page:1});}},[h("option",{value:""},"All roles"),...roles.map(r=>h("option",{value:r,key:r},r))])]),
+        this.state.role!=="manager"?h("label",null,["Role ",h("select",{value:this.state.acctRoleFilter,onChange:e=>{this.setState({acctRoleFilter:e.target.value});this.setTableView("accounts",{page:1});}},[h("option",{value:""},"All roles"),...roles.map(r=>h("option",{value:r,key:r},r))])]):null,
         h("label",null,["Status ",h("select",{value:this.state.acctStatusFilter,onChange:e=>{this.setState({acctStatusFilter:e.target.value});this.setTableView("accounts",{page:1});}},[h("option",{value:""},"All Status"),...['Active','Inactive'].map(v=>h("option",{value:v,key:v},v))])])
       ]),
-      this.recordTable("accounts",["Name",this.state.role==="superadmin"?"Email":"Email / Username","Role","Status","Password Setup","Created","Last OTP login","Actions"],(accountsLocal||[]).filter(a=>(!this.state.acctRoleFilter||a.role===this.state.acctRoleFilter)&&(!this.state.acctStatusFilter||a.status===this.state.acctStatusFilter)).map(a=>tr([td(a.name),td([h("div",null,a.email),this.state.role!=="superadmin"?h("small",null,a.username||""):null]),td(a.role),td(h("span",{className:"sa-status "+(a.status==="Active"?"sa-status--healthy":"sa-status--inactive")},a.status.toUpperCase())),td(a.must_change_password?"Password Change Required":"Password Set"),td(a.dateCreated||"Not recorded"),td(a.lastOtpLogin||"Not recorded"),td(h("div",{className:"account-row-actions"},[btn("Edit",this.openAcctModal("edit",a)),a.must_change_password?btn("Resend Setup Credentials",()=>this.authPost(`/api/accounts/${encodeURIComponent(a.role)}/${a.id}/resend-setup`,{}).then(r=>this.toast(r.message)).catch(e=>this.toast(e.message,"error"))):btn("Send Password Reset",()=>this.authPost(`/api/accounts/${encodeURIComponent(a.role)}/${a.id}/send-reset`,{}).then(r=>this.toast(r.message)).catch(e=>this.toast(e.message,"error"))),btn(a.status==="Active"?"Deactivate":"Activate",()=>this.changeAccountStatus(a))]))],a.role+"-"+a.id))),
+      this.recordTable("accounts",["Name",this.state.role==="superadmin"?"Email":"Email / Username","Role","Status","Password Setup","Created","Last OTP login","Actions"],(accountsLocal||[]).filter(a=>(this.state.role==="manager"||!this.state.acctRoleFilter||a.role===this.state.acctRoleFilter)&&(!this.state.acctStatusFilter||a.status===this.state.acctStatusFilter)).map(a=>tr([td(a.name),td([h("div",null,a.email),this.state.role!=="superadmin"?h("small",null,a.username||""):null]),td(a.role),td(h("span",{className:"sa-status "+(a.status==="Active"?"sa-status--healthy":"sa-status--inactive")},a.status.toUpperCase())),td(a.must_change_password?"Password Change Required":"Password Set"),td(a.dateCreated||"Not recorded"),td(a.lastOtpLogin||"Not recorded"),td(h("div",{className:"account-row-actions"},[btn("Edit",this.openAcctModal("edit",a)),a.must_change_password?btn("Resend Setup Credentials",()=>this.authPost(`/api/accounts/${encodeURIComponent(a.role)}/${a.id}/resend-setup`,{}).then(r=>this.toast(r.message)).catch(e=>this.toast(e.message,"error"))):btn("Send Password Reset",()=>this.authPost(`/api/accounts/${encodeURIComponent(a.role)}/${a.id}/send-reset`,{}).then(r=>this.toast(r.message)).catch(e=>this.toast(e.message,"error"))),btn(a.status==="Active"?"Deactivate":"Activate",()=>this.changeAccountStatus(a))]))],a.role+"-"+a.id))),
       acctModalOpen?h("div",{key:"modal",style:{position:"fixed",inset:0,background:"rgba(15,31,74,0.38)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:50,padding:16}},
         h("div",{role:"dialog","aria-modal":true,"aria-label":acctModalMode==="create"?"Create Account":"Edit Account",style:{width:400,maxHeight:"85vh",overflowY:"auto",background:"#fff",borderRadius:14,padding:20}},[
           h("h3",{key:"title"},acctModalMode==="create"?"Create Account":"Edit Account"),input("first_name","First Name"),input("last_name","Last Name"),input("email","Email","email"),this.state.role!=='superadmin'?input("username","Employee ID (optional)"):null,
-          h('label',{key:'role',className:'field-group'},['Role',h('input',{value:acctModalMode==='create'?(this.state.role==='superadmin'?'Admin':this.state.role==='admin'?'Manager':'Cashier'):statusLabel(f.role),readOnly:true,'aria-readonly':true})]),
+          this.state.role!=='manager'?h('label',{key:'role',className:'field-group'},['Role',h('input',{value:acctModalMode==='create'?(this.state.role==='superadmin'?'Admin':this.state.role==='admin'?'Manager':'Cashier'):statusLabel(f.role),readOnly:true,'aria-readonly':true})]):null,
           h("p",null,"Temporary credentials are emailed to new accounts. Password setup is required on first login."),this.state.role!=="superadmin"?input("schedule","Schedule (optional)"):null,
           h("label",{key:"status"},["Status",h("select",{value:f.status,onChange:this.setAcctField("status"),style:{width:"100%",padding:10,marginBottom:10}},(acctModalMode==="create"?["Active"]:["Active","Inactive"]).map(status=>h("option",{key:status},status)))]),
           this.state.acctError?h("p",{key:"error",role:"alert",style:{color:COLORS.red}},this.state.acctError):null,
@@ -3544,7 +3578,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
       dataLoading:(s.pendingLoads||0)>0||(!!s.purchaseLoading&&["purchaseOrders","mgrRequest","mgrRequestView","mgrPurchaseHistory","mgrPO","mgrSupplier","admSuppliers","admPurchasedOrders","admForwarded","admDisapproved","admReceivingApprovals"].includes(s.screen))||!!s.supplierAccountsLoading||!!s.workflowLoading||!!s.inventoryHistoryLoading||!!s.reportLoading||!!s.loginPending||!!s.registrationSaving||s.paymentState==="processing"||(!!s.mgrNotifOpen&&!!s.notificationLoading),
       dataLoadingLabel:s.purchaseLoading?"Loading purchase records...":"Loading your workspace data...",dataError:s.dataError,activePortalColor:activePortal.fg,activePortalBg:activePortal.bg,activePortalIcon:activePortal.icon,activePortalLabel:activePortal.label,activePortalDesc:activePortal.desc,backToPortalSelect:this.backToPortalSelect,
       showLogin,showOtp,showApp,loginUsername:s.loginUsername,onUsernameChange:this.onUsernameChange,loginPassword:s.loginPassword,onPasswordChange:this.onPasswordChange,
-      otpEmail:s.otpEmail,otpCode:s.otpCode,onOtpChange:this.onOtpChange,verifyOtp:this.verifyOtp,backToPassword:this.backToPassword,
+      otpEmail:s.otpEmail,otpCode:s.otpCode,onOtpChange:this.onOtpChange,verifyOtp:this.verifyOtp,
       loginIdentifierLabel:"Email",loginIdentifierPlaceholder:"name@example.com",showPasswordInput:true,
       loginPending:s.loginPending,loginButtonLabel:s.loginPending?"Signing in...":"Sign In",otpButtonLabel:s.loginPending?"Verifying...":"Verify OTP",loginError:s.loginError,loginLocked:s.loginLocked,doLogin:this.doLogin,onLoginKeyDown:this.onLoginKeyDown,
       appShellClass:s.sidebarOpen&&s.compactNavigation?"app-shell app-shell--drawer-open":"app-shell",
@@ -3562,7 +3596,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
         style:{padding:"10px 14px",borderBottom:"1px solid #eef1f6",cursor:"pointer",background:n.read_at?"#fff":"#f8faff"},
       })),
       toastWrapStyle:{position:"fixed",top:16,right:16,zIndex:100,display:"flex",flexDirection:"column"},toasts:s.toasts,
-      activeScreen:React.createElement(React.Fragment,null,s.screenTrail?.length&&!['mgrDashboard','admDashboard','saDashboard','pos'].includes(s.screen)?h('div',{className:'page-back-toolbar'},h('button',{type:'button',className:'kita-button',onClick:this.navigateBack,'aria-label':'Back to previous page'},'\u2190 Back')):null,activeScreen,this.buildConfirmation()),
+      activeScreen:React.createElement(React.Fragment,null,activeScreen,this.buildConfirmation()),
     };
   }
 }

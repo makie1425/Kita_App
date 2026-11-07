@@ -131,13 +131,13 @@ test('item-first PO suggests low stock and selects category and eligible supplie
 
 test('cashier accounts hide role selector and suppliers use labeled boxed navigation',()=>{
  const {app}=setup();app.state.role='manager';app.state.accountsLocal=[];app.state.acctModalOpen=true;app.state.acctModalMode='create';app.state.acctForm={role:'cashier',status:'Active'};
- let tree=JSON.stringify(app.buildMgrCashiers());assert.ok(tree.includes('"readOnly":true'));assert.ok(tree.includes('Create Account'));
+ let tree=JSON.stringify(app.buildMgrCashiers());assert.ok(!tree.includes('All roles'));assert.ok(!tree.includes('"key":"role"'));assert.ok(tree.includes('Create Account'));
  app.state.supMgrForm={name:'Supplier',paymentTerms:'30 Days Credit'};
  tree=JSON.stringify(app.buildMgrSupplierModal());assert.ok(!tree.includes('Payment Terms'));assert.ok(!tree.includes('30 Days Credit'));
  app.state.data={SUPPLIERS:[{id:1,name:'Supplier',status:'Active',callbackLog:[]}]};
  tree=JSON.stringify(app.buildAdmSuppliers());assert.ok(tree.includes('View'));assert.ok(tree.includes('kita-button'));assert.ok(!tree.includes('View ?'));
  app.state.supplierDetailId=1;app.buildSupplierPerformance=()=>null;
- tree=JSON.stringify(app.buildAdmSuppliers());assert.ok(tree.includes('Back to Suppliers'));
+ tree=JSON.stringify(app.buildAdmSuppliers());assert.ok(!tree.includes('Back to Suppliers'));
  app.state.supplierAccountsData={receipts:[],settlements:[]};app.state.settlementForm=null;
  tree=JSON.stringify(app.buildSupplierAccounts());assert.ok(!tree.includes('Unpaid Balance'));assert.ok(tree.includes('Supplier Balance'));assert.ok(tree.includes('Historical payment and credit entries'));
 });
@@ -216,13 +216,13 @@ test('session check ignores network outages and detects unauthorized reconnect',
  await app.checkSession();assert.equal(app.state.authStep,'login');assert.equal(app.state.loginError,'Account deactivated');
 });
 
-test('creation roles are fixed and Back preserves inventory filters',async()=>{
+test('creation roles are fixed and sidebar navigation preserves inventory filters',async()=>{
  for(const [role,expected] of [['superadmin','admin'],['admin','manager'],['manager','cashier']]){
   const {app}=setup();app.state.role=role;app.openAcctModal('create')();assert.equal(app.state.acctForm.role,expected);
  }
  const {app}=setup();app.state.screen='mgrInventory';app.state.inventorySupplierId='7';
  app.state.purchaseData={};await app.goScreen('mgrCategories')();assert.equal(app.state.screen,'mgrCategories');
- await app.navigateBack();assert.equal(app.state.screen,'mgrInventory');assert.equal(app.state.inventorySupplierId,'7');
+ await app.goScreen('mgrInventory')();assert.equal(app.state.screen,'mgrInventory');assert.equal(app.state.inventorySupplierId,'7');
 });
 
 test('inventory combines supplier and category filters and exposes compact Edit and Archive actions',()=>{

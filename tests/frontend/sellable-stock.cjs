@@ -27,7 +27,7 @@ const text=n=>n==null?'':typeof n!=='object'?String(n):Array.isArray(n)?n.map(te
   serverProduct.sellableStock=0;
   await app.stepQty(app.state.cart[0].lineId,1)();assert.equal(app.state.cart[0].qty,2);
   let paymentCalls=0;app.finalizeTransaction=()=>paymentCalls++;
-  await app.startPayment();assert.equal(paymentCalls,0);assert.match(messages.at(-1),/Only 0 sellable/);
+  app.state.quantityErrors={};await app.startPayment();assert.equal(paymentCalls,0);assert.match(messages.at(-1),/Only 0 sellable/);
   assert(text(app.buildPos()).includes('Requested quantity exceeds current sellable stock'));
   fail=true;app.newSale();await app.addProductToCart(serverProduct,true);assert.equal(app.state.cart.length,0);assert.match(messages.at(-1),/Network/);
   fail=false;serverProduct.sellableStock=2;

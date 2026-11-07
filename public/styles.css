@@ -2010,8 +2010,6 @@ button, .primary-button, .kita-button,
 .account-row-actions, .row-action-buttons { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .content-area :is(.account-row-actions,.row-action-buttons,.inventory-row-actions) .kita-button { min-height: 34px; padding: 7px 12px !important; margin: 0; font-size: 12px; white-space: nowrap; }
 .stock-condition-out > * { background: #fee2e2 !important; color: #b91c1c !important; }
-.page-back-toolbar { display: flex; margin-bottom: 16px; }
-.page-back-toolbar .kita-button { min-height: 34px; padding: 7px 12px !important; }
 
 /* Product registration follows the two-column product and stock cards. */
 .registration-page { max-width: 1040px; }
@@ -2102,3 +2100,13 @@ dl.receiving-transaction-details dd{margin:5px 0 0;color:#142b50;overflow-wrap:a
 .checkout-stock-status{grid-column:1/-1;color:#1d4ed8;background:#eff6ff;border-radius:8px;padding:10px 14px;margin:0;font-size:13px}
 .pos-layout button:disabled,.manual-lookup-dialog button:disabled{opacity:.55;cursor:not-allowed}
 .manual-lookup-pagination{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px;font-size:12px}
+
+.checkout-quantity-field input{width:68px;min-height:34px;text-align:center;border:1px solid #cbd8ed;border-radius:6px;font:inherit;font-weight:600}
+.checkout-quantity-field small,.promotion-ineligible{display:block;color:#b91c1c;font-size:11px;line-height:1.4;max-width:200px;white-space:normal;margin-top:5px}
+.checkout-quantity-field input[aria-invalid="true"]{border-color:#dc2626}
+
+.pos-layout .checkout-quantity-control{flex-wrap:nowrap;align-items:flex-start;min-width:132px}
+.pos-layout .checkout-quantity-control>button{flex:0 0 24px}
+.pos-layout .table-scroll td .checkout-quantity-field input{box-sizing:border-box;min-width:64px;width:68px;max-width:none}
+
+.transaction-discount-breakdown>div{display:flex;justify-content:space-between;gap:16px;padding:5px 0;font-size:13px}.transaction-discount-breakdown dd{margin:0;color:#1747e8}

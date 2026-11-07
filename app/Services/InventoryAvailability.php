@@ -34,6 +34,7 @@ class InventoryAvailability
             ->select('b.productId')->selectRaw('SUM(b.quantityRemaining) as onHand, SUM(COALESCE(r.reserved, 0)) as reserved, SUM(CASE WHEN b.recalled = 0 AND (b.expiryDate IS NULL OR b.expiryDate > ?) THEN b.quantityRemaining ELSE 0 END) as sellable', [$today])
             ->selectRaw('SUM(CASE WHEN b.expiryDate <= ? THEN b.quantityRemaining + COALESCE(r.reserved, 0) ELSE 0 END) as expired, SUM(CASE WHEN b.recalled = 1 THEN b.quantityRemaining + COALESCE(r.reserved, 0) ELSE 0 END) as recalled', [$today])
             ->selectRaw('SUM(CASE WHEN b.recalled = 1 AND b.expiryDate <= ? THEN b.quantityRemaining + COALESCE(r.reserved, 0) ELSE 0 END) as expiredAndRecalled', [$today])
+            ->selectRaw('MIN(CASE WHEN b.quantityRemaining > 0 AND b.recalled = 0 AND b.expiryDate > ? THEN b.expiryDate ELSE NULL END) as promotionExpiry', [$today])
             ->selectRaw('SUM((b.quantityRemaining + COALESCE(r.reserved, 0)) * b.unitCost) as inventoryValue')
             ->get()->keyBy('productId');
         $categories = \App\Services\WorkspaceRead::table('categories')->whereIn('name', array_unique(array_column($products, 'category')))->where('status', 'Active')->whereNull('archivedAt')->pluck('name')->all();
@@ -69,6 +70,10 @@ class InventoryAvailability
                 $reasons[] = 'Batch balance mismatch - reconcile before selling';
             }
             $product['sellableStock'] = max(0, $sellable);
+            $product['promotionExpiry'] = $balance ? $balance->promotionExpiry : ($product['expiry'] ?? null);
+            $product['promotionReason'] = PromotionEligibility::reason($product, 'Seasonal');
+            $product['promotionEligible'] = $product['promotionReason'] === null;
+            $product['nearExpiry'] = !empty($product['promotionExpiry']) && $product['promotionExpiry'] > $today && $product['promotionExpiry'] <= now()->addDays(30)->toDateString();
             $product['unavailableStock'] = max(0, $product['stockOnHand'] - $product['sellableStock']);
             $product['exclusionReasons'] = $reasons;
             $active = ($product['status'] ?? 'Active') === 'Active' && empty($product['archivedAt']) && in_array($product['category'] ?? '', $categories, true);
