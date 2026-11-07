@@ -28,11 +28,20 @@ app.state.cart=[{lineId:11,productId:1,name:product.name,qty:1,unitPrice:83.75,o
  app.state.cart[0].qty=3;totals=app.computeTotals();assert.equal(totals.grandTotal,180.9);assert.equal(totals.promotionDiscount,50.25);assert.equal(totals.customerDiscount,20.1);
  app.state.cart=[{productId:1,qty:3,unitPrice:.05,originalPrice:.05,promo:{discountPct:10}}];totals=app.computeTotals();assert.equal(totals.grandTotal,.13);assert.equal(totals.promotionDiscount,.01);assert.equal(totals.customerDiscount,.01);
  app.state.cart=[{productId:1,qty:1,unitPrice:83.75,originalPrice:83.75,promo:promotion}];app.toggleEmployeeDiscount();assert.equal(app.state.seniorApplied,false);assert.equal(app.computeTotals().grandTotal,75.38);
- for(const [expiry,allowed] of [['2026-11-06',false],['2026-11-07',false],['2026-11-08',false],['2026-11-09',true],['2026-12-07',true],['2026-12-08',false]])assert.equal(!app.promotionReason({...product,promotionExpiry:expiry},'Near-Expiry'),allowed,expiry);
+ for(const [expiry,allowed] of [['2026-11-06',false],['2026-11-07',false],['2026-11-08',false],['2026-11-09',true],['2026-11-14',true],['2026-12-07',true],['2026-12-08',true],['2027-01-06',true]])assert.equal(!app.promotionReason({...product,promotionExpiry:expiry},'Near-Expiry'),allowed,expiry);
  assert.match(app.promotionReason({...product,promotionExpiry:'2026-11-08'},'Seasonal'),/tomorrow/);
  assert.equal(app.promotionReason({...product,promotionExpiry:'2026-12-08'},'Seasonal'),'');
  app.state.promoType='Near-Expiry';app.state.promoPickerSearch='';app.state.promoPickerChecked={};app.state.data.PRODUCTS=[{...product,promotionExpiry:'2026-11-08'}];
  const picker=app.buildPromoPickerModal();assert.equal(nodes(picker).find(n=>n.type==='input'&&n.props.type==='checkbox').props.disabled,true);
+ for(const expiry of ['2026-11-14','2026-12-08','2027-01-06']){
+  const selected={...product,promotionExpiry:expiry};app.state.data.PRODUCTS=[selected];app.state.productsLocal=[selected];app.state.promotionsLocal=[];app.state.promoPickerChecked={};
+  assert.equal(nodes(app.buildPromoPickerModal()).find(n=>n.type==='input'&&n.props.type==='checkbox').props.disabled,false);
+  app.togglePromoPickerCheck(1)();app.confirmPromoPicker();assert.deepEqual(Array.from(app.state.promoSelectedItems),[1]);
+  Object.assign(app.state,{promoStartDate:'2026-11-07',promoEndDate:'2026-11-07',promoDiscountPct:'20'});let saved=0;app.authPost=async(path,body)=>{assert.equal(path,'/api/promotions');assert.equal(body.type,'Near-Expiry');assert.deepEqual(Array.from(body.productIds),[1]);saved++;};app.reloadCatalog=async()=>{};await app.savePromotion();assert.equal(saved,1);
+  app.state.promotionsLocal=[promotion];assert.equal(app.activePromo(1)?.id,1);
+ }
+ assert.match(app.promotionReason({...product,promotionExpiry:null},'Near-Expiry'),/recorded expiration date/);
+ app.state.productsLocal=[product];app.state.promotionsLocal=[promotion];
  app.state.role='manager';app.state.accountsLocal=[];app.state.acctModalOpen=true;app.state.acctModalMode='create';app.state.acctForm={role:'cashier',status:'Active'};
  const account=app.buildMgrCashiers();assert.ok(!nodes(account).some(n=>n.type==='select'&&JSON.stringify(n.children).includes('All roles')));assert.ok(!nodes(account).some(n=>n.props?.key==='role'));
  app.state.screen='mgrSupplier';app.state.supMgrScreen='detail';app.state.supMgrDetailId=1;await app.goScreen('mgrSupplier')();assert.equal(app.state.supMgrScreen,'list');assert.equal(app.state.supMgrDetailId,null);
@@ -41,5 +50,5 @@ app.state.cart=[{lineId:11,productId:1,name:product.name,qty:1,unitPrice:83.75,o
  app.setState=(patch,callback)=>{app.state={...app.state,...(typeof patch==='function'?patch(app.state):patch)};app.componentDidUpdate();callback?.();};
  let approvedSales=0;app.finalizeTransaction=()=>approvedSales++;await app.startPayment();assert.equal(approvedSales,1);assert.equal(app.state.discountManagerPin,'1234');
  app.setState({cart:app.state.cart.map(l=>({...l,qty:2}))});assert.equal(app.state.discountManagerPin,'');
- console.log('Policy UI passed: numeric quantity with +/- and stock limits, sequential 20% then 10%, multi-quantity and centavo rounding, mutually exclusive benefits, 1/2/30/31-day expiry boundaries, disabled promotion selection, fixed Cashier role, and sidebar list navigation.');
+ console.log('Policy UI passed: numeric quantity with +/- and stock limits, sequential 20% then 10%, multi-quantity and centavo rounding, mutually exclusive benefits, 1/2/7/30/31/60-day expiry boundaries, disabled promotion selection, fixed Cashier role, and sidebar list navigation.');
 })().catch(e=>{console.error(e);process.exitCode=1;});

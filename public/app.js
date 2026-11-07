@@ -646,7 +646,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     const days=expiry?Math.round((Date.parse(expiry+'T00:00:00Z')-Date.parse(reference+'T00:00:00Z'))/86400000):null;
     if(days!==null&&days<=0)return 'This product is expired and cannot be selected for promotion.';
     if(days===1)return 'This product expires tomorrow and is no longer eligible for promotion.';
-    if(type==='Near-Expiry'&&(days===null||days>30))return 'Near-expiry promotions require stock expiring within 30 days.';
+    if(type==='Near-Expiry'&&days===null)return 'Near-expiry promotions require stock with a recorded expiration date.';
     if(Number(product.expiredStock)>0&&Number(product.sellableStock)<=0)return 'This product has no unexpired stock available for promotion.';
     return '';
   };
@@ -3001,7 +3001,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     const pct=parseFloat(promoDiscountPct)||0;
     const selectedProducts = promoType==="Category-Wide" ? data.PRODUCTS.filter(p=>p.category===promoCategory) : promoSelectedItems.map(id=>data.PRODUCTS.find(p=>p.id===id)).filter(Boolean);
     const types=[
-      ["Near-Expiry","Near-Expiry Clearance","⏳","For stock nearing its expiration date"],
+      ["Near-Expiry","Near-Expiry Clearance","⏳","For stock with an expiration date; the 30-day window applies to alerts only"],
       ["Seasonal","Seasonal/Event Promotion","🎉","For planned occasions like Christmas or Back-to-School"],
       ["Slow-Moving","Slow-Moving Clearance","📉","For items that aren't selling well"],
       ["Category-Wide","Category-Wide Promotion","🗂","Applies one discount across a whole category"],

@@ -13,8 +13,7 @@ class PromotionEligibility
    $expires=CarbonImmutable::parse($expiry,'Asia/Manila')->startOfDay();
    if($expires->lessThanOrEqualTo($today))return 'This product is expired and cannot be selected for promotion.';
    if($expires->equalTo($today->addDay()))return 'This product expires tomorrow and is no longer eligible for promotion.';
-   if($type==='Near-Expiry'&&$expires->greaterThan($today->addDays(self::NEAR_DAYS)))return 'Near-expiry promotions require stock expiring within 30 days.';
-  }elseif($type==='Near-Expiry')return 'Near-expiry promotions require stock with a recorded expiration date within 30 days.';
+  }elseif($type==='Near-Expiry')return 'Near-expiry promotions require stock with a recorded expiration date.';
   if(($product['expiredStock']??0)>0&&($product['sellableStock']??0)<=0)return 'This product has no unexpired stock available for promotion.';
   return null;
  }
