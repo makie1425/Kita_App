@@ -645,7 +645,6 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     const expiry=Object.prototype.hasOwnProperty.call(product,'promotionExpiry')?product.promotionExpiry:product.expiry;
     const days=expiry?Math.round((Date.parse(expiry+'T00:00:00Z')-Date.parse(reference+'T00:00:00Z'))/86400000):null;
     if(days!==null&&days<=0)return 'This product is expired and cannot be selected for promotion.';
-    if(days===1)return 'This product expires tomorrow and is no longer eligible for promotion.';
     if(type==='Near-Expiry'&&days===null)return 'Near-expiry promotions require stock with a recorded expiration date.';
     if(Number(product.expiredStock)>0&&Number(product.sellableStock)<=0)return 'This product has no unexpired stock available for promotion.';
     return '';
@@ -1711,7 +1710,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
           h('small',null,'Batch: '+x.p.batch),
           h('p',{className:x.days<=0?'dashboard-stock-alert':null},x.days<=0?'Expired - blocked from sale':x.days+' day(s) left'),
         ]),
-        manager&&x.days>1?btn('Create promotion',this.quickPromoFromNearExpiry(x.p.id),'primary'):badge(x.days<=0?'Expired':'Near expiry'),
+        manager&&x.days>0?btn('Create promotion',this.quickPromoFromNearExpiry(x.p.id),'primary'):badge(x.days<=0?'Expired':'Near expiry'),
       ])):h('p',{role:'status',className:'record-empty'},'Nothing near expiry.')),
       manager?btn('View Near-Expiry Monitoring',()=>{this.setState({screen:'mgrInventory',invTab:'expiry'});this.loadInventoryWorkflows();}):null,
     ]);
@@ -3012,7 +3011,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     const avgDiscount=promotionsLocal.length?Math.round(promotionsLocal.reduce((s,p)=>s+p.discountPct,0)/promotionsLocal.length):0;
     const endingThisWeek=promotionsLocal.filter(p=>{ const d=Math.round((new Date(p.endDate)-new Date(today))/86400000); return this.promoStatus(p)==="Active" && d>=0 && d<=7; }).length;
     const durationDays = (promoStartDate&&promoEndDate) ? Math.round((new Date(promoEndDate)-new Date(promoStartDate))/86400000) : null;
-    const nearExpiry=this.expiringBatches().filter(x=>x.days>1&&x.days<=30).slice(0,5);
+    const nearExpiry=this.expiringBatches().filter(x=>x.days>0&&x.days<=30).slice(0,5);
     const byProduct={}; data.SALES_LOG.forEach(t=>{ byProduct[t.productId]=(byProduct[t.productId]||0)+t.qty*t.amount; });
     const leastSales=Object.entries(byProduct).map(([id,rev])=>({p:data.PRODUCTS.find(p=>p.id===Number(id)),rev})).filter(x=>x.p).sort((a,b)=>a.rev-b.rev).slice(0,5);
     const stepHeader=(n,label)=>React.createElement("div",{style:{display:"flex",alignItems:"center",gap:12,marginBottom:14}},[

@@ -45,18 +45,22 @@ class PromotionDiscountPolicyTest extends TestCase {
   $this->actingAs($this->cashier)->postJson('/api/transactions',$this->sale('TXN-rounding','pwd',3))->assertCreated()->assertJsonPath('transaction.total',0.13)->assertJsonPath('transaction.promotionDiscount',0.01)->assertJsonPath('transaction.customerDiscount',0.01);
  }
  public function test_promotion_cutoff_is_independent_of_the_thirty_day_alert_window():void {
-  foreach([-1=>false,0=>false,1=>false,2=>true,7=>true,30=>true,31=>true,60=>true,90=>true] as $days=>$allowed){
+  foreach([-1=>false,0=>false,1=>true,2=>true,7=>true,30=>true,31=>true,60=>true,90=>true] as $days=>$allowed){
    DB::table('inventory_batches')->update(['expiryDate'=>now()->addDays($days)->toDateString()]);
    $response=$this->postJson('/api/promotions',$this->promotion());
    if($allowed)$response->assertCreated();else $response->assertUnprocessable()->assertJsonValidationErrors('productIds');
    DB::table('promotion_products')->delete();DB::table('promotions')->delete();
   }
   DB::table('inventory_batches')->update(['expiryDate'=>now()->addDay()->toDateString()]);
-  $this->postJson('/api/promotions',$this->promotion('Seasonal'))->assertUnprocessable()->assertSee('expires tomorrow');
-  $category=$this->promotion('Category-Wide');$category['category']='Food';unset($category['productIds']);$this->postJson('/api/promotions',$category)->assertUnprocessable();
+  foreach(['Seasonal','Category-Wide'] as $type){
+   $body=$this->promotion($type);if($type==='Category-Wide'){$body['category']='Food';unset($body['productIds']);}
+   $this->postJson('/api/promotions',$body)->assertCreated();DB::table('promotion_products')->delete();DB::table('promotions')->delete();
+  }
+  $future=$this->promotion();$future['startDate']=now()->addDay()->toDateString();
+  $this->postJson('/api/promotions',$future)->assertUnprocessable()->assertJsonValidationErrors('productIds');
  }
  public function test_promotions_apply_at_checkout_inside_and_outside_the_alert_window():void {
-  foreach([7,31,60] as $days){
+  foreach([1,2,7,30,31,60] as $days){
    $this->actingAs($this->manager);DB::table('inventory_batches')->update(['expiryDate'=>now()->addDays($days)->toDateString()]);
    $this->getJson('/api/inventory/availability?productIds[]=1')->assertOk()->assertJsonPath('products.0.nearExpiry',$days<=30);
    $this->postJson('/api/promotions',$this->promotion())->assertCreated();
@@ -66,7 +70,7 @@ class PromotionDiscountPolicyTest extends TestCase {
  }
  public function test_near_expiry_notifications_still_start_at_thirty_days():void {
   $this->assertSame(30,ExpiryMonitoring::days());
-  foreach([60,31,30,7] as $days){
+  foreach([60,31,30,7,1] as $days){
    DB::table('notifications')->delete();DB::table('inventory_batches')->update(['expiryDate'=>now()->addDays($days)->toDateString()]);
    $expected=$days<=30?1:0;
    $this->assertCount($expected,ExpiryMonitoring::batches());
@@ -80,10 +84,14 @@ class PromotionDiscountPolicyTest extends TestCase {
   $this->postJson('/api/promotions',$this->promotion())->assertUnprocessable()->assertJsonValidationErrors('productIds');
   $this->postJson('/api/promotions',$this->promotion('Seasonal'))->assertCreated();
  }
- public function test_existing_promotion_stops_at_one_day_before_expiry():void {
+ public function test_existing_promotion_applies_until_expiration_and_expired_stock_is_blocked():void {
   DB::table('inventory_batches')->update(['expiryDate'=>now()->addDays(2)->toDateString()]);$this->postJson('/api/promotions',$this->promotion())->assertCreated();
   $this->travel(1)->days();
-  $this->actingAs($this->cashier)->postJson('/api/transactions',$this->sale('TXN-cutoff','none'))->assertCreated()->assertJsonPath('transaction.total',83.75)->assertJsonPath('transaction.promotionDiscount',0);
+  $this->actingAs($this->cashier)->postJson('/api/transactions',$this->sale('TXN-before-expiry','none'))->assertCreated()->assertJsonPath('transaction.total',67)->assertJsonPath('transaction.promotionDiscount',16.75);
+  $this->travel(1)->days();
+  $this->postJson('/api/transactions',$this->sale('TXN-expired','none'))->assertUnprocessable();
+  $this->assertDatabaseMissing('transactions',['uuid'=>'TXN-expired']);$this->assertDatabaseHas('products',['id'=>1,'stock'=>49]);
+  $this->actingAs($this->manager)->getJson('/api/inventory/availability?productIds[]=1')->assertOk()->assertJsonPath('products.0.sellableStock',0)->assertJsonPath('products.0.promotionEligible',false);
  }
  public function test_qrph_uses_the_same_discounted_amount_as_cash():void {
   $this->postJson('/api/promotions',$this->promotion())->assertCreated();
@@ -96,8 +104,8 @@ class PromotionDiscountPolicyTest extends TestCase {
  }
  public function test_earliest_available_batch_controls_promotion_eligibility():void {
   FifoInventory::receive(1,2,30,'2026-11-07',batch:'URGENT',expiry:now()->addDay()->toDateString());DB::table('products')->where('id',1)->increment('stock',2);
-  $this->postJson('/api/promotions',$this->promotion())->assertUnprocessable();
-  $this->getJson('/api/inventory/availability?productIds[]=1')->assertOk()->assertJsonPath('products.0.promotionEligible',false)->assertJsonPath('products.0.nearExpiry',true);
+  $this->getJson('/api/inventory/availability?productIds[]=1')->assertOk()->assertJsonPath('products.0.promotionExpiry',now()->addDay()->toDateString())->assertJsonPath('products.0.promotionEligible',true)->assertJsonPath('products.0.nearExpiry',true);
+  $this->postJson('/api/promotions',$this->promotion())->assertCreated();
  }
  public function test_historical_totals_are_not_recalculated_by_migration():void {
   $this->actingAs($this->cashier)->postJson('/api/transactions',$this->sale('TXN-history','none'))->assertCreated();
