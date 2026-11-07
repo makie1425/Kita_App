@@ -2118,3 +2118,12 @@ dl.receiving-transaction-details dd{margin:5px 0 0;color:#142b50;overflow-wrap:a
 .receiving-success{padding:16px 20px;border:1px solid #b9dfc9;background:#effbf4;color:#14532d;border-radius:12px;margin:0 0 18px}
 .receiving-success p{margin:7px 0 12px;font-size:13px}
 @media(max-width:600px){.po-item-dialog .po-item-fields{padding:18px;gap:18px}.po-item-dialog .po-field-pair,.po-field-triple{grid-template-columns:minmax(0,1fr)}.po-field-triple>label:last-child{grid-column:auto}.po-product-option-heading{align-items:flex-start}.po-product-stock-badge{font-size:10px}.po-item-dialog .po-product-trigger{gap:7px}}
+
+/* Near-expiry promotion lists show eligible stock and the actual batch expiry. */
+.promotion-expiry-details{display:grid;gap:4px;margin-top:6px;font-size:11px;font-weight:500;line-height:1.5;color:#64748b;overflow-wrap:anywhere}
+.promotion-expiry-details.is-urgent>span:first-child{color:#b91c1c;font-weight:700}
+.promotion-near-expiry-list{max-height:340px;overflow-y:auto;overscroll-behavior:contain}
+.promotion-near-expiry-row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid #eef1f6}
+.promotion-near-expiry-row>div{min-width:0}
+.promotion-use-item{flex-shrink:0;font-size:11px;font-weight:700;color:#245ff5;background:none;border:none;cursor:pointer;padding:6px}
+.promotion-use-item:focus-visible{outline:2px solid #2563eb;outline-offset:2px;border-radius:4px}

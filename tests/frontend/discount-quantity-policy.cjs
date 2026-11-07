@@ -32,12 +32,13 @@ app.state.cart=[{lineId:11,productId:1,name:product.name,qty:1,unitPrice:83.75,o
  assert.equal(app.promotionReason({...product,promotionExpiry:'2026-11-08'},'Seasonal'),'');
  assert.equal(app.promotionReason({...product,promotionExpiry:'2026-12-08'},'Seasonal'),'');
  app.state.promoType='Near-Expiry';app.state.promoPickerSearch='';app.state.promoPickerChecked={};app.state.data.PRODUCTS=[{...product,promotionExpiry:'2026-11-07'}];
- const picker=app.buildPromoPickerModal();assert.equal(nodes(picker).find(n=>n.type==='input'&&n.props.type==='checkbox').props.disabled,true);
+ const picker=app.buildPromoPickerModal();assert.ok(!nodes(picker).some(n=>n.type==='input'&&n.props.type==='checkbox'));assert.ok(JSON.stringify(picker).includes('No near-expiry products available.'));
  for(const expiry of ['2026-11-08','2026-11-09','2026-11-14','2026-12-07','2026-12-08','2027-01-06']){
   const selected={...product,promotionExpiry:expiry};app.state.data.PRODUCTS=[selected];app.state.productsLocal=[selected];app.state.promotionsLocal=[];app.state.promoPickerChecked={};
+  app.state.promoType=expiry<='2026-12-07'?'Near-Expiry':'Seasonal';
   assert.equal(nodes(app.buildPromoPickerModal()).find(n=>n.type==='input'&&n.props.type==='checkbox').props.disabled,false);
   app.togglePromoPickerCheck(1)();app.confirmPromoPicker();assert.deepEqual(Array.from(app.state.promoSelectedItems),[1]);
-  Object.assign(app.state,{promoStartDate:'2026-11-07',promoEndDate:'2026-11-07',promoDiscountPct:'20'});let saved=0;app.authPost=async(path,body)=>{assert.equal(path,'/api/promotions');assert.equal(body.type,'Near-Expiry');assert.deepEqual(Array.from(body.productIds),[1]);saved++;};app.reloadCatalog=async()=>{};await app.savePromotion();assert.equal(saved,1);
+  Object.assign(app.state,{promoStartDate:'2026-11-07',promoEndDate:'2026-11-07',promoDiscountPct:'20'});let saved=0;app.authPost=async(path,body)=>{assert.equal(path,'/api/promotions');assert.equal(body.type,expiry<='2026-12-07'?'Near-Expiry':'Seasonal');assert.deepEqual(Array.from(body.productIds),[1]);saved++;};app.reloadCatalog=async()=>{};await app.savePromotion();assert.equal(saved,1);
   app.state.promotionsLocal=[promotion];assert.equal(app.activePromo(1)?.id,1);
  }
  app.state.data.PRODUCTS=[{...product,promotionExpiry:'2026-11-08'}];app.state.data.EXPIRING_BATCHES=[{id:10,productId:1,name:'Hotdog Buns',expiryDate:'2026-11-08',quantityRemaining:10}];app.state.data.SALES_LOG=[];app.state.productsLocal=app.state.data.PRODUCTS;app.state.promotionsLocal=[];

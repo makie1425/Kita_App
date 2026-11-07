@@ -329,3 +329,40 @@ test('receiving sorts latest activity first and preserves failed form entries',a
  const draft={primaryPo:'PO-OLDER',notes:'Keep my input',entries:[]};app.state.inspection=draft;app.state.purchaseReceivingId='PO-OLDER';app.state.inspectionReview=true;app.reviewInspection=()=>true;app.inspectionPayload=()=>({});app.authPost=async()=>{throw new Error('Delivery could not be saved');};
  await app.submitInspection();assert.equal(app.state.inspection,draft);assert.equal(app.state.purchaseReceivingId,'PO-OLDER');assert.equal(app.state.receivingSuccess,undefined);assert.match(app.state.receiveError,/could not be saved/);
 });
+
+
+test('Near-Expiry picker hides undated, unavailable, expired and distant stock and sorts days left',()=>{
+ const {app}=setup(true);app.state.promoType='Near-Expiry';app.state.promoPickerSearch='';app.state.promoPickerChecked={};
+ const base={status:'Active',sellableStock:8,price:12,stockUnit:'Piece',expiry:'2026-11-08'};
+ app.state.data={BUSINESS_DATE:'2026-11-07',PRODUCTS:[
+  {...base,id:30,name:'Thirty days',promotionExpiry:'2026-12-07'},
+  {...base,id:7,name:'Seven days',promotionExpiry:'2026-11-14'},
+  {...base,id:1,name:'Tomorrow',promotionExpiry:'2026-11-08'},
+  {...base,id:31,name:'Distant',promotionExpiry:'2026-12-08'},
+  {...base,id:2,name:'Missing date',promotionExpiry:null},
+  {...base,id:3,name:'No stock',promotionExpiry:'2026-11-08',sellableStock:0},
+  {...base,id:4,name:'Expired',promotionExpiry:'2026-11-07'},
+  {...base,id:5,name:'Archived',promotionExpiry:'2026-11-08',archivedAt:'2026-11-01'},
+  {...base,id:6,name:'Inactive',promotionExpiry:'2026-11-08',status:'Inactive'},
+  {...base,id:8,name:'Recalled stock',promotionExpiry:null,recalledStock:8,sellableStock:0}
+ ]};
+ const rows=uiNodes(app.buildPromoPickerModal()).filter(n=>n.type==='label');assert.deepEqual(rows.map(n=>n.props.key),[1,7,30]);
+ const tree=JSON.stringify(rows);for(const text of ['Expires tomorrow - 1 day left','7 days left','30 days left','Expiry: 2026-11-08','Available: 8 Piece'])assert.ok(tree.includes(text),text);
+ assert.ok(uiNodes(rows[0]).some(n=>n.props?.className==='promotion-expiry-details is-urgent'));assert.ok(!uiNodes(rows[2]).some(n=>n.props?.className==='promotion-expiry-details is-urgent'));
+ app.state.promoPickerChecked={31:true,2:true,1:true};app.confirmPromoPicker();assert.deepEqual(Array.from(app.state.promoSelectedItems),[1]);
+ app.state.promoPickerSearch='Missing';assert.ok(JSON.stringify(app.buildPromoPickerModal()).includes('No near-expiry products match your search.'));
+ app.state.promoPickerSearch='';app.state.data.PRODUCTS=app.state.data.PRODUCTS.filter(p=>p.id===2);assert.ok(JSON.stringify(app.buildPromoPickerModal()).includes('No near-expiry products available.'));
+});
+
+test('Near-Expiry promotion selection respects search, type switches, scheduled dates and full suggestions',()=>{
+ const {app}=setup(true);app.toast=()=>{};app.state.promotionsLocal=[];app.state.promoType='Seasonal';app.state.promoPickerSearch='';app.state.promoPickerChecked={};
+ const base={status:'Active',sellableStock:10,price:12,stockUnit:'Piece',category:'Food'};
+ app.state.data={BUSINESS_DATE:'2026-11-07',SALES_LOG:[],PRODUCTS:Array.from({length:6},(_,i)=>({...base,id:i+1,name:'Near '+(i+1),promotionExpiry:'2026-11-'+String(8+i).padStart(2,'0')})).concat([{...base,id:31,name:'Later',promotionExpiry:'2026-12-08'},{...base,id:32,name:'Undated',promotionExpiry:null}])};
+ app.state.promoSelectedItems=[1,31,32];app.setPromoType('Near-Expiry')();assert.deepEqual(Array.from(app.state.promoSelectedItems),[1]);
+ app.state.promoPickerSearch='Near 2';app.state.promoPickerChecked={1:true,2:true,31:true};const searched=app.buildPromoPickerModal();assert.equal(uiNodes(searched).filter(n=>n.type==='label').length,1);assert.ok(JSON.stringify(searched).includes('2 item(s) selected'));app.confirmPromoPicker();assert.deepEqual(Array.from(app.state.promoSelectedItems),[1,2]);
+ delete app.state.promoPickerChecked[31];app.togglePromoPickerCheck(31)();assert.equal(app.state.promoPickerChecked[31],undefined);
+ app.state.promoPickerSearch='';const panel=app.buildMgrPromotions();assert.equal(uiNodes(panel).filter(n=>n.props?.className==='promotion-near-expiry-row').length,6);
+ app.state.promoStartDate='2026-11-08';assert.ok(!app.nearExpiryPromotionProducts().some(p=>p.id===1));app.confirmPromoPicker();assert.deepEqual(Array.from(app.state.promoSelectedItems),[2]);
+ app.quickPromoFromNearExpiry(1)();assert.equal(app.state.promoStartDate,'2026-11-07');assert.deepEqual(Array.from(app.state.promoSelectedItems),[1]);
+ app.setPromoType('Seasonal')();const ordinary=uiNodes(app.buildPromoPickerModal()).filter(n=>n.type==='label');assert.ok(ordinary.some(n=>n.props.key===31));assert.ok(ordinary.some(n=>n.props.key===32));
+});

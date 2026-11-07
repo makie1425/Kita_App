@@ -649,6 +649,21 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     if(Number(product.expiredStock)>0&&Number(product.sellableStock)<=0)return 'This product has no unexpired stock available for promotion.';
     return '';
   };
+  promotionDaysLeft=product=>{
+    const expiry=product&&Object.prototype.hasOwnProperty.call(product,'promotionExpiry')?product.promotionExpiry:product?.expiry;
+    const today=this.state.data?.BUSINESS_DATE||new Date().toISOString().slice(0,10);
+    return expiry?Math.round((Date.parse(expiry+'T00:00:00Z')-Date.parse(today+'T00:00:00Z'))/86400000):null;
+  };
+  nearExpiryPromotionProduct=(product,referenceDate)=>{
+    const days=this.promotionDaysLeft(product);
+    return Number.isInteger(days)&&days>0&&days<=30&&this.sellableStock(product)>0&&!this.promotionReason(product,'Near-Expiry',referenceDate||this.promotionReferenceDate());
+  };
+  canPickPromotionProduct=(product,type=this.state.promoType)=>type==='Near-Expiry'?this.nearExpiryPromotionProduct(product):!this.promotionReason(product,type,this.promotionReferenceDate());
+  nearExpiryPromotionProducts=()=> (this.state.data?.PRODUCTS||[]).filter(p=>this.nearExpiryPromotionProduct(p)).sort((a,b)=>this.promotionDaysLeft(a)-this.promotionDaysLeft(b)||a.name.localeCompare(b.name)||Number(a.id)-Number(b.id));
+  promotionExpiryDetails=product=>{
+    const h=React.createElement,days=this.promotionDaysLeft(product),expiry=Object.prototype.hasOwnProperty.call(product,'promotionExpiry')?product.promotionExpiry:product.expiry;
+    return days!==null&&Number.isFinite(days)?h('small',{className:'promotion-expiry-details'+(days<=7?' is-urgent':'')},[h('span',null,(days===1?'Expires tomorrow - 1 day left':days+' days left')+' | Expiry: '+expiry),h('span',null,'Available: '+this.sellableStock(product)+' '+(product.stockUnit||product.unit||'units'))]):null;
+  };
   activePromo=productId=>{
     const list=this.state.checkoutPromotions??this.state.promotionsLocal;if(!list)return null;
     const product=(this.state.productsLocal||this.state.data?.PRODUCTS||[]).find(p=>String(p.id)===String(productId));
@@ -1273,21 +1288,21 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
   };
   setRegPrintQty=e=>this.setState({regPrintQty:Math.max(1,parseInt(e.target.value,10)||1)});
   printLabels=()=>this.toast(`Opening print-preview for ${this.state.regPrintQty} label(s).`);
-  openPromoPicker=()=>this.setState({promoPickerOpen:true,promoPickerSearch:"",promoPickerChecked:Object.fromEntries(this.state.promoSelectedItems.map(id=>[id,true]))});
+  openPromoPicker=()=>this.setState({promoPickerOpen:true,promoPickerSearch:"",promoPickerChecked:Object.fromEntries(this.state.promoSelectedItems.filter(id=>this.canPickPromotionProduct(this.state.data.PRODUCTS.find(p=>String(p.id)===String(id)))).map(id=>[id,true]))});
   closePromoPicker=()=>this.setState({promoPickerOpen:false});
   setPromoPickerSearch=e=>this.setState({promoPickerSearch:e.target.value});
-  togglePromoPickerCheck=id=>()=>{const p=this.state.data.PRODUCTS.find(p=>String(p.id)===String(id)),reason=this.promotionReason(p,this.state.promoType,this.promotionReferenceDate());if(reason){this.toast(reason,'error');return;}this.setState(s=>({promoPickerChecked:{...s.promoPickerChecked,[id]:!s.promoPickerChecked[id]}}));};
+  togglePromoPickerCheck=id=>()=>{const p=this.state.data.PRODUCTS.find(p=>String(p.id)===String(id));if(!this.canPickPromotionProduct(p)){this.toast(this.promotionReason(p,this.state.promoType,this.promotionReferenceDate())||'Select available stock expiring within 30 days from the Near-Expiry list.','error');return;}this.setState(s=>({promoPickerChecked:{...s.promoPickerChecked,[id]:!s.promoPickerChecked[id]}}));};
   promotionReferenceDate=()=>[this.state.data?.BUSINESS_DATE||new Date().toISOString().slice(0,10),this.state.promoStartDate||''].sort().at(-1);
-  confirmPromoPicker=()=>{ const ids=Object.keys(this.state.promoPickerChecked).filter(k=>this.state.promoPickerChecked[k]&&!this.promotionReason(this.state.data.PRODUCTS.find(p=>String(p.id)===k),this.state.promoType,this.promotionReferenceDate())).map(Number); this.setState({promoSelectedItems:ids,promoPickerOpen:false}); };
+  confirmPromoPicker=()=>{ const ids=Object.keys(this.state.promoPickerChecked).filter(k=>this.state.promoPickerChecked[k]&&this.canPickPromotionProduct(this.state.data.PRODUCTS.find(p=>String(p.id)===k))).map(Number); this.setState({promoSelectedItems:ids,promoPickerOpen:false}); };
   removePromoSelectedItem=id=>()=>this.setState(s=>({promoSelectedItems:s.promoSelectedItems.filter(x=>x!==id)}));
   setPromoStartDate=e=>this.setState({promoStartDate:e.target.value});
   setPromoEndDate=e=>this.setState({promoEndDate:e.target.value});
-  setPromoType=type=>()=>this.setState({promoType:type});
+  setPromoType=type=>()=>this.setState(s=>({promoType:type,promoSelectedItems:s.promoSelectedItems.filter(id=>this.canPickPromotionProduct(s.data.PRODUCTS.find(p=>String(p.id)===String(id)),type)),promoPickerChecked:{}}));
   setPromoOccasionName=e=>this.setState({promoOccasionName:e.target.value});
   setPromoCategory=e=>this.setState({promoCategory:e.target.value});
   setPromoDiscountPct=e=>this.setState({promoDiscountPct:e.target.value});
   resetPromoForm=()=>this.setState({promoSelectedItems:[],promoStartDate:"",promoEndDate:"",promoType:"Near-Expiry",promoOccasionName:"",promoCategory:"",promoDiscountPct:""});
-  quickPromoFromNearExpiry=productId=>()=>{const p=this.state.data.PRODUCTS.find(p=>String(p.id)===String(productId)),reason=this.promotionReason(p,'Near-Expiry');if(reason){this.toast(reason,'error');return;} this.setState({screen:"mgrPromotions",promoSelectedItems:[productId],promoType:"Near-Expiry",promoStartDate:this.state.data.BUSINESS_DATE,promoEndDate:this.state.data.BUSINESS_DATE,promoDiscountPct:""}); };
+  quickPromoFromNearExpiry=productId=>()=>{const p=this.state.data.PRODUCTS.find(p=>String(p.id)===String(productId));if(!this.nearExpiryPromotionProduct(p,this.state.data.BUSINESS_DATE)){this.toast('No available near-expiry stock for this product.','error');return;} this.setState({screen:"mgrPromotions",promoSelectedItems:[productId],promoType:"Near-Expiry",promoStartDate:this.state.data.BUSINESS_DATE,promoEndDate:this.state.data.BUSINESS_DATE,promoDiscountPct:""}); };
   quickPromoFromLeastSales=productId=>()=>{const p=this.state.data.PRODUCTS.find(p=>String(p.id)===String(productId)),reason=this.promotionReason(p,'Slow-Moving');if(reason){this.toast(reason,'error');return;} this.setState({screen:"mgrPromotions",promoSelectedItems:[productId],promoType:"Slow-Moving",promoStartDate:this.state.data.BUSINESS_DATE,promoEndDate:this.state.data.BUSINESS_DATE,promoDiscountPct:""}); };
   copyPromotion=promo=>()=>{ this.setState({promoSelectedItems:[...promo.productIds],promoType:promo.type,promoOccasionName:promo.occasionName||"",promoCategory:promo.category||"",promoDiscountPct:String(promo.discountPct),promoStartDate:"",promoEndDate:""}); this.toast("Promotion copied — set new dates and save."); };
   savePromotion=async()=>{
@@ -1710,7 +1725,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
           h('small',null,'Batch: '+x.p.batch),
           h('p',{className:x.days<=0?'dashboard-stock-alert':null},x.days<=0?'Expired - blocked from sale':x.days+' day(s) left'),
         ]),
-        manager&&x.days>0?btn('Create promotion',this.quickPromoFromNearExpiry(x.p.id),'primary'):badge(x.days<=0?'Expired':'Near expiry'),
+        manager&&x.days>0&&this.nearExpiryPromotionProduct(this.state.data.PRODUCTS.find(p=>String(p.id)===String(x.p.id)),this.state.data.BUSINESS_DATE)?btn('Create promotion',this.quickPromoFromNearExpiry(x.p.id),'primary'):badge(x.days<=0?'Expired':'Near expiry'),
       ])):h('p',{role:'status',className:'record-empty'},'Nothing near expiry.')),
       manager?btn('View Near-Expiry Monitoring',()=>{this.setState({screen:'mgrInventory',invTab:'expiry'});this.loadInventoryWorkflows();}):null,
     ]);
@@ -2875,18 +2890,19 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
   buildMgrCashiers(){ return this.buildAdmManagers(); }
   buildPromoPickerModal(){
     const {data,promoPickerSearch,promoPickerChecked}=this.state; const q=promoPickerSearch.toLowerCase();
-    const items=data.PRODUCTS.filter(p=>searchMatches(p.name,q));
-    const count=Object.entries(promoPickerChecked).filter(([id,selected])=>selected&&!this.promotionReason(data.PRODUCTS.find(p=>String(p.id)===id),this.state.promoType,this.promotionReferenceDate())).length;
+    const nearExpiry=this.state.promoType==='Near-Expiry';
+    const items=(nearExpiry?this.nearExpiryPromotionProducts():data.PRODUCTS).filter(p=>searchMatches(p.name,q));
+    const count=Object.entries(promoPickerChecked).filter(([id,selected])=>selected&&this.canPickPromotionProduct(data.PRODUCTS.find(p=>String(p.id)===id))).length;
     return React.createElement("div",{style:{position:"fixed",inset:0,background:"rgba(15,31,74,0.38)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:50,padding:20}},
       React.createElement("div",{style:{width:520,maxWidth:"92vw",maxHeight:"78vh",background:"#fff",borderRadius:14,padding:20,display:"flex",flexDirection:"column",boxSizing:"border-box"}},[
-        React.createElement("div",{key:"t",style:{fontWeight:800,marginBottom:10}},"Select Item(s) for Promotion"),
+        React.createElement("div",{key:"t",style:{fontWeight:800,marginBottom:10}},nearExpiry?"Select Near-Expiry Products":"Select Item(s) for Promotion"),
         React.createElement("input",{key:"s",value:promoPickerSearch,onChange:this.setPromoPickerSearch,placeholder:"Search…",style:{padding:8,border:"1px solid "+COLORS.border,borderRadius:7,marginBottom:10}}),
         React.createElement("div",{key:"list",style:{flex:1,overflowY:"auto",border:"1px solid "+COLORS.border,borderRadius:8}},
-          items.map(p=>React.createElement("label",{key:p.id,style:{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderBottom:"1px solid #eef1f6",cursor:"pointer"}},[
-            React.createElement("input",{key:"cb",type:"checkbox",disabled:!!this.promotionReason(p,this.state.promoType,this.promotionReferenceDate()),checked:!!promoPickerChecked[p.id]&&!this.promotionReason(p,this.state.promoType,this.promotionReferenceDate()),onChange:this.togglePromoPickerCheck(p.id)}),
-            React.createElement("div",{key:"n",style:{flex:1,fontSize:13,fontWeight:600}},[p.name,this.promotionReason(p,this.state.promoType,this.promotionReferenceDate())?React.createElement('small',{className:'promotion-ineligible'},this.promotionReason(p,this.state.promoType,this.promotionReferenceDate())):null]),
+          items.length?items.map(p=>React.createElement("label",{key:p.id,style:{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderBottom:"1px solid #eef1f6",cursor:"pointer"}},[
+            React.createElement("input",{key:"cb",type:"checkbox",disabled:!this.canPickPromotionProduct(p),checked:!!promoPickerChecked[p.id]&&this.canPickPromotionProduct(p),onChange:this.togglePromoPickerCheck(p.id)}),
+            React.createElement("div",{key:"n",style:{flex:1,fontSize:13,fontWeight:600}},[p.name,nearExpiry?this.promotionExpiryDetails(p):null,this.promotionReason(p,this.state.promoType,this.promotionReferenceDate())?React.createElement('small',{className:'promotion-ineligible'},this.promotionReason(p,this.state.promoType,this.promotionReferenceDate())):null]),
             React.createElement("div",{key:"p",style:{fontSize:12,color:COLORS.textSoft}},peso(p.price)),
-          ]))),
+          ])):React.createElement("p",{role:"status",className:"record-empty"},nearExpiry?(q?"No near-expiry products match your search.":"No near-expiry products available."):"No products match your search.")),
         React.createElement("div",{key:"footer",style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:14}},[
           React.createElement("span",{key:"c",style:{fontSize:13,fontWeight:700,color:COLORS.brandDark}},count+" item(s) selected"),
           React.createElement("div",{key:"a",style:{display:"flex",gap:8}},[React.createElement("button",{key:"c",onClick:this.closePromoPicker,style:{padding:"9px 14px",background:"#f7f9fc",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer"}},"Cancel"),React.createElement("button",{key:"a",onClick:this.confirmPromoPicker,style:{padding:"9px 14px",background:COLORS.brand,color:"#fff",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer"}},"Confirm Selection")]),
@@ -3000,7 +3016,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     const pct=parseFloat(promoDiscountPct)||0;
     const selectedProducts = promoType==="Category-Wide" ? data.PRODUCTS.filter(p=>p.category===promoCategory) : promoSelectedItems.map(id=>data.PRODUCTS.find(p=>p.id===id)).filter(Boolean);
     const types=[
-      ["Near-Expiry","Near-Expiry Clearance","⏳","For stock with an expiration date; the 30-day window applies to alerts only"],
+      ["Near-Expiry","Near-Expiry Clearance","⏳","Shows available stock expiring within 30 days"],
       ["Seasonal","Seasonal/Event Promotion","🎉","For planned occasions like Christmas or Back-to-School"],
       ["Slow-Moving","Slow-Moving Clearance","📉","For items that aren't selling well"],
       ["Category-Wide","Category-Wide Promotion","🗂","Applies one discount across a whole category"],
@@ -3011,7 +3027,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     const avgDiscount=promotionsLocal.length?Math.round(promotionsLocal.reduce((s,p)=>s+p.discountPct,0)/promotionsLocal.length):0;
     const endingThisWeek=promotionsLocal.filter(p=>{ const d=Math.round((new Date(p.endDate)-new Date(today))/86400000); return this.promoStatus(p)==="Active" && d>=0 && d<=7; }).length;
     const durationDays = (promoStartDate&&promoEndDate) ? Math.round((new Date(promoEndDate)-new Date(promoStartDate))/86400000) : null;
-    const nearExpiry=this.expiringBatches().filter(x=>x.days>0&&x.days<=30).slice(0,5);
+    const nearExpiry=this.nearExpiryPromotionProducts();
     const byProduct={}; data.SALES_LOG.forEach(t=>{ byProduct[t.productId]=(byProduct[t.productId]||0)+t.qty*t.amount; });
     const leastSales=Object.entries(byProduct).map(([id,rev])=>({p:data.PRODUCTS.find(p=>p.id===Number(id)),rev})).filter(x=>x.p).sort((a,b)=>a.rev-b.rev).slice(0,5);
     const stepHeader=(n,label)=>React.createElement("div",{style:{display:"flex",alignItems:"center",gap:12,marginBottom:14}},[
@@ -3042,6 +3058,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
                 React.createElement("span",{key:"x",onClick:this.removePromoSelectedItem(id),style:{position:"absolute",top:6,right:8,cursor:"pointer",color:COLORS.textMuted,fontWeight:700}},"✕"),
                 React.createElement("div",{key:"n",style:{fontSize:13,fontWeight:700,marginBottom:6,paddingRight:14}},p.name),
                 React.createElement("div",{key:"p",style:{fontSize:13,color:COLORS.textSoft}},peso(p.price)),
+                promoType==="Near-Expiry"?this.promotionExpiryDetails(p):null,
               ]);
             })),
           ]):React.createElement("div",{key:"s1",style:{marginBottom:24,paddingLeft:44}},React.createElement("select",{value:promoCategory,onChange:this.setPromoCategory,style:{width:320,padding:12,border:"1px solid "+COLORS.border,borderRadius:8,fontSize:14}},[React.createElement("option",{key:"-",value:""},"Select category…"),...data.CATEGORIES.filter(c=>c.status==="Active").map(c=>React.createElement("option",{key:c.name,value:c.name},c.name))])),
@@ -3085,10 +3102,11 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
         React.createElement("div",{key:"side",style:{display:"flex",flexDirection:"column",gap:16,position:"sticky",top:0}},[
           card([
             React.createElement("div",{key:"t",style:{fontSize:16,fontWeight:800,marginBottom:12}},"Near-Expiry Items"),
-            ...nearExpiry.map(x=>React.createElement("div",{key:x.p.id,style:{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"9px 0",borderBottom:"1px solid #eef1f6"}},[
-              React.createElement("div",null,[React.createElement("div",{style:{fontSize:13,fontWeight:600}},x.p.name),React.createElement("div",{style:{fontSize:11,color:x.days<=1?COLORS.red:COLORS.amber,fontWeight:700}},x.days<=0?"Expired - blocked from sale":x.days+" day(s) left")]),
-              React.createElement("button",{onClick:this.quickPromoFromNearExpiry(x.p.id),style:{fontSize:11,fontWeight:700,color:COLORS.brand,background:"none",border:"none",cursor:"pointer"}},"Use This Item →"),
-            ])),
+            !nearExpiry.length?React.createElement("p",{role:"status",className:"record-empty"},"No near-expiry products available."):null,
+            React.createElement("div",{className:"promotion-near-expiry-list"},nearExpiry.map(p=>React.createElement("div",{key:p.id,className:"promotion-near-expiry-row"},[
+              React.createElement("div",null,[React.createElement("div",{style:{fontSize:13,fontWeight:600}},p.name),this.promotionExpiryDetails(p)]),
+              React.createElement("button",{type:"button",onClick:this.quickPromoFromNearExpiry(p.id),className:"promotion-use-item"},"Use This Item →"),
+            ]))),
           ],{padding:18}),
           card([
             React.createElement("div",{key:"t",style:{fontSize:16,fontWeight:800,marginBottom:12}},"Least Sales Items"),
