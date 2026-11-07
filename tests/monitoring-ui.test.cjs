@@ -9,6 +9,9 @@ function setup(realElements=false){
  const app=new context.App();app.setState=function(value){Object.assign(this.state,typeof value==='function'?value(this.state):value);};
  return {app,context};
 }
+function uiNodes(v){return !v||typeof v!=='object'?[]:Array.isArray(v)?v.flatMap(uiNodes):[v,...uiNodes(v.children)];}
+function purchaseOptions(app){app.setState({productPickerOpen:true});return uiNodes(app.buildItemPickerModal()).filter(n=>n.props?.role==='option');}
+function choosePurchaseProduct(app,id){const option=purchaseOptions(app).find(n=>String(n.props['data-product-id'])===String(id));assert.ok(option,'Product must be present in the filtered list');option.props.onClick();}
 test('category popup accepts a name and classification and advances to subcategory',async()=>{
  const {app}=setup();app.openCategoryModal();
  app.state.data={CATEGORIES:[],SUBCATEGORIES:[]};
@@ -102,30 +105,30 @@ test('purchase form removes expected delivery and adds a validated packaged cata
  const nodes=(v)=>!v||typeof v!=='object'?[]:Array.isArray(v)?v.flatMap(nodes):[v,...nodes(v.children)];
  app.state.purchaseItemDraft={supplierId:'7',category:'Grocery',subcategoryId:'none',productId:'1',qty:2,orderUnit:'Box',unitCost:10};
  let modal=app.buildItemPickerModal();assert.equal(modal.tag,'dialog');
- nodes(modal).find(n=>n.tag==='button'&&JSON.stringify(n.children).includes('Add Item')).props.onClick();
+ nodes(modal).find(n=>n.tag==='button'&&JSON.stringify(n.children).includes('Add Product')).props.onClick();
  assert.equal(app.state.newReqCart.length,0);assert.ok(app.state.purchaseItemError);
  app.state.purchaseItemDraft.stockUnitsPerOrder=12;
- nodes(app.buildItemPickerModal()).find(n=>n.tag==='button'&&JSON.stringify(n.children).includes('Add Item')).props.onClick();
+ nodes(app.buildItemPickerModal()).find(n=>n.tag==='button'&&JSON.stringify(n.children).includes('Add Product')).props.onClick();
  assert.equal(app.state.newReqCart.length,1);assert.equal(app.state.newReqCart[0].stockUnitsPerOrder,12);assert.equal(app.state.newReqSupplier,'7');
  const populated=JSON.stringify(app.buildPurchaseRequests());assert.ok(populated.includes('240.00'));
 });
 
-test('item-first PO suggests low stock and selects category and eligible suppliers',()=>{
+test('product-first PO selects category and eligible suppliers',()=>{
  const {app}=setup();app.state.newReqCart=[];
  app.state.data={PRODUCTS:[{id:1,name:'Rice',category:'Food',subcategoryId:10,supplierId:7,status:'Active',sellableStock:2,minStock:10,unitPrice:30},{id:2,name:'Soap',category:'Care',supplierId:8,status:'Active',sellableStock:20,minStock:5}],SUPPLIERS:[{id:7,name:'Supply',status:'Active',products:[{productId:1,costPrice:25}]},{id:8,name:'Other',status:'Active',products:[]}],SUBCATEGORIES:[{id:10,name:'Grains'}]};
  const nodes=v=>!v||typeof v!=='object'?[]:Array.isArray(v)?v.flatMap(nodes):[v,...nodes(v.children)];
  const field=label=>nodes(app.buildItemPickerModal()).find(n=>n.tag==='label'&&JSON.stringify(n.children[0]).includes('"'+label+'"')).children.flat(Infinity).find(n=>['select','input'].includes(n?.tag));
- assert.ok(JSON.stringify(app.buildItemPickerModal()).includes('Low Stock'));
- field('Item Name').props.onChange({target:{value:'1'}});
+ assert.ok(JSON.stringify(purchaseOptions(app)).includes('Low Stock'));
+ choosePurchaseProduct(app,1);
  assert.equal(field('Category').props.value,'Food');assert.equal(field('Category').props.readOnly,true);
  assert.equal(field('Subcategory').props.value,'Grains');assert.equal(field('Supplier').props.value,'7');
  assert.equal(app.state.purchaseItemDraft.qty,8);assert.equal(app.state.purchaseItemDraft.unitCost,25);
  app.state.data.SUPPLIERS[1].products=[{productId:1,costPrice:28}];
  field('Supplier').props.onChange({target:{value:''}});
- field('Item Name').props.onChange({target:{value:'1'}});assert.equal(field('Supplier').props.value,'');
+ choosePurchaseProduct(app,1);assert.equal(field('Supplier').props.value,'');
  field('Supplier').props.onChange({target:{value:'8'}});assert.equal(app.state.purchaseItemDraft.unitCost,28);
- app.state.newReqCart=[{productId:1}];app.state.newReqSupplier='7';field('Item Name').props.onChange({target:{value:'2'}});
- nodes(app.buildItemPickerModal()).find(n=>n.tag==='button'&&JSON.stringify(n.children).includes('Add Item')).props.onClick();
+ app.state.newReqCart=[{productId:1}];app.state.newReqSupplier='7';assert.ok(!purchaseOptions(app).some(n=>String(n.props['data-product-id'])==='2'));app.state.purchaseItemDraft={productId:2,supplierId:'7',qty:1,unitCost:10};
+ nodes(app.buildItemPickerModal()).find(n=>n.tag==='button'&&JSON.stringify(n.children).includes('Add Product')).props.onClick();
  assert.equal(app.state.newReqCart.length,1);assert.ok(app.state.purchaseItemError.includes('separate PO'));
 });
 
@@ -197,10 +200,10 @@ test('Admin and Manager navigation distinguish requests, orders and supplier bal
 
 test('session failure clears cart and secrets but ordinary permission errors do not log out',()=>{
  const {app,context}=setup();context.window.KITA_AUTH={user:{name:'Cashier'}};
- Object.assign(app.state,{authStep:'in',role:'cashier',cart:[{productId:1}],discountManagerPin:'1234',purchaseData:{secret:true}});
+ Object.assign(app.state,{authStep:'in',role:'cashier',cart:[{productId:1}],discountManagerPin:'1234',purchaseData:{secret:true},receivingSuccess:{id:'Private receipt'},registrationFromPurchase:true,productPickerOpen:true});
  app.handleSessionResponse({status:403},{message:'Forbidden'});assert.equal(app.state.authStep,'in');
  app.handleSessionResponse({status:401},{deactivated:true,message:'Account deactivated',csrf_token:'new'});
- assert.equal(app.state.authStep,'login');assert.equal(app.state.cart.length,0);assert.equal(app.state.discountManagerPin,'');assert.equal(app.state.purchaseData,null);assert.equal(context.window.KITA_AUTH.user,null);
+ assert.equal(app.state.authStep,'login');assert.equal(app.state.cart.length,0);assert.equal(app.state.discountManagerPin,'');assert.equal(app.state.purchaseData,null);assert.equal(app.state.receivingSuccess,null);assert.equal(app.state.registrationFromPurchase,false);assert.equal(app.state.productPickerOpen,false);assert.equal(context.window.KITA_AUTH.user,null);
 });
 test('late responses cannot restore data after session revocation',async()=>{
  const {app,context}=setup();app.state.authStep='in';let resolve;
@@ -231,39 +234,35 @@ test('inventory combines supplier and category filters and exposes compact Edit 
  const tree=JSON.stringify(app.buildStockBalance());assert.equal(captured[0].rows.length,1);assert.ok(tree.includes('Rice'));assert.ok(tree.includes('stock-condition-out'));assert.ok(tree.includes('Archive'));assert.ok(tree.includes('Edit'));assert.ok(!tree.includes('Edit Item'));
 });
 
-test('supplier-first filters products and suggestions and resets incompatible item',()=>{
+test('supplier-first filters prioritized products and resets incompatible item',()=>{
  const {app}=setup();app.state.newReqCart=[];app.state.purchaseItemDraft={};
  app.state.data={PRODUCTS:[{id:1,name:'Rice',category:'Food',supplierId:7,status:'Active',sellableStock:0,minStock:10,stockUnit:'Piece',unitPrice:30},{id:2,name:'Soap',category:'Care',supplierId:8,status:'Active',sellableStock:2,minStock:5,stockUnit:'Piece'}],SUPPLIERS:[{id:7,name:'Food Supply',status:'Active',products:[{productId:1,costPrice:25}]},{id:8,name:'Care Supply',status:'Active',products:[]}],SUBCATEGORIES:[]};
  const nodes=v=>!v||typeof v!=='object'?[]:Array.isArray(v)?v.flatMap(nodes):[v,...nodes(v.children)];
  const field=label=>nodes(app.buildItemPickerModal()).find(n=>n.tag==='label'&&JSON.stringify(n.children[0]).includes('"'+label+'"')).children.flat(Infinity).find(n=>['select','input'].includes(n?.tag));
  assert.equal(field('Supplier').props.disabled,false);
  field('Supplier').props.onChange({target:{value:'7'}});
- assert.ok(!JSON.stringify(field('Item Name')).includes('Soap'));
- assert.ok(!JSON.stringify(nodes(app.buildItemPickerModal()).find(n=>n.props?.className==='po-low-stock')).includes('Soap'));
- field('Item Name').props.onChange({target:{value:'1'}});
+ assert.ok(!JSON.stringify(purchaseOptions(app)).includes('Soap'));
+ assert.ok(!JSON.stringify(app.buildItemPickerModal()).includes('Low Stock Urgent Suggestions'));
+ choosePurchaseProduct(app,1);
  assert.equal(app.state.purchaseItemDraft.supplierId,'7');assert.equal(app.state.purchaseItemDraft.unitCost,25);
  assert.ok(JSON.stringify(app.buildItemPickerModal()).includes('250.00'));
  field('Supplier').props.onChange({target:{value:'8'}});
  assert.equal(app.state.purchaseItemDraft.productId,undefined);assert.equal(field('Category').props.value,'');
- assert.ok(!JSON.stringify(field('Item Name')).includes('Rice'));
+ assert.ok(!JSON.stringify(purchaseOptions(app)).includes('Rice'));
  field('Supplier').props.onChange({target:{value:''}});
- assert.ok(JSON.stringify(field('Item Name')).includes('Rice'));
+ assert.ok(JSON.stringify(purchaseOptions(app)).includes('Rice'));
  app.state.newReqCart=[{productId:2}];app.state.newReqSupplier='8';
- assert.equal(field('Supplier').props.disabled,true);assert.ok(!JSON.stringify(field('Item Name')).includes('Rice'));
+ assert.equal(field('Supplier').props.disabled,true);assert.ok(!JSON.stringify(purchaseOptions(app)).includes('Rice'));
 });
 
-test('low-stock cards remain a dedicated list outside shared action grouping',()=>{
+test('purchase options prioritize out-of-stock and low-stock products and support keyboard selection',()=>{
  const {app}=setup(true);app.state.newReqCart=[];app.state.purchaseItemDraft={};
- app.state.data={PRODUCTS:Array.from({length:15},(_,i)=>({id:i+1,name:'Grocery item '+(i+1),category:'Food',supplierId:7,status:'Active',sellableStock:0,minStock:10,stockUnit:'Piece',unitPrice:30})),SUPPLIERS:[{id:7,name:'Supply',status:'Active'}],SUBCATEGORIES:[]};
- const nodes=v=>!v||typeof v!=='object'?[]:Array.isArray(v)?v.flatMap(nodes):[v,...nodes(v.children)];
- const list=nodes(app.buildItemPickerModal()).find(n=>n.props?.className==='po-low-stock-list');
- assert.equal(list.tag,'ul');assert.equal(list.children.flat(Infinity).length,15);
- assert.ok(list.children.flat(Infinity).every(n=>n.tag==='li'));
- assert.ok(!nodes(list).some(n=>n.props?.className==='action-group'));
- const cards=nodes(list).filter(n=>n.tag==='button');cards[2].props.onClick();
- assert.equal(app.state.purchaseItemDraft.productId,3);
- const selected=nodes(app.buildItemPickerModal()).filter(n=>n.tag==='button'&&n.props?.['aria-pressed']);
- assert.equal(selected.length,1);
+ app.state.data={PRODUCTS:[{id:1,name:'Apples',category:'Food',supplierId:7,status:'Active',sellableStock:20,minStock:5},{id:2,name:'Beans',category:'Food',supplierId:7,status:'Active',sellableStock:2,minStock:5},{id:3,name:'Rice',category:'Food',supplierId:7,status:'Active',sellableStock:0,minStock:5}],SUPPLIERS:[{id:7,name:'Supply',status:'Active'}],SUBCATEGORIES:[]};
+ const options=purchaseOptions(app);assert.deepEqual(options.map(n=>n.props['data-product-id']),[3,2,1]);
+ assert.ok(JSON.stringify(options[0]).includes('Out of Stock'));assert.ok(JSON.stringify(options[1]).includes('Low Stock'));assert.ok(!JSON.stringify(app.buildItemPickerModal()).includes('Low Stock Urgent Suggestions'));
+ const trigger=uiNodes(app.buildItemPickerModal()).find(n=>n.props?.role==='combobox');
+ trigger.props.onKeyDown({key:'ArrowDown',preventDefault(){}});const next=uiNodes(app.buildItemPickerModal()).find(n=>n.props?.role==='combobox');next.props.onKeyDown({key:'Enter',preventDefault(){}});
+ assert.equal(app.state.purchaseItemDraft.productId,2);assert.equal(app.state.productPickerOpen,false);
 });
 
 test('tracker leaves unreached connector gray and marks final decision colors',()=>{
@@ -291,4 +290,42 @@ test('receiving requires only actual missing fields and assigns lot metadata aut
  app.state.inspection.entries[0].lots[0].expiryDate='2026-11-20';assert.equal(app.reviewInspection(),true);
  const payload=app.inspectionPayload();assert.equal(payload.automaticLots,true);assert.equal(payload.supplierReference,undefined);assert.equal(payload.entries[0].lots[0].supplierLot,null);
  app.state.inspection.entries[0].damaged=3;assert.equal(app.reviewInspection(),false);assert.equal(app.state.inspectionErrors['entries.0.damaged'],'Damaged quantity cannot exceed delivered quantity for Fresh Milk.');
+});
+
+test('unchanged purchase edit stays disabled and cannot submit a no-op request',async()=>{
+ const {app}=setup();app.state.role='admin';app.state.data={PRODUCTS:[]};
+ const record={id:'REQ-1',status:'Pending Approval',revision:0,supplierName:'Supply',requestedBy:'Manager',lines:[{productId:1,name:'Rice',qty:5,unit:'Piece',unitCost:10}]};
+ app.state.purchaseData={requests:[record]};app.openPurchaseReview(record,'edit');
+ const save=()=>uiNodes(app.purchaseReviewDetails()).find(n=>n.tag==='button'&&n.children.flat(Infinity).includes('Save edits'));
+ assert.equal(save().props.disabled,true);let calls=0;app.authPost=async()=>{calls++;return {message:'Saved'};};app.toast=()=>{};app.reloadPurchasing=async()=>{};app.reloadCatalog=async()=>{};
+ app.state.approvalNoteDraft={'REQ-1':'Only a reason changed'};await app.reviewPurchase(record,'modify');assert.equal(calls,0);assert.equal(save().props.disabled,true);
+ app.state.purchaseReviewLines=[{...record.lines[0],confirmedQty:'4'}];assert.equal(save().props.disabled,false);
+ app.state.purchaseReviewLines=[{...record.lines[0],confirmedQty:'05'}];assert.equal(save().props.disabled,true);
+ app.state.purchaseReviewLines=[{...record.lines[0],confirmedQty:'4'}];await app.reviewPurchase(record,'modify');assert.equal(calls,1);
+});
+test('Register Product First is a plain link and preserves the purchase draft',()=>{
+ const {app}=setup();app.state.data={PRODUCTS:[],SUPPLIERS:[]};app.state.newReqCart=[{productId:1,qty:3,supplierId:7}];app.state.newReqSupplier='7';app.state.purchaseNotes='Keep this draft';app.state.screen='mgrRequest';
+ const original=JSON.stringify(app.state.newReqCart),link=uiNodes(app.buildItemPickerModal()).find(n=>n.tag==='a'&&n.children.includes('Register Product First'));
+ assert.ok(link);assert.equal(link.props.className,'po-registration-link');link.props.onClick({preventDefault(){}});
+ assert.equal(app.state.screen,'mgrRegistration');assert.equal(JSON.stringify(app.state.newReqCart),original);assert.equal(app.state.newReqSupplier,'7');
+ app.continuePurchaseRegistration();assert.equal(app.state.screen,'mgrRequest');assert.equal(app.state.itemPickerOpen,true);assert.equal(app.state.purchaseNotes,'Keep this draft');
+});
+test('receiving defaults damage to zero and moves completed receipts to history',async()=>{
+ const {app,context}=setup();context.crypto={randomUUID:()=> 'receipt-key'};app.state.data={BUSINESS_DATE:'2026-11-07',PRODUCTS:[{id:1,name:'Rice',category:'Food',stockUnit:'Piece'}],CATEGORIES:[{name:'Food',classification:'Non-Perishable'}],SUPPLIERS:[]};
+ const order={id:'PO1',supplierId:7,supplierName:'Supply',created:'2026-11-01',status:'Approved',receivingVersion:0,lines:[{productId:1,name:'Rice',orderedQty:4,deliveredQty:0,unit:'Piece',unitCost:5}],receipts:[]};
+ app.state.purchaseData={orders:[order],carryovers:[],stockReceipts:[]};app.purchasingState=()=>null;app.openPurchaseReceiving(order);
+ assert.equal(app.state.inspection.entries[0].damaged,0);Object.assign(app.state.inspection.entries[0],{delivered:4,damaged:'',lots:[{quantity:4,noExpiry:true}]});app.state.inspection.notes='';app.state.inspectionReview=true;
+ app.authPost=async(path,body)=>{assert.equal(body.entries[0].damaged,0);assert.equal(body.notes,'');return {id:'SR1',status:'Posted',message:'Stock receipt posted.'};};app.toast=()=>{};
+ app.reloadCatalog=async()=>{};app.reloadPurchasing=async()=>{order.status='Fully Received';order.lines[0].deliveredQty=4;app.state.purchaseData.stockReceipts=[{id:'SR1',status:'Posted',deliveryDate:'2026-11-07',created_at:'2026-11-07 12:00:00',summary:[]}];};
+ await app.submitInspection();assert.equal(app.state.purchaseReceivingId,null);assert.equal(app.state.inspection,null);assert.equal(app.state.receivingTab,'history');assert.equal(app.state.receivingSuccess.id,'SR1');
+ assert.ok(JSON.stringify(app.buildPurchaseReceiving()).includes('SR1'));app.state.receivingTab='active';assert.ok(!uiNodes(app.buildPurchaseReceiving()).some(n=>n.tag==='button'&&n.children.flat(Infinity).includes('Receive delivery')));
+});
+test('receiving sorts latest activity first and preserves failed form entries',async()=>{
+ const {app}=setup();app.purchasingState=()=>null;app.state.data={BUSINESS_DATE:'2026-11-07',PRODUCTS:[],CATEGORIES:[],SUPPLIERS:[]};
+ const make=(id,created,received_at)=>({id,created,received_at,status:'Partially Received',supplierName:'Supply',lines:[{productId:1,name:'Rice',orderedQty:5,deliveredQty:2,unit:'Piece',unitCost:5}],receipts:[]});
+ app.state.purchaseData={orders:[make('PO-OLDER','2026-10-01','2026-11-07 12:00:00'),make('PO-NEWER','2026-11-06',null)],carryovers:[],requests:[],stockReceipts:[]};
+ const labels=uiNodes(app.buildPurchaseReceiving()).filter(n=>n.tag==='article'&&n.props?.className==='receiving-record-card').map(n=>JSON.stringify(n));assert.ok(labels[0].includes('PO-OLDER'));
+ const history=JSON.stringify(app.buildDeliveryHistory([{id:'PO1',receipts:[{id:'R-OLD',deliveryBatch:'BATCH-OLD',date:'2026-11-07',received_at:'2026-11-06 10:00:00',lines:[]},{id:'R-NEW',deliveryBatch:'BATCH-NEW',date:'2026-11-05',received_at:'2026-11-07 10:00:00',lines:[]}]}]));assert.ok(history.indexOf('BATCH-NEW')<history.indexOf('BATCH-OLD'));
+ const draft={primaryPo:'PO-OLDER',notes:'Keep my input',entries:[]};app.state.inspection=draft;app.state.purchaseReceivingId='PO-OLDER';app.state.inspectionReview=true;app.reviewInspection=()=>true;app.inspectionPayload=()=>({});app.authPost=async()=>{throw new Error('Delivery could not be saved');};
+ await app.submitInspection();assert.equal(app.state.inspection,draft);assert.equal(app.state.purchaseReceivingId,'PO-OLDER');assert.equal(app.state.receivingSuccess,undefined);assert.match(app.state.receiveError,/could not be saved/);
 });

@@ -55,6 +55,35 @@ class StockReceiptWorkflowTest extends TestCase {
   $this->assertDatabaseCount('stock_receipts',0);
   $this->assertDatabaseHas('products',['id'=>$this->product,'stock'=>0]);
  }
+ public function test_optional_notes_and_damage_default_to_zero_and_complete_receipts():void {
+  $latest=null;
+  foreach(['omitted',null,''] as $value){
+   $po=$this->order(2);$body=$this->body($po,[$this->entry($po,2)]);$body['automaticLots']=true;unset($body['notes']);
+   if($value==='omitted')unset($body['entries'][0]['damaged']);else $body['entries'][0]['damaged']=$value;
+   $latest=$this->postJson('/api/stock-receipts',$body)->assertCreated()->assertJsonPath('status','Posted')->json('id');
+   $payload=json_decode(DB::table('stock_receipts')->where('id',$latest)->value('payload'),true);
+   $this->assertSame('',$payload['notes']);$this->assertSame(0,$payload['entries'][0]['damaged']);
+   $this->assertDatabaseHas('purchase_orders',['id'=>$po,'status'=>'Fully Received','outstandingValue'=>0]);
+   $this->getJson('/api/purchasing')->assertOk()->assertJsonPath('stockReceipts.0.id',$latest);
+   $this->postJson('/api/stock-receipts',$body)->assertOk()->assertJsonPath('id',$latest);
+  }
+  $this->assertDatabaseHas('products',['id'=>$this->product,'stock'=>6]);$this->assertDatabaseCount('stock_receipts',3);
+ }
+ public function test_exception_receipt_can_be_saved_without_optional_notes_but_requires_approval():void {
+  $po=$this->order(10);$body=$this->body($po,[$this->entry($po,5)]);unset($body['notes']);$body['entries'][0]['unitCost']=110;
+  $id=$this->postJson('/api/stock-receipts',$body)->assertCreated()->assertJsonPath('status','Pending Approval')->json('id');
+  $this->assertDatabaseHas('stock_receipts',['id'=>$id,'status'=>'Pending Approval']);$this->assertDatabaseHas('products',['id'=>$this->product,'stock'=>0]);
+ }
+ public function test_history_sorts_by_actual_posting_time_instead_of_backdated_delivery():void {
+  $this->travel(-3)->days();
+  $po=$this->order(4);$first=$this->postJson('/api/stock-receipts',$this->body($po,[$this->entry($po,2)]))->assertCreated()->json('id');
+  $this->travel(3)->days();
+  $secondBody=$this->body($po,[$this->entry($po,2,0,1)]);$secondBody['deliveryDate']=now()->subDay()->toDateString();
+  $second=$this->postJson('/api/stock-receipts',$secondBody)->assertCreated()->json('id');
+  DB::table('stock_receipts')->where('id',$first)->update(['created_at'=>now()->subDays(3),'posted_at'=>now()->subMinute()]);
+  DB::table('stock_receipts')->where('id',$second)->update(['posted_at'=>now()]);
+  $this->getJson('/api/purchasing')->assertOk()->assertJsonPath('stockReceipts.0.id',$second);
+ }
  public function test_supplier_balance_tracks_goods_not_payments_and_stays_scoped():void {
   $po=$this->order(50);
   $this->getJson('/api/supplier-accounts')->assertOk()->assertJsonCount(0,'balances');
@@ -187,7 +216,7 @@ class StockReceiptWorkflowTest extends TestCase {
 
  public function test_blank_receiving_inputs_cannot_create_receipts():void {
   $po=$this->order(10);$valid=$this->body($po,[$this->entry($po,5)]);
-  foreach(['supplierReference','notes','deliveryDate','entries.0.delivered','entries.0.damaged','entries.0.unitCost','entries.0.lots.0.supplierLot','entries.0.lots.0.manufacturedDate'] as $field){
+  foreach(['supplierReference','deliveryDate','entries.0.delivered','entries.0.unitCost','entries.0.lots.0.supplierLot','entries.0.lots.0.manufacturedDate'] as $field){
    $body=$valid;data_set($body,$field,'');
    $this->postJson('/api/stock-receipts',$body)->assertUnprocessable();
   }

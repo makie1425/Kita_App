@@ -7,10 +7,11 @@ app.inspectionLine=()=>({unitCost:10});app.inspectionProduct=()=>({category:'Sup
 const valid={primaryPo:'PO1',deliveryDate:'2026-10-26',supplierReference:'INV1',notes:'No remarks',entries:[{key:'1',poId:'PO1',productId:1,type:'current',delivered:2,damaged:0,unitCost:10,damageReason:'',lots:[{quantity:2,supplierLot:'SUP1',manufacturedDate:'2026-10-01',expiryDate:'',noExpiry:true}]}]};
 const reset=()=>{app.state.inspection=JSON.parse(JSON.stringify(valid));app.state.inspectionReview=false;};
 reset();assert.equal(app.reviewInspection(),true);
-for(const field of ['delivered','damaged','unitCost']){reset();app.state.inspection.entries[0][field]='';assert.equal(app.reviewInspection(),false,field);}
-for(const field of ['notes','deliveryDate']){reset();app.state.inspection[field]='';assert.equal(app.reviewInspection(),false,field);}
+for(const field of ['delivered','unitCost']){reset();app.state.inspection.entries[0][field]='';assert.equal(app.reviewInspection(),false,field);}
+for(const field of ['deliveryDate']){reset();app.state.inspection[field]='';assert.equal(app.reviewInspection(),false,field);}
 for(const field of ['supplierLot','manufacturedDate']){reset();app.state.inspection.entries[0].lots[0][field]='';assert.equal(app.reviewInspection(),true,field);}
 reset();app.state.inspection.supplierReference='';assert.equal(app.reviewInspection(),true);
+reset();app.state.inspection.notes='';app.state.inspection.entries[0].damaged='';assert.equal(app.reviewInspection(),true);assert.equal(app.inspectionPayload().entries[0].damaged,0);
 reset();app.state.inspection.entries[0].lots[0].noExpiry=false;assert.equal(app.reviewInspection(),false);
 reset();app.state.inspection.entries.push({...valid.entries[0],key:'2',productId:2,delivered:0,damaged:0,lots:[]});assert.equal(app.reviewInspection(),true);assert.equal(app.inspectionPayload().entries.length,2);
 const rows=[{id:1,productId:1,batchNumber:'B1',name:'A'},{id:2,productId:2,batchNumber:'B1',name:'B'},{id:3,productId:1,batchNumber:'B2',name:'A'}];

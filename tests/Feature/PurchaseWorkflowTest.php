@@ -47,6 +47,28 @@ class PurchaseWorkflowTest extends TestCase
         ]])->assertCreated();
     }
 
+    public function test_unchanged_review_does_not_write_notify_or_advance_revision(): void
+    {
+        $id=$this->requestOrder(10);
+        $before=DB::table('item_requests')->where('id',$id)->first();
+        $line=DB::table('item_request_lines')->where('requestId',$id)->first();
+        $notifications=DB::table('notifications')->count();$audit=DB::table('audit_logs')->count();
+        foreach(['','Only a note changed'] as $note){
+            $this->actingAs($this->admin)->patchJson('/api/purchase-requests/'.$id,['action'=>'modify','revision'=>0,'note'=>$note,'lines'=>[['productId'=>$this->product,'qty'=>'10']]])->assertOk()->assertJsonPath('changed',false);
+            $this->assertDatabaseHas('item_requests',['id'=>$id,'revision'=>0,'status'=>$before->status,'adminNote'=>$before->adminNote]);
+            $this->assertSame($line->confirmedQty,DB::table('item_request_lines')->where('requestId',$id)->value('confirmedQty'));
+            $this->assertSame($notifications,DB::table('notifications')->count());$this->assertSame($audit,DB::table('audit_logs')->count());
+        }
+        $this->patchJson('/api/purchase-requests/'.$id,['action'=>'modify','revision'=>0,'note'=>'Reduce to current demand','lines'=>[['productId'=>$this->product,'qty'=>8]]])->assertOk();
+        $this->assertDatabaseHas('item_requests',['id'=>$id,'revision'=>1]);$this->assertGreaterThan($notifications,DB::table('notifications')->count());
+        $count=DB::table('notifications')->count();
+        $this->patchJson('/api/purchase-requests/'.$id,['action'=>'modify','revision'=>1,'note'=>'Unchanged quantities','lines'=>[['productId'=>$this->product,'qty'=>8]]])->assertOk()->assertJsonPath('changed',false);
+        $this->assertSame($count,DB::table('notifications')->count());
+        $this->patchJson('/api/purchase-requests/'.$id,['action'=>'approved','revision'=>1,'lines'=>[['productId'=>$this->product,'qty'=>8]]])->assertOk();
+        $this->assertDatabaseHas('purchase_orders',['id'=>$id,'status'=>PurchaseWorkflow::WAITING]);
+        $this->assertGreaterThan($count,DB::table('notifications')->count());
+    }
+
     public function test_receiving_saves_edited_cost_and_retail_prices_without_changing_po_cost(): void
     {
         $id = $this->requestOrder();

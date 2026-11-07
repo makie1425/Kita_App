@@ -1917,7 +1917,7 @@ body:has(.inventory-batch-dialog[open]){overflow:hidden}
 .po-page-size select{border:1px solid #dce6f7;border-radius:7px;padding:5px 10px;background:white}
 .purchase-create-page .purchase-create-footer{justify-content:flex-end;padding:8px 0}
 .purchase-create-page .purchase-notes textarea{background:#f7f9fc;border:1px solid #dce6f7;border-radius:10px;font-weight:400}
-.po-item-dialog{width:480px;max-width:calc(100vw - 32px);max-height:90vh;overflow:auto;padding:0;border:1px solid #e2e8f2;border-radius:16px;color:#17243b;box-shadow:0 24px 64px #10204040}
+.po-item-dialog{width:760px;max-width:calc(100vw - 32px);max-height:90vh;overflow:auto;padding:0;border:1px solid #e2e8f2;border-radius:16px;color:#17243b;box-shadow:0 24px 64px #10204040}
 .po-item-dialog::backdrop{background:#192b4d66;backdrop-filter:blur(3px)}
 .po-item-dialog header{display:flex;align-items:center;justify-content:space-between;padding:20px 24px;border-bottom:1px solid #edf1f7}
 .po-item-dialog h2{font-size:16px;margin:0}
@@ -1931,10 +1931,6 @@ body:has(.inventory-batch-dialog[open]){overflow:hidden}
 .po-text-button{border:0;background:none;color:#245ff5;cursor:pointer;font:inherit;padding:0}
 .po-item-error{background:#fff0f0;color:#b42318;padding:10px;border-radius:8px;font-size:12px;margin:0}
 @media(max-width:520px){.po-field-pair{grid-template-columns:1fr}.po-cart-toolbar{padding:14px;flex-wrap:wrap}.po-cart-toolbar input{max-width:100%;width:100%}.po-item-fields{padding:18px}}
-.po-low-stock{padding:12px;border:1px solid #fecaca;border-radius:10px;background:#fff7f7;color:#b42318;font-size:12px}
-.po-low-stock-list{margin:8px 0 0;padding:0;list-style:none}
-.po-low-stock-list button{display:grid;gap:4px;padding:10px;text-align:left;border:1px solid #fecdca;border-radius:8px;background:#fff;color:#b42318;cursor:pointer;font:inherit}
-.po-low-stock-list button:hover,.po-low-stock-list button:focus-visible{background:#fee4e2;outline:2px solid #b42318;outline-offset:-2px}
 
 /* Supplier records: stable columns, readable amounts and compact remarks. */
 .supplier-records-page .record-list table { min-width: 1350px; }
@@ -2040,23 +2036,10 @@ button, .primary-button, .kita-button,
 @media (max-width: 380px) { .registration-page .registration-category { flex-wrap: wrap; } .registration-page .registration-category > .kita-button { width: 100%; } }
 
 /* Purchase item selection: supplier filtering and compact responsive layout. */
-.po-item-dialog{width:560px;background:#fff}
+.po-item-dialog{width:760px;background:#fff}
 .po-item-dialog header{background:#fafbfd;padding:18px 22px;align-items:flex-start}
 .po-item-dialog header small{display:block;color:#71829f;margin-top:5px;font-size:12px}
-.po-item-fields{padding:20px 22px;gap:16px}
-.po-item-dialog .po-low-stock{min-width:0;background:#fffdf0;border-color:#ffdc72;color:#92400e}
-.po-suggestion-heading{display:flex;justify-content:space-between;gap:8px;align-items:center;font-size:11px}
-.po-suggestion-heading>span{background:#fff2c9;border-radius:12px;padding:3px 8px}
-.po-item-dialog .po-low-stock-list{display:flex;flex-wrap:nowrap;min-width:0;max-width:100%;overflow-x:scroll;overflow-y:hidden;gap:10px;padding:2px 2px 10px;scroll-snap-type:x proximity;overscroll-behavior-x:contain;scrollbar-width:thin;scrollbar-color:#b8c8dd #f0f4f9}
-.po-item-dialog .po-low-stock-list>li{flex:0 0 190px;min-width:0;scroll-snap-align:start}
-.po-item-dialog .po-low-stock-list::-webkit-scrollbar{height:7px}
-.po-item-dialog .po-low-stock-list::-webkit-scrollbar-thumb{background:#b8c8dd;border-radius:8px}
-.po-item-dialog .po-low-stock-list::-webkit-scrollbar-track{background:#f0f4f9}
-.po-item-dialog .po-low-stock-list button{box-sizing:border-box;width:100%;height:100%;min-width:0;overflow-wrap:anywhere;border-color:#ffdc72;color:#26344e;white-space:normal}
-.po-item-dialog .po-low-stock-list button:hover,.po-item-dialog .po-low-stock-list button:focus-visible{background:#fff8db;outline-color:#2563eb}
-.po-low-stock-list small,.po-low-stock-list button>span:not([class]){color:#71829f;font-size:11px}
-.po-stock-critical{color:#c21842;background:#fff0f3;border-radius:4px;padding:2px 5px;justify-self:start;font-size:10px}
-.po-stock-low{color:#a14e00;background:#fff0c2;border-radius:4px;padding:2px 5px;justify-self:start;font-size:10px}
+.po-item-fields{padding:24px 28px;gap:22px}
 .po-field-triple{display:grid;grid-template-columns:1fr 1fr 1.2fr;gap:12px}
 .po-field-triple>label{min-width:0}
 .po-quantity{display:flex;min-width:0}
@@ -2064,9 +2047,8 @@ button, .primary-button, .kita-button,
 .po-quantity input{min-width:0;text-align:center;padding:6px!important;border-radius:0!important}
 .po-item-dialog input[readonly]{background:#f1f5f9;color:#71829f}
 .po-estimate{justify-self:end;background:#f6f8fc;border:1px solid #dce5f2;border-radius:6px;padding:8px 12px;font-weight:600}
-@media(max-width:480px){.po-field-triple{grid-template-columns:1fr 1fr}.po-field-triple>label:last-child{grid-column:1/-1}.po-item-fields{padding:16px}.po-suggestion-heading{flex-wrap:wrap}}
+@media(max-width:480px){.po-field-triple{grid-template-columns:1fr 1fr}.po-field-triple>label:last-child{grid-column:1/-1}.po-item-fields{padding:16px}}
 
-.po-item-dialog .po-low-stock-list button[aria-pressed="true"]{border-color:#2563eb;box-shadow:0 0 0 1px #2563eb}
 
 /* Tracker connectors represent reached steps; decision colors identify the outcome. */
 .po-tracking-steps li:not(.is-connected):before{background:#e4ebf5}
@@ -2110,3 +2092,29 @@ dl.receiving-transaction-details dd{margin:5px 0 0;color:#142b50;overflow-wrap:a
 .pos-layout .table-scroll td .checkout-quantity-field input{box-sizing:border-box;min-width:64px;width:68px;max-width:none}
 
 .transaction-discount-breakdown>div{display:flex;justify-content:space-between;gap:16px;padding:5px 0;font-size:13px}.transaction-discount-breakdown dd{margin:0;color:#1747e8}
+
+/* Purchase selection puts stock priorities directly in the product list. */
+.po-product-field{display:grid;gap:7px;min-width:0}
+.po-product-field>label{font-size:12px}
+.po-product-picker{position:relative;min-width:0}
+.po-item-dialog .po-product-trigger{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:12px;width:100%;min-height:44px;padding:11px 12px;border:1px solid #cbd8ed;border-radius:10px;background:#f7f9fc;color:#23334e;text-align:left;font:inherit;font-size:13px;cursor:pointer}
+.po-product-trigger>span:first-child{min-width:0;overflow-wrap:anywhere;white-space:normal}
+.po-product-trigger:focus-visible{outline:2px solid #2563eb;outline-offset:2px}
+.po-product-options{position:absolute;z-index:3;top:100%;left:0;right:0;max-height:min(290px,36vh);overflow-y:auto;overscroll-behavior:contain;margin:6px 0 0;padding:6px;list-style:none;border:1px solid #cbd8ed;border-radius:10px;background:#fff;box-shadow:0 12px 28px #18345824}
+.po-product-options>li[role="option"]{padding:12px;border-radius:6px;border-bottom:1px solid #eef2f7;cursor:pointer}
+.po-product-options>li.is-active{background:#edf4ff;outline:1px solid #bad0fa}
+.po-product-options>li[aria-selected="true"]{background:#e8f0ff}
+.po-product-option-heading{display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:13px}
+.po-product-option-heading strong{min-width:0;overflow-wrap:anywhere}
+.po-product-options .needs-stock strong{color:#b91c1c}
+.po-product-stock-badge{display:inline-flex;gap:3px;align-items:center;flex-shrink:0;padding:4px 7px;border-radius:5px;font-size:11px;color:#b91c1c;background:#fee2e2;white-space:nowrap;font-weight:600}
+.po-product-options small{display:block;margin-top:6px;font-size:11px;color:#64748b;line-height:1.5}
+.po-product-help{color:#64748b;font-size:11px}
+.po-product-empty{padding:16px;color:#64748b;font-size:12px}
+.po-registration-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;padding-top:14px;border-top:1px solid #edf1f7;font-size:12px;color:#64748b}
+.po-item-dialog a.po-registration-link{color:#245ff5;font-weight:600;text-decoration:none;background:none;cursor:pointer}
+.po-item-dialog a.po-registration-link:hover{text-decoration:underline}
+.po-registration-link:focus-visible{outline:2px solid #2563eb;outline-offset:3px;border-radius:2px}
+.receiving-success{padding:16px 20px;border:1px solid #b9dfc9;background:#effbf4;color:#14532d;border-radius:12px;margin:0 0 18px}
+.receiving-success p{margin:7px 0 12px;font-size:13px}
+@media(max-width:600px){.po-item-dialog .po-item-fields{padding:18px;gap:18px}.po-item-dialog .po-field-pair,.po-field-triple{grid-template-columns:minmax(0,1fr)}.po-field-triple>label:last-child{grid-column:auto}.po-product-option-heading{align-items:flex-start}.po-product-stock-badge{font-size:10px}.po-item-dialog .po-product-trigger{gap:7px}}

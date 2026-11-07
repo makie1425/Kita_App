@@ -151,6 +151,9 @@ class PurchaseWorkflow
                     $old = $original->get($line['productId']);
                     $changed = $changed || ! $old || (int) ($old->confirmedQty ?? $old->qty) !== (int) $line['qty'];
                 }
+                if ($data['action'] === 'modify' && !$changed) {
+                    return response()->json(['message'=>'No item changes to save.','changed'=>false,'id'=>$id,'status'=>$record->status,'poId'=>$record->poId]);
+                }
                 if ($changed && trim($data['note'] ?? '') === '') {
                     throw ValidationException::withMessages(['note' => 'Enter a reason for changing purchase quantities or removing items.']);
                 }

@@ -19,7 +19,7 @@ class StockReceiptWorkflow
 
     public static function listing()
     {
-        return WorkspaceRead::table('stock_receipts')->orderByDesc('created_at')->limit(200)->get()->map(function ($r) {
+        return WorkspaceRead::table('stock_receipts')->orderByRaw('COALESCE(posted_at, created_at) DESC')->orderByDesc('id')->limit(200)->get()->map(function ($r) {
             foreach (['payload','summary','exceptions','receipts'] as $field) $r->$field=json_decode($r->$field ?? 'null',true);
             unset($r->payloadHash,$r->requestKey);
             return $r;
@@ -45,11 +45,11 @@ class StockReceiptWorkflow
             'automaticLots'=>['sometimes','boolean'],
             'requestKey'=>['required','uuid'],'primaryPo'=>['required','string'], 'supplierId'=>['required','integer'],
             'deliveryDate'=>['required','date_format:Y-m-d','before_or_equal:today'],
-            'supplierReference'=>[$automatic?'nullable':'required','string','max:100'],'notes'=>['required','string','max:2000'],
+            'supplierReference'=>[$automatic?'nullable':'required','string','max:100'],'notes'=>['nullable','string','max:2000'],
             'entries'=>['required','array','min:1','max:200'],
             'entries.*.poId'=>['required','string'],'entries.*.version'=>['required','integer','min:0'],
             'entries.*.productId'=>['required','integer'],'entries.*.type'=>['required','in:current,missing,damaged,outstanding'],
-            'entries.*.delivered'=>['required','integer','between:0,1000000'],'entries.*.damaged'=>['required','integer','between:0,1000000'],
+            'entries.*.delivered'=>['required','integer','between:0,1000000'],'entries.*.damaged'=>['nullable','integer','between:0,1000000'],
             'entries.*.damageReason'=>['nullable','string','max:500'],'entries.*.disposition'=>['nullable','in:return,reject,quarantine'],
             'entries.*.substituteProductId'=>['nullable','integer'],'entries.*.substitutionReason'=>['nullable','string','max:500'],
             'entries.*.unitCost'=>['required',...InventoryRules::moneyRules()],
@@ -61,6 +61,9 @@ class StockReceiptWorkflow
             'entries.*.lots.*.manufacturedDate'=>[$automatic?'nullable':'required','date_format:Y-m-d','before_or_equal:deliveryDate'],
             'entries.*.lots.*.noExpiry'=>['sometimes','boolean'],
         ], [], $attributes);
+        $data['notes']=$data['notes']??'';
+        foreach($data['entries'] as &$entry)$entry['damaged']=(int)($entry['damaged']??0);
+        unset($entry);
         if ($automatic) {
             // Stable server-derived identifiers preserve idempotency on retry.
             $data['supplierReference'] = 'REF-'.strtoupper($data['requestKey']);
@@ -168,7 +171,6 @@ class StockReceiptWorkflow
             $value=collect($groups)->where('poId',$order->id)->sum(fn($g)=>InventoryRules::lineTotal($g['qty'],$g['unitCost']));
             PurchaseBudget::check($order,round($order->deliveredValue+$value,2));
         }
-        if ($exceptions) abort_unless(trim($data['notes'] ?? ''),422,'Add receiving notes explaining the exceptions for approval.');
         return compact('summary','exceptions','groups','orders','balances');
     }
 
