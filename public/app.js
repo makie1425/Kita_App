@@ -2633,8 +2633,6 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
         btn("+ Add Subcategory",()=>this.setState({masterForm:{kind:'subcategories',name:'',category:'',status:'Active'}})),
         btn("+ Add Brand",()=>this.setState({masterForm:{kind:'brands',name:'',category:'',status:'Active'}})),
         !(this.state.categoriesLocal||[]).some(c=>c.name.trim().toLowerCase()==='supplies')?btn("+ Add Supplies Category",()=>{this.openCategoryModal();this.setState({categoryForm:{name:'Supplies',classification:'Non-Perishable',status:'Active'}});}):null,
-        btn("Register New Product",this.goScreen("mgrRegistration")),
-        btn("Request Purchase",this.goScreen("mgrRequest")),
       ]),
       this.recordTable("categories",["Category","Classification","Products","Status","Actions"],categories.map(c=>tr([
         td(c.name),td(c.classification||"Not classified"),
