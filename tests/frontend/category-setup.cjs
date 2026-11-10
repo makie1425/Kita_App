@@ -21,6 +21,11 @@ const button=(tree,label)=>nodes(tree).find(n=>n.type==='button'&&text(n)===labe
   let tree=app.buildMgrCategories();
   button(tree,'Add subcategory').props.onClick();
   assert.strictEqual(app.state.masterForm.kind,'subcategories');
+  app.state.masterForm.name='Refrigerators';
+  const beforeMissingCategory=calls.length;
+  await app.saveMaster();assert.strictEqual(calls.length,beforeMissingCategory,'Missing main category must prevent saving');
+  const mainCategory=nodes(app.buildMasterLists()).find(n=>n.type==='select'&&n.props['aria-label']==='Main Category');
+  assert(mainCategory.props.required);assert(text(mainCategory).includes('Select main category'));
   Object.assign(app.state.masterForm,{name:'Refrigerators',category:'Appliances'});
   await app.saveMaster();assert.strictEqual(calls.at(-1).url,'/api/product-master/subcategories');
   button(tree,'Add brand').props.onClick();app.state.masterForm.name='Brand A';

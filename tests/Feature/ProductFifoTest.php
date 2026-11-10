@@ -39,6 +39,15 @@ class ProductFifoTest extends TestCase
         $this->product = $this->postJson('/api/products', $this->input)->assertCreated()->assertJsonPath('product.stock', 0)->json('product.id');
     }
 
+    public function test_subcategory_creation_requires_an_existing_main_category(): void
+    {
+        foreach ([null, '', 'Unknown category'] as $category) {
+            $this->postJson('/api/product-master/subcategories', ['name' => 'New subcategory', 'category' => $category, 'status' => 'Active'])
+                ->assertUnprocessable()->assertJsonValidationErrors('category');
+        }
+        $this->assertDatabaseMissing('subcategories', ['name' => 'New subcategory']);
+    }
+
     public function test_subcategory_is_optional_on_creation_and_can_be_cleared_on_edit(): void
     {
         $payload = array_replace($this->input, ['name' => 'Without subcategory', 'barcode' => 'NO-SUB']);
