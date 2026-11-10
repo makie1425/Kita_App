@@ -125,6 +125,8 @@ Do not set `DB_URL` or `DB_SOCKET` unless intentional: they can override/interfe
 
 There is no automatic seeding, `migrate:fresh`, `db:wipe`, reset or key generation. Leave `RUN_MIGRATIONS=false` for routine deploys. The sale entry method and backup settings migrations (`2026_11_04_000003_record_sale_entry_method.php` and `2026_11_04_000004_create_backup_settings.php`) are scoped exceptions: startup applies them before serving requests because checkout and backup settings use their new columns and table. Only use the general migration opt-in on a single instance after review. For first-time account provisioning, the existing interactive `php artisan accounts:superadmin your-email@example.com` command is available; imported databases should retain their existing administrator.
 
+Brand category assignments use the scoped startup migration `2026_11_10_000001_add_brand_categories.php`. It adds nullable `category` and `subcategoryId` columns to existing brands without changing their IDs, names, or product links. New brands require a main category through the API; existing unassigned brands remain readable and can be assigned through Edit. The optional subcategory must belong to that category and workspace.
+
 ## Storage and scaling
 
 The image excludes all local storage data and generates `public/storage` at startup. Runtime writes to `storage` and `bootstrap/cache` belong to `www-data`; application source stays root-owned. No `chmod 777` is used.

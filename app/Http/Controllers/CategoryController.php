@@ -63,6 +63,7 @@ class CategoryController extends Controller
                 if ($validated['name'] !== $name) {
                     \App\Services\WorkspaceRead::table('products')->where('category', $name)->update(['category' => $validated['name']]);
                     \App\Services\WorkspaceRead::table('subcategories')->where('category', $name)->update(['category' => $validated['name']]);
+                    \App\Services\WorkspaceRead::table('brands')->where('category', $name)->update(['category' => $validated['name']]);
                     \App\Services\WorkspaceRead::table('promotions')->where('category', $name)->update(['category' => $validated['name']]);
                 }
                 InventoryRules::audit($request->user()->name, 'Updated category', $name, json_encode($category), json_encode($validated));

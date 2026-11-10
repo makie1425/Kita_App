@@ -31,12 +31,26 @@ class ProductFifoTest extends TestCase
         $this->assignWorkspace($this->manager, $this->admin);
         $this->actingAs($this->manager);
         $this->postJson('/api/categories', ['name' => 'Beverages', 'classification' => 'Non-Perishable'])->assertCreated();
-        $brand = $this->postJson('/api/product-master/brands', ['name' => 'Coca-Cola', 'status' => 'Active'])->assertOk()->json('record.id');
+        $brand = $this->postJson('/api/product-master/brands', ['name' => 'Coca-Cola', 'status' => 'Active', 'category' => 'Beverages'])->assertOk()->json('record.id');
         $sub = $this->postJson('/api/product-master/subcategories', ['name' => 'Soft Drinks', 'category' => 'Beverages', 'status' => 'Active'])->assertOk()->json('record.id');
         $supplier = $this->postJson('/api/suppliers', ['name' => 'Beverage Supplier'])->assertCreated()->json('supplier.id');
         $this->input = ['manufacturer'=>'Example Manufacturer','status'=>'Active','name' => 'Coke', 'brandId' => $brand, 'subcategoryId' => $sub, 'category' => 'Beverages', 'size' => 1, 'sizeUnit' => 'Liter',
             'stockUnit' => 'Bottle', 'purchaseUnit' => 'Bottle', 'conversionFactor' => 1, 'barcode' => 'COKE-1L', 'price' => 80, 'unitPrice' => 55, 'supplierId' => $supplier, 'minStock' => 10];
         $this->product = $this->postJson('/api/products', $this->input)->assertCreated()->assertJsonPath('product.stock', 0)->json('product.id');
+    }
+
+    public function test_brand_requires_category_and_accepts_optional_matching_subcategory(): void
+    {
+        $base = ['name' => 'New brand', 'status' => 'Active'];
+        $this->postJson('/api/product-master/brands', $base)->assertUnprocessable()->assertJsonValidationErrors('category');
+        $this->postJson('/api/product-master/brands', $base + ['category' => 'Unknown'])->assertUnprocessable()->assertJsonValidationErrors('category');
+        $brand = $this->postJson('/api/product-master/brands', $base + ['category' => 'Beverages'])->assertOk()->assertJsonPath('record.category', 'Beverages')->assertJsonPath('record.subcategoryId', null)->json('record.id');
+        $this->patchJson('/api/product-master/brands/'.$brand, $base + ['category' => 'Beverages', 'subcategoryId' => $this->input['subcategoryId']])->assertOk()->assertJsonPath('record.subcategoryId', $this->input['subcategoryId']);
+        $this->postJson('/api/categories', ['name' => 'Other', 'classification' => 'Non-Perishable'])->assertCreated();
+        $this->patchJson('/api/product-master/brands/'.$brand, $base + ['category' => 'Other', 'subcategoryId' => $this->input['subcategoryId']])->assertUnprocessable()->assertJsonValidationErrors('subcategoryId');
+        $this->patchJson('/api/categories/Beverages', ['name' => 'Drinks'])->assertOk();
+        $this->assertDatabaseHas('brands', ['id' => $brand, 'category' => 'Drinks', 'subcategoryId' => $this->input['subcategoryId']]);
+        $this->patchJson('/api/product-master/brands/'.$brand, $base + ['category' => 'Drinks', 'subcategoryId' => null])->assertOk()->assertJsonPath('record.subcategoryId', null);
     }
 
     public function test_subcategory_creation_requires_an_existing_main_category(): void

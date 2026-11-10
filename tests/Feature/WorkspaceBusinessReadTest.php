@@ -39,9 +39,10 @@ class WorkspaceBusinessReadTest extends TestCase {
  public function test_catalog_writes_assign_scope_and_reject_foreign_targets_and_categories():void{
   config(['workspaces.enabled'=>true]);$a=$this->actor('Alpha');$b=$this->actor('Beta');
   $foreign=DB::table('brands')->insertGetId(['name'=>'Shared brand','workspace_id'=>$b->workspace_id]);
-  $this->actingAs($a)->postJson('/api/product-master/brands',['name'=>'Shared brand','status'=>'Active','workspace_id'=>$b->workspace_id])->assertOk()->assertJsonPath('record.workspace_id',$a->workspace_id);
+  $this->actingAs($a)->postJson('/api/product-master/brands',['name'=>'Shared brand','status'=>'Active','category'=>'Alpha','workspace_id'=>$b->workspace_id])->assertOk()->assertJsonPath('record.workspace_id',$a->workspace_id);
   $this->patchJson('/api/product-master/brands/'.$foreign,['name'=>'Changed','status'=>'Active'])->assertNotFound();
   $this->assertDatabaseHas('brands',['id'=>$foreign,'name'=>'Shared brand','workspace_id'=>$b->workspace_id]);
+  $this->postJson('/api/product-master/brands',['name'=>'Foreign category','status'=>'Active','category'=>'Beta'])->assertUnprocessable()->assertJsonValidationErrors('category');
   $this->postJson('/api/product-master/subcategories',['name'=>'Private','status'=>'Active','category'=>'Beta'])->assertUnprocessable();
   $this->postJson('/api/product-master/subcategories',['name'=>'Allowed','status'=>'Active','category'=>'Alpha'])->assertOk()->assertJsonPath('record.workspace_id',$a->workspace_id);
   $this->assertDatabaseHas('audit_logs',['action'=>'Saved subcategories','workspace_id'=>$a->workspace_id]);

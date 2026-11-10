@@ -39,10 +39,11 @@ fi
 if [[ "${RUN_MIGRATIONS:-false}" == 'true' ]]; then
     artisan migrate --force
 else
-    # Apply required checkout and administration migrations before serving requests.
+    # Apply required checkout, administration and catalog migrations before serving requests.
     artisan migrate --force --path=database/migrations/2026_11_04_000003_record_sale_entry_method.php
     artisan migrate --force --path=database/migrations/2026_11_04_000004_create_backup_settings.php
     artisan migrate --force --path=database/migrations/2026_11_07_000001_add_discount_breakdown_and_near_expiry_default.php
+    artisan migrate --force --path=database/migrations/2026_11_10_000001_add_brand_categories.php
 fi
 if [[ "${SEED_DEMO_USERS:-false}" == 'true' ]]; then
     artisan accounts:seed-demo

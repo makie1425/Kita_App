@@ -2649,9 +2649,9 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
   saveMaster=async()=>{
     if(this.masterBusy)return;
     const f=this.state.masterForm;if(!f)return;
-    if(f.kind==='subcategories'&&!(f.category||'').trim()){this.toast('Select a main category before saving the subcategory.','error');return;}
+    if(!(f.category||'').trim()){this.toast('Select a main category before saving.','error');return;}
     this.masterBusy=true;
-    try{await this.authPost('/api/product-master/'+f.kind+(f.id?'/'+f.id:''),{name:f.name,category:f.category,status:f.status},f.id?'PATCH':'POST');await this.reloadCatalog();this.setState({masterForm:null});this.toast('Saved.');}
+    try{await this.authPost('/api/product-master/'+f.kind+(f.id?'/'+f.id:''),{name:f.name,category:f.category,status:f.status,...(f.kind==='brands'?{subcategoryId:f.subcategoryId||null}:{})},f.id?'PATCH':'POST');await this.reloadCatalog();this.setState({masterForm:null});this.toast('Saved.');}
     catch(e){this.toast(e.message,'error');}finally{this.masterBusy=false;}
   };
   populateSubcategories=async()=>{
@@ -2680,23 +2680,27 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     const h=React.createElement,f=this.state.masterForm,data=this.state.data;
     return h('section',null,[...['brands','subcategories'].map(kind=>card([
       sectionTitle(kind==='brands'?'Brands':'Subcategories'),
-      this.recordTable(kind,['Name',...(kind==='subcategories'?['Category']:[]),'Status','Actions'],(data[kind.toUpperCase()]||[]).map(r=>tr([td(r.name),...(kind==='subcategories'?[td(r.category)]:[]),td(badge(r.status)),td([btn('Edit',()=>this.setState({masterForm:{...r,kind}})),btn(r.status==='Active'?'Deactivate':'Activate',async()=>{try{await this.authPost('/api/product-master/'+kind+'/'+r.id,{...r,status:r.status==='Active'?'Inactive':'Active'},'PATCH');await this.reloadCatalog();}catch(e){this.toast(e.message,'error');}})])],r.id)))
+      this.recordTable(kind,['Name','Main Category',...(kind==='brands'?['Subcategory']:[]),'Status','Actions'],(data[kind.toUpperCase()]||[]).map(r=>tr([td(r.name),td(r.category||'Not assigned'),...(kind==='brands'?[td((data.SUBCATEGORIES||[]).find(c=>String(c.id)===String(r.subcategoryId))?.name||'None')]:[]),td(badge(r.status)),td([btn('Edit',()=>this.setState({masterForm:{...r,kind}})),btn(r.status==='Active'?'Deactivate':'Activate',async()=>{try{await this.authPost('/api/product-master/'+kind+'/'+r.id,{...r,status:r.status==='Active'?'Inactive':'Active'},'PATCH');await this.reloadCatalog();}catch(e){this.toast(e.message,'error');}})])],r.id)))
     ])),f?this.buildMasterModal():null]);
   }
   closeMasterModal=()=>{if(!this.masterBusy)this.setState({masterForm:null});};
   buildMasterModal(){
     const h=React.createElement,f=this.state.masterForm;
     if(!f)return null;
-    const isSub=f.kind==='subcategories',label=isSub?'Subcategory':'Brand',needsCategory=isSub&&!f.category;
+    const isSub=f.kind==='subcategories',label=isSub?'Subcategory':'Brand',needsCategory=!f.category;
     return h('div',{key:'master-overlay',style:{position:'fixed',inset:0,background:'rgba(15,31,74,0.38)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:50,padding:16},onKeyDown:e=>{if(e.key==='Escape'){e.stopPropagation();this.closeMasterModal();}}},
       h('div',{role:'dialog','aria-modal':true,'aria-labelledby':'master-dialog-title',className:'category-dialog',style:{width:460,maxWidth:'100%',maxHeight:'90vh',overflowY:'auto',background:'#fff',padding:24}},[
         h('h2',{id:'master-dialog-title',className:'panel-title'},(f.id?'Edit ':'Add ')+label),
-        isSub?h('div',{className:'field-group'},[
+        h('div',{className:'field-group'},[
           h('label',{htmlFor:'master-category'},'Main Category *'),
-          h('select',{id:'master-category',autoFocus:needsCategory,required:true,'aria-label':'Main Category',value:f.category,onChange:e=>this.setState({masterForm:{...f,category:e.target.value}})},[
+          h('select',{id:'master-category',autoFocus:needsCategory,required:true,'aria-label':'Main Category',value:f.category,onChange:e=>this.setState({masterForm:{...f,category:e.target.value,subcategoryId:''}})},[
             h('option',{value:''},'Select main category'),...this.state.data.CATEGORIES.filter(c=>c.status==='Active').map(c=>h('option',{value:c.name,key:c.name},c.name))
           ]),
-          needsCategory?h('p',{role:'status'},'Choose the main category this subcategory belongs to first.'):null
+          needsCategory?h('p',{role:'status'},'Choose the main category this '+label.toLowerCase()+' belongs to first.'):null
+        ]),
+        !isSub&&!needsCategory?h('div',{className:'field-group'},[
+          h('label',{htmlFor:'master-subcategory'},'Subcategory (optional)'),
+          h('select',{id:'master-subcategory',value:f.subcategoryId||'',onChange:e=>this.setState({masterForm:{...f,subcategoryId:e.target.value}})},[h('option',{value:''},'No subcategory'),...this.subcategoriesFor(f.category).map(c=>h('option',{key:c.id,value:c.id},c.name))])
         ]):null,
         !needsCategory?h('div',{className:'field-group'},[
           h('label',{htmlFor:'master-name'},label+' Name *'),

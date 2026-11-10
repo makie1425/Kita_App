@@ -55,6 +55,14 @@ class ProductMasterController extends Controller
         abort_unless(in_array($kind, ['brands', 'subcategories']), 404);
         if ($id) abort_unless(WorkspaceRead::table($kind)->where('id', $id)->exists(), 404);
         $rules = ['name' => ['required', 'string', 'max:100'], 'status' => ['required', Rule::in(['Active', 'Inactive'])]];
+        if ($kind === 'brands') {
+            $existing = $id ? WorkspaceRead::table('brands')->where('id', $id)->first() : null;
+            foreach (['category', 'subcategoryId'] as $field) {
+                if ($existing && ! $request->exists($field)) $request->merge([$field => $existing->{$field}]);
+            }
+            $rules['category'] = [! $id || $existing?->category ? 'required' : 'nullable', Rule::exists('categories', 'name')->where('status', 'Active')->where(fn ($q) => WorkspaceWrite::scopeValidation($q))];
+            $rules['subcategoryId'] = ['nullable', 'integer', Rule::exists('subcategories', 'id')->where('category', $request->input('category'))->where('status', 'Active')->where(fn ($q) => WorkspaceWrite::scopeValidation($q))];
+        }
         if ($kind === 'subcategories') {
             $rules['category'] = ['required', Rule::exists('categories', 'name')->where('status', 'Active')->where(fn ($q) => WorkspaceWrite::scopeValidation($q))];
         }
@@ -72,7 +80,7 @@ class ProductMasterController extends Controller
                 $existing = WorkspaceRead::table($kind)->where('id', $id)->lockForUpdate()->first();
                 abort_unless($existing, 404);
                 if ($kind === 'subcategories' && $data['category'] !== $existing->category) {
-                    abort_if(WorkspaceRead::table('products')->where('subcategoryId', $id)->exists(), 422, 'A used subcategory cannot move to another category.');
+                    abort_if(WorkspaceRead::table('products')->where('subcategoryId', $id)->exists() || WorkspaceRead::table('brands')->where('subcategoryId', $id)->exists(), 422, 'A used subcategory cannot move to another category.');
                 }
                 WorkspaceRead::table($kind)->where('id', $id)->update($data);
             } else {
