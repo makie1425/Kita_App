@@ -29,6 +29,9 @@ class SellableStockTest extends TestCase
         $this->cashier = User::factory()->create(['role' => 'cashier']);
         $this->assignWorkspace($this->manager, $this->cashier);
         $this->actingAs($this->manager);
+        $this->postJson('/api/cashier-shifts', ['openingCash'=>100])->assertCreated();
+        $this->actingAs($this->cashier)->postJson('/api/cashier-shifts', ['openingCash'=>100])->assertCreated();
+        $this->actingAs($this->manager);
         $this->insertFixture('categories', ['name' => 'Food', 'status' => 'Active']);
         $this->insertFixture('products', ['id' => 1, 'name' => 'Milk', 'category' => 'Food', 'status' => 'Active', 'stock' => 0, 'price' => 20, 'unitPrice' => 10]);
         Http::preventStrayRequests();

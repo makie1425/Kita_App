@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Services\SaleCheckout;
+use App\Services\CashierShift;
 use App\Services\StockMovement;
 use App\Services\WorkspaceRead;
 use App\Services\WorkspaceWrite;
@@ -21,6 +22,7 @@ class PayMongoController extends Controller
         WorkspaceWrite::requireId();
         $data = $request->validate(SaleCheckout::rules('stockItems') + ['provider' => ['required', 'in:QR Ph']]);
         $transaction = DB::transaction(function () use ($request, $data) {
+            CashierShift::requireActive($request);
             $sale = SaleCheckout::prepare($request, $data, 'stockItems');
             if ($sale['total'] <= 0) {
                 throw ValidationException::withMessages(['total' => 'Wallet payment amount must be greater than zero.']);

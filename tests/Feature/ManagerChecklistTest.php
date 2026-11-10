@@ -25,6 +25,7 @@ class ManagerChecklistTest extends TestCase
         $this->manager = User::factory()->create(['role' => 'manager', 'approval_pin' => Hash::make('1234')]);
         $this->assignWorkspace($this->manager);
         $this->actingAs($this->manager);
+        $this->postJson('/api/cashier-shifts', ['openingCash'=>100])->assertCreated();
         $this->insertFixture('categories', ['name' => 'Food', 'status' => 'Active']);
         $this->insertFixture('suppliers', ['id' => 1, 'name' => 'Original supplier', 'status' => 'Active']);
         $this->insertFixture('products', ['id' => 1, 'name' => 'Milk', 'category' => 'Food', 'status' => 'Active', 'stock' => 10,

@@ -38,6 +38,14 @@ Route::middleware('role:manager,admin')->group(function () {
     Route::get('/api/inventory/recall-trace', [\App\Http\Controllers\ManagerWorkflowController::class, 'trace']);
     Route::post('/api/receipts/{id}/supplier-contacts', [\App\Http\Controllers\ManagerWorkflowController::class, 'contact']);
 });
+Route::middleware('role:cashier,manager')->prefix('api/cashier-shifts')->group(function () {
+    Route::get('/current', [\App\Http\Controllers\CashierShiftController::class, 'current']);
+    Route::post('/', [\App\Http\Controllers\CashierShiftController::class, 'open']);
+    Route::post('/movement', [\App\Http\Controllers\CashierShiftController::class, 'move']);
+    Route::post('/close', [\App\Http\Controllers\CashierShiftController::class, 'close']);
+    Route::get('/history', [\App\Http\Controllers\CashierShiftController::class, 'history']);
+    Route::get('/{id}/report', [\App\Http\Controllers\CashierShiftController::class, 'report'])->whereNumber('id');
+});
 Route::middleware('role:cashier,manager')->group(function () {
     Route::get('/api/transactions/{uuid}', [TransactionController::class, 'show']);
     Route::post('/api/transactions', [TransactionController::class, 'store'])->name('transactions.store');

@@ -48,7 +48,8 @@ class WorkspaceTransactionBoundaryTest extends TestCase
             DB::table('categories')->insert(['name' => 'Food', 'status' => 'Active', 'workspace_id' => $id]);
             DB::table('products')->insert(['id' => $id, 'name' => 'Food item', 'category' => 'Food', 'barcode' => 'SAME-BARCODE', 'status' => 'Active', 'stock' => 3, 'price' => 10, 'workspace_id' => $id]);
         }
-        $this->actingAs($cashier)->postJson('/api/transactions', ['uuid' => 'OWN-CHECKOUT', 'items' => [['productId' => $scope, 'qty' => 1]], 'paymentMode' => 'Cash', 'tendered' => 10, 'workspace_id' => $foreign])->assertCreated();
+        $this->actingAs($cashier)->postJson('/api/cashier-shifts',['openingCash'=>100])->assertCreated();
+        $this->postJson('/api/transactions', ['uuid' => 'OWN-CHECKOUT', 'items' => [['productId' => $scope, 'qty' => 1]], 'paymentMode' => 'Cash', 'tendered' => 10, 'workspace_id' => $foreign])->assertCreated();
         $this->assertDatabaseHas('transactions', ['uuid' => 'OWN-CHECKOUT', 'workspace_id' => $scope, 'cashierId' => $cashier->id]);
         $this->assertDatabaseHas('transaction_lines', ['transaction_uuid' => 'OWN-CHECKOUT', 'workspace_id' => $scope]);
         $this->postJson('/api/transactions', ['uuid' => 'FOREIGN-CHECKOUT', 'items' => [['productId' => $foreign, 'qty' => 1]], 'paymentMode' => 'Cash', 'tendered' => 10])->assertUnprocessable();

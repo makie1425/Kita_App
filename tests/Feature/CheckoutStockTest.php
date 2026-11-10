@@ -27,6 +27,7 @@ class CheckoutStockTest extends TestCase
         $this->insertFixture('categories', ['name' => 'Medical', 'status' => 'Active']);
         $this->insertFixture('products', ['id' => 1, 'name' => 'Mask', 'stock' => 5, 'status' => 'Active', 'price' => 10, 'unitPrice' => 5, 'cost' => 25, 'category' => 'Medical', 'vatClass' => 'VATable']);
         $this->actingAs($this->cashier);
+        $this->postJson('/api/cashier-shifts', ['openingCash'=>100])->assertCreated();
         Http::preventStrayRequests();
     }
 
@@ -199,6 +200,7 @@ class CheckoutStockTest extends TestCase
         $body['amount'] = 10;
         $body['request_key'] = 'return-one';
         $this->patchJson('/api/transactions/TXN-test', $body)->assertOk()->assertJsonPath('status', 'Partially Refunded');
+        $this->getJson('/api/cashier-shifts/current')->assertOk()->assertJsonPath('expectedCash', 120);
         $this->patchJson('/api/transactions/TXN-test', $body)->assertConflict();
         $this->assertDatabaseHas('products', ['id' => 1, 'stock' => 3]);
         $this->patchJson('/api/transactions/TXN-test', $this->approval())->assertOk()->assertJsonPath('status', 'Refunded');

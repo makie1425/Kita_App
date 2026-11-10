@@ -30,6 +30,7 @@ class ProductFifoTest extends TestCase
         $this->admin = User::factory()->create(['role' => 'admin']);
         $this->assignWorkspace($this->manager, $this->admin);
         $this->actingAs($this->manager);
+        $this->postJson('/api/cashier-shifts', ['openingCash'=>100])->assertCreated();
         $this->postJson('/api/categories', ['name' => 'Beverages', 'classification' => 'Non-Perishable'])->assertCreated();
         $brand = $this->postJson('/api/product-master/brands', ['name' => 'Coca-Cola', 'status' => 'Active', 'category' => 'Beverages'])->assertOk()->json('record.id');
         $sub = $this->postJson('/api/product-master/subcategories', ['name' => 'Soft Drinks', 'category' => 'Beverages', 'status' => 'Active'])->assertOk()->json('record.id');

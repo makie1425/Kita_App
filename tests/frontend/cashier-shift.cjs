@@ -1,0 +1,11 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+const ctx=vm.createContext({React:{createElement:(type,props,...children)=>({type,props,children}),Fragment:'fragment'},DCLogic:class{setState(p){Object.assign(this.state,typeof p==='function'?p(this.state):p)}},window:{open:()=>{}},fetch:()=>{}});
+vm.runInContext(fs.readFileSync('public/app.js','utf8')+';globalThis.App=Component;',ctx);
+const app=new ctx.App();const nodes=n=>n==null||typeof n!=='object'?[]:Array.isArray(n)?n.flatMap(nodes):[n,...nodes(n.children)];
+app.state.role='cashier';app.state.data={PRODUCTS:[],TRANSACTIONS:[],USERS:{manager:[]},BUSINESS_DATE:'2026-11-10'};
+app.state.cashShiftLoaded=true;app.state.cashShift=null;
+assert(nodes(app.buildPos()).some(n=>n.type==='button'&&n.children.includes('Open Shift')));
+app.state.cashShift={id:1,cashier_name:'Cashier',opened_at:'2026-11-10 08:00:00',opening_cash:100};app.state.cashShiftExpected=100;
+assert(nodes(app.buildCashShift()).some(n=>n.type==='button'&&n.children.includes('Close Shift')));
+app.state.role='manager';assert(nodes(app.buildCashDrawerHistory()).some(n=>n.type==='button'&&n.children.includes('Refresh Shifts')));
+console.log('Cashier opening prompt, drawer controls and manager shift list render.');

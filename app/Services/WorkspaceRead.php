@@ -52,7 +52,7 @@ class WorkspaceRead
   $query=DB::table($table);
   if(!config('workspaces.enabled'))return $query;
   $parts=preg_split('/\s+as\s+/i',$table);$base=$parts[0];$alias=$parts[1]??$base;
-  if(!in_array($base,WorkspaceTables::BUSINESS,true)&&$base!=='users')throw new \LogicException('Unclassified workspace table: '.$base);
+  if(!in_array($base,WorkspaceTables::BUSINESS,true)&&!in_array($base,['users','cashier_shifts','cashier_shift_entries'],true))throw new \LogicException('Unclassified workspace table: '.$base);
   if($base!=='users' && auth()->user()?->normalizedRole()==='super_admin')return $query->whereRaw('1 = 0');
   $id=self::id();
   if(!$id)return $query->whereRaw('1 = 0');

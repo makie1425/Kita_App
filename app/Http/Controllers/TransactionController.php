@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Services\FifoInventory;
+use App\Services\CashierShift;
 use App\Services\ManagerApproval;
 use App\Services\SaleCheckout;
 use App\Services\StockMovement;
@@ -43,12 +44,14 @@ class TransactionController extends Controller
         ]);
         try {
             return DB::transaction(function () use ($data, $request) {
+                $shift = CashierShift::requireActive($request);
                 $sale = SaleCheckout::prepare($request, $data);
                 $tendered = SaleCheckout::cents($data['tendered']);
                 if ($tendered < $sale['total']) {
                     throw ValidationException::withMessages(['tendered' => 'Tendered amount is less than the total due.']);
                 }
                 $transaction = SaleCheckout::save($request, $data, $sale, 'Unused', 'Cash', $tendered);
+                CashierShift::record($shift, 'sale', $sale['total'], $data['uuid']);
 
                 return response()->json(['message' => 'Transaction saved.', 'uuid' => $data['uuid'], 'transaction' => $transaction], 201);
             }, 3);
@@ -177,6 +180,10 @@ class TransactionController extends Controller
             $restock = $action === 'refund'
                 ? in_array($classification, ['Incorrect Item', 'Cancellation', 'Returnable'], true)
                 : ($action === 'void' || ($data['restock'] ?? true));
+            $cashShift = $transaction->paymentMode === 'Cash' ? CashierShift::requireActive($request) : null;
+            if ($cashShift && $action !== 'exchange' && $refundCents > CashierShift::balance($cashShift)) {
+                throw ValidationException::withMessages(['amount' => 'The cash drawer has less than this refund. Add cash with manager approval first.']);
+            }
             $approvalId = DB::table('transaction_approvals')->insertGetId(WorkspaceWrite::owned([
                 'transaction_uuid' => $uuid, 'manager_id' => $manager->id, 'requested_by' => $request->user()->id,
                 'requested_by_role' => $request->user()->role,
@@ -234,6 +241,9 @@ class TransactionController extends Controller
             }
             $fullyReturned = ! WorkspaceRead::table('transaction_lines')->where('transaction_uuid', $uuid)->whereColumn('refundedQty', '<', 'qty')->exists();
             $status = $action === 'refund' ? ($fullyReturned ? 'Refunded' : 'Partially Refunded') : 'Closed';
+            if ($cashShift) {
+                CashierShift::record($cashShift, $action === 'exchange' ? 'exchange_difference' : $action, $action === 'exchange' ? $difference : $refundCents, 'return-'.$approvalId, $data['reason'], $manager->id);
+            }
             $refunded = SaleCheckout::cents($transaction->refundedAmount) + $refundCents;
             WorkspaceRead::table('transactions')->where('uuid', $uuid)->update(['status' => $status, 'refundedAmount' => $refunded / 100, 'refundDate' => now()->toDateString()]);
             SaleCheckout::audit($request->user()->name, ucfirst($action).' approved by '.$manager->name, $uuid, $transaction->status, $status.'; '.$data['reason']);

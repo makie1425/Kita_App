@@ -35,6 +35,7 @@ class EvaluationWorkflowTest extends TestCase
         DB::table('categories')->insert(['name' => 'Food', 'status' => 'Active', 'workspace_id' => $this->workspace]);
         DB::table('products')->insert(['id' => 1, 'name' => 'Milk', 'stock' => 0, 'status' => 'Active', 'category' => 'Food', 'price' => 10, 'unitPrice' => 5, 'workspace_id' => $this->workspace]);
         $this->actingAs($this->cashier);
+        $this->postJson('/api/cashier-shifts', ['openingCash'=>100])->assertCreated();
     }
 
     private function batch(int $qty, ?string $expiry, string $date = '2026-10-01', float $cost = 5): int

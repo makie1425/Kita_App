@@ -15,6 +15,7 @@ class PromotionDiscountPolicyTest extends TestCase {
  protected function setUp():void {
   parent::setUp();$this->travelTo(\Carbon\Carbon::parse('2026-11-07 12:00:00','Asia/Manila'));
   $this->manager=User::factory()->create(['role'=>'manager','approval_pin'=>Hash::make('1234')]);$this->cashier=User::factory()->create(['role'=>'cashier']);$this->assignWorkspace($this->manager,$this->cashier);$this->actingAs($this->manager);
+  $this->postJson('/api/cashier-shifts',['openingCash'=>100])->assertCreated();$this->actingAs($this->cashier)->postJson('/api/cashier-shifts',['openingCash'=>100])->assertCreated();$this->actingAs($this->manager);
   $this->insertFixture('categories',['name'=>'Food','status'=>'Active']);
   $this->insertFixture('products',['id'=>1,'name'=>'Hotdog Buns','category'=>'Food','status'=>'Active','stock'=>0,'price'=>83.75,'unitPrice'=>30,'unit'=>'Piece','stockUnit'=>'Piece']);
   FifoInventory::receive(1,50,30,'2026-11-07',batch:'BUNS',expiry:'2026-12-07');DB::table('products')->where('id',1)->update(['stock'=>50]);

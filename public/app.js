@@ -319,6 +319,7 @@ class Component extends DCLogic {
     itemRequestsLocal:null, purchaseOrdersLocal:null, receivingLocal:null, adjustmentsLocal:null,
     approvalNoteDraft:{}, rolesMatrix:null, notificationsLocal:null,
     newAdjForm:{productId:"",qtyChange:"",reason:"Shrinkage",comment:""},
+    cashShift:null,cashShiftLoaded:false,cashShiftError:"",openingCash:"",countedCash:"",differenceReason:"",cashMoveType:"added",cashMoveAmount:"",cashMoveReason:"",cashMoveManagerId:"",cashMovePin:"",cashShiftHistory:[],
     cashierModalOpen:false, cashierModalMode:"add", cashierForm:{id:null,name:"",username:"",schedule:"",status:"Active"}, cashiersLocal:null,
     productsLocal:null, fieldVersionHistoryLocal:null, categoriesLocal:null, suppliersLocal:null,
     priceEditOpen:false, priceEditTarget:null, priceEditValue:"", priceEditReason:"",
@@ -417,7 +418,7 @@ class Component extends DCLogic {
     this.cartGeneration=(this.cartGeneration||0)+1;this.resetCheckoutChecks();
     this.confirmationResolve?.(false);this.confirmationResolve=null;
     if(window.KITA_AUTH){window.KITA_AUTH.user=null;if(csrfToken)window.KITA_AUTH.csrfToken=csrfToken;}
-    this.setState({...this.emptySessionState,authStep:'login',role:null,screen:null,authenticatedUser:null,data:null,cart:[],newReqCart:[],accountsLocal:null,purchaseData:null,receivingSuccess:null,receivingRefreshError:'',registrationFromPurchase:false,productPickerOpen:false,productPickerIndex:0,supplierAccountsData:null,inventoryHistory:null,reportResult:null,saDashboard:null,confirmation:null,manualLookupOpen:false,seniorPwdOpen:false,overrideLine:null,acctModalOpen:false,discountManagerPin:'',approvalPin:'',approvalManagerId:'',currentApprovalPin:'',newApprovalPin:'',confirmApprovalPin:'',loginUsername:'',loginPassword:'',otpEmail:'',otpCode:'',mgrNotificationsLocal:[],notificationUnread:0,mgrNotifOpen:false,toasts:[],loginError:message||'Please sign in again.'});
+    this.setState({...this.emptySessionState,cashShift:null,cashShiftLoaded:false,cashShiftEntries:[],cashShiftExpected:null,cashShiftHistory:[],authStep:'login',role:null,screen:null,authenticatedUser:null,data:null,cart:[],newReqCart:[],accountsLocal:null,purchaseData:null,receivingSuccess:null,receivingRefreshError:'',registrationFromPurchase:false,productPickerOpen:false,productPickerIndex:0,supplierAccountsData:null,inventoryHistory:null,reportResult:null,saDashboard:null,confirmation:null,manualLookupOpen:false,seniorPwdOpen:false,overrideLine:null,acctModalOpen:false,discountManagerPin:'',approvalPin:'',approvalManagerId:'',currentApprovalPin:'',newApprovalPin:'',confirmApprovalPin:'',loginUsername:'',loginPassword:'',otpEmail:'',otpCode:'',mgrNotificationsLocal:[],notificationUnread:0,mgrNotifOpen:false,toasts:[],loginError:message||'Please sign in again.'});
   };
   componentDidMount() {
     this.emptySessionState={...this.state};
@@ -536,7 +537,7 @@ class Component extends DCLogic {
     role=String(role||"").toLowerCase().replace(/[ _-]/g,"");
     const d={cashier:"pos",manager:"mgrDashboard",admin:"admDashboard",superadmin:"saDashboard"}[role];
     if(!d || !user?.name){ this.setState({authStep:"login",role:null,screen:null,loginError:"Your session could not be loaded. Refresh the page and sign in again."}); return; }
-this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificationsLocal:[],notificationUnread:0,notificationNext:null,mgrNotifOpen:false},()=>{this.reloadNotifications();this.reloadCatalog().catch(error=>this.setState({dataError:error.message}));if(role==="superadmin")this.reloadSaDashboard();if(["manager","admin"].includes(role))this.reloadPurchasing().catch(()=>{});if(role!=="cashier") this.reloadAccounts().catch(error=>this.toast(error.message,"error"));});
+this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null,cashShiftLoaded:false,cashShiftEntries:[],cashShiftExpected:null,cashShiftHistory:[],mgrNotificationsLocal:[],notificationUnread:0,notificationNext:null,mgrNotifOpen:false},()=>{this.reloadNotifications();this.reloadCatalog().catch(error=>this.setState({dataError:error.message}));if(["cashier","manager"].includes(role))this.loadCashShift();if(role==="superadmin")this.reloadSaDashboard();if(["manager","admin"].includes(role))this.reloadPurchasing().catch(()=>{});if(role!=="cashier") this.reloadAccounts().catch(error=>this.toast(error.message,"error"));});
   };
   logout=()=>{ this.authPost((window.KITA_AUTH&&window.KITA_AUTH.logoutUrl)||"/logout",{}).then(res=>{ if(window.KITA_AUTH) window.KITA_AUTH.csrfToken=res.csrf_token; this.endClientSession('',res.csrf_token); this.newSale(); this.setState({role:null,authenticatedUser:null,mgrNotificationsLocal:[],notificationUnread:0,mgrNotifOpen:false,data:null,accountsLocal:null,purchaseData:null,purchaseReceivingId:null,purchaseRequestDetail:null,newReqCart:[],cart:[],discountManagerPin:"",approvalPin:"",approvalManagerId:"",newApprovalPin:"",confirmApprovalPin:"",currentApprovalPin:"",refundTxn:null,authStep:"login",screen:null,pendingRole:null,loginUsername:"",loginPassword:"",otpEmail:"",loginError:""}); }).catch(error=>this.toast(error.message,"error")); };
   toggleSidebar=()=>this.setState(s=>({sidebarOpen:!s.sidebarOpen}),()=>{
@@ -861,6 +862,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
         const sold=result.cart.find(l=>l.productId===p.id);
         return sold?{...p,stock:Math.max(0,p.stock-sold.qty),sellableStock:Math.max(0,this.sellableStock(p)-sold.qty)}:p;
       })}));
+      this.loadCashShift();
       this.toast("Sale saved and inventory updated.");
       this.reloadCatalog().catch(()=>this.toast("Sale saved. Refresh the page to reload inventory.","warn"));
     }).catch(error=>{
@@ -968,6 +970,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
       action,request_key:requestKey,...(returnItems?{items:returnItems}:{}),...(action==="exchange"?{restock:this.state.refundRestock!==false}:{}),provider_refund_id:this.state.providerRefundId||null,manager_id:this.state.approvalManagerId||"",manager_pin:this.state.approvalPin||"",
       ...(action==="exchange"?{exchange_tendered:this.state.exchangeTendered||0}:{}),reason:this.state.refundClass||"",...(action==="refund"?{refund_classification:this.state.refundClass||""}:{}),replacement_product_id:action==="exchange"?this.state.exchangeReplacement:null,
     },"PATCH").then(res=>{
+      this.loadCashShift();
       this.setState(s=>({refundTxn:{...s.refundTxn,status:res.status,refundDate:res.refundDate,lines:res.lines,refundedAmount:res.refundedAmount},refundQuantities:{},returnRequestKey:null,approvalPin:"",refundError:"",approvalResult:res.message,exchangeTransaction:res.replacementTransaction||null,exchangeReceiptOpen:false}));
       this.toast(res.message);
       this.reloadCatalog().catch(()=>{});
@@ -1349,6 +1352,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     const {data,cart,barcodeInput,scannerConnected,manualLookupOpen,manualSearch,seniorPwdOpen,seniorApplied,seniorInfo,seniorForm,employeeDiscount,
       overrideLine,overrideReason,overridePin,paymentMethod,ewalletProvider,tendered,paymentState,reservationSeconds,commitOpen,transactionResult}=this.state;
     if(!data) return card(loadingStatus("Loading catalog..."));
+    if(['cashier','manager'].includes(this.state.role) && (!this.state.cashShiftLoaded||!this.state.cashShift))return this.buildCashShift(true);
     if(transactionResult) return this.buildTransactionView(transactionResult);
     const totals=this.computeTotals();
     const stockBusy=!!(this.state.stockSelectionPending||this.state.checkoutStockChecking||this.state.barcodeCatalogLookup),controlsBusy=stockBusy||paymentState==='processing'||!!this.checkoutInFlight;
@@ -1582,6 +1586,29 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
       ]):null,
     ]);
   }
+  loadCashShift=async()=>{
+    try{const r=await this.sessionFetch('/api/cashier-shifts/current',{headers:{Accept:'application/json'},credentials:'same-origin'});const d=await r.json();if(!r.ok)throw new Error(d.message||'Could not load cash shift.');this.setState({cashShift:d.shift,cashShiftEntries:d.entries||[],cashShiftExpected:d.expectedCash,cashShiftLoaded:true,cashShiftError:''});}
+    catch(e){this.setState({cashShiftLoaded:true,cashShiftError:e.message});}
+  };
+  loadCashShiftHistory=async()=>{try{const r=await this.sessionFetch('/api/cashier-shifts/history',{headers:{Accept:'application/json'},credentials:'same-origin'});const d=await r.json();if(!r.ok)throw new Error(d.message);this.setState({cashShiftHistory:d.shifts||[]});}catch(e){this.toast(e.message,'error');}};
+  openCashShift=async()=>{try{await this.authPost('/api/cashier-shifts',{openingCash:this.state.openingCash});this.setState({openingCash:''});await this.loadCashShift();this.toast('Cash drawer shift opened.');}catch(e){this.toast(e.message,'error');}};
+  moveCashShift=async()=>{try{await this.authPost('/api/cashier-shifts/movement',{type:this.state.cashMoveType,amount:this.state.cashMoveAmount,reason:this.state.cashMoveReason,manager_id:this.state.cashMoveManagerId,manager_pin:this.state.cashMovePin});this.setState({cashMoveAmount:'',cashMoveReason:'',cashMovePin:''});await this.loadCashShift();this.toast('Cash movement recorded.');}catch(e){this.setState({cashMovePin:''});this.toast(e.message,'error');}};
+  closeCashShift=async()=>{try{const r=await this.authPost('/api/cashier-shifts/close',{countedCash:this.state.countedCash,differenceReason:this.state.differenceReason});this.setState({countedCash:'',differenceReason:'',cashShift:r.shift,cashShiftExpected:r.shift.expected_cash});await this.loadCashShift();await this.loadCashShiftHistory();window.open('/api/cashier-shifts/'+r.shift.id+'/report','_blank','noopener');this.toast('Shift closed.');}catch(e){this.toast(e.message,'error');}};
+  buildCashShift=(asPrompt=false)=>{
+    const h=React.createElement,s=this.state,shift=s.cashShift,field=(label,value,onChange,extra={})=>h('label',{className:'field-group'},[label,h('input',{type:'number',min:0,step:'0.01',value,onChange,...extra})]);
+    if(!s.cashShiftLoaded)return card(loadingStatus('Loading cash drawer shift...'));
+    if(s.cashShiftError)return card([h('p',{role:'alert'},s.cashShiftError),btn('Retry',this.loadCashShift)]);
+    if(!shift){const form=card([h('h2',null,'Open Cash Drawer Shift'),h('p',null,'Count the starting cash before checkout.'),field('Starting Cash (PHP)',s.openingCash,e=>this.setState({openingCash:e.target.value}),{required:true}),btn('Open Shift',this.openCashShift,'primary')]);return asPrompt?h('div',{style:{position:'fixed',inset:0,background:'rgba(15,31,74,0.38)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:50,padding:16}},h('div',{role:'dialog','aria-modal':true,'aria-label':'Open Cash Drawer Shift',style:{width:460,maxWidth:'100%',background:'#fff',padding:20}},form)):form;}
+    const expected=Number(s.cashShiftExpected||0),difference=Number(s.countedCash||0)-expected;
+    return h('div',null,[card([h('h2',null,'Current Cash Drawer'),h('p',null,'Cashier: '+shift.cashier_name+' ? Opened: '+shift.opened_at),kpi('Starting Cash',peso(shift.opening_cash)),kpi('Expected Cash',peso(expected)),btn('Refresh Balance',this.loadCashShift),btn('Print Shift Summary',()=>window.open('/api/cashier-shifts/'+shift.id+'/report','_blank','noopener'))]),
+      card([h('h3',null,'Add or Remove Cash'),h('select',{value:s.cashMoveType,onChange:e=>this.setState({cashMoveType:e.target.value})},[h('option',{value:'added'},'Add cash'),h('option',{value:'removed'},'Remove cash')]),field('Amount (PHP)',s.cashMoveAmount,e=>this.setState({cashMoveAmount:e.target.value})),h('input',{placeholder:'Reason',value:s.cashMoveReason,onChange:e=>this.setState({cashMoveReason:e.target.value})}),h('select',{value:s.cashMoveManagerId,onChange:e=>this.setState({cashMoveManagerId:e.target.value})},[h('option',{value:''},'Select approving manager'),...(s.data?.USERS?.manager||[]).filter(m=>m.status==='Active').map(m=>h('option',{key:m.id,value:m.id},m.name))]),h('input',{type:'password',placeholder:'Manager 4-digit PIN',value:s.cashMovePin,onChange:e=>this.setState({cashMovePin:e.target.value})}),btn('Record Cash Movement',this.moveCashShift)]),
+      card([h('h3',null,'Close Shift'),field('Cash Counted (PHP)',s.countedCash,e=>this.setState({countedCash:e.target.value})),s.countedCash!==''?h('p',null,'Difference: '+peso(difference)):null,s.countedCash!==''&&Math.round(difference*100)!==0?h('input',{placeholder:'Explain shortage or excess',value:s.differenceReason,onChange:e=>this.setState({differenceReason:e.target.value})}):null,btn('Close Shift',this.closeCashShift,'primary')]),
+      (s.cashShiftEntries||[]).length?this.recordTable('cash-shift-entries',['Time','Type','Amount','Reference','Reason'],s.cashShiftEntries.map(e=>tr([td(e.created_at),td(e.type),td(peso(e.amount)),td(e.reference||''),td(e.reason||'')],e.id))):null]);
+  };
+  buildCashDrawerHistory(){
+    const h=React.createElement,rows=this.state.cashShiftHistory||[];
+    return h('div',null,[moduleTitle('Cash Drawer Shifts'),btn('Refresh Shifts',this.loadCashShiftHistory,'primary'),rows.length?this.recordTable('drawer-history',['Shift','Cashier','Opened','Closed','Starting Cash','Expected Cash','Counted Cash','Difference','Report'],rows.map(x=>tr([td(x.id),td(x.cashier_name),td(x.opened_at),td(x.closed_at||'Open'),td(peso(x.opening_cash)),td(x.expected_cash===null?'Open':peso(x.expected_cash)),td(x.counted_cash===null?'Pending':peso(x.counted_cash)),td(x.counted_cash===null?'':peso(Number(x.counted_cash)-Number(x.expected_cash))),td(btn('Print',()=>window.open('/api/cashier-shifts/'+x.id+'/report','_blank','noopener')))],x.id))):h('p',null,'Select Refresh Shifts to view cashier shifts.')]);
+  }
   buildShift(){
     const {data}=this.state;
     if(!data) return card(loadingStatus("Loading shift transactions..."));
@@ -1593,6 +1620,9 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     const rows=transactions.map(t=>tr([td(t.uuid),td(t.date),td(t.paymentMode),td(badge(t.status)),td(peso(t.total)),td(t.status==="Pending Payment"?React.createElement("a",{href:"/payment/cancelled?uuid="+encodeURIComponent(t.uuid),style:{color:COLORS.brand,fontWeight:700}},"Review payment"):null)],t.uuid));
     return React.createElement("div",null,[
       moduleTitle("My Shift Transactions",`${me.name} ? Today, ${today||""}`),
+      this.buildCashShift(),
+      btn("View Past Shifts",this.loadCashShiftHistory),
+      (this.state.cashShiftHistory||[]).length?this.recordTable("cash-shift-history",["Shift","Cashier","Opened","Closed","Starting Cash","Expected","Counted","Report"],this.state.cashShiftHistory.map(x=>tr([td(x.id),td(x.cashier_name),td(x.opened_at),td(x.closed_at||"Open"),td(peso(x.opening_cash)),td(x.expected_cash===null?"Open":peso(x.expected_cash)),td(x.counted_cash===null?"Pending":peso(x.counted_cash)),td(btn("Print",()=>window.open("/api/cashier-shifts/"+x.id+"/report","_blank","noopener")))],x.id))):null,
       btn("Refresh transactions",()=>this.reloadCatalog().catch(()=>this.toast("Could not refresh shift transactions.","error"))),
       React.createElement("div",{style:{display:"flex",gap:14,marginTop:16,marginBottom:16}},[
         kpi("Transactions Today",transactions.length),kpi("Completed Sales",sales.length),kpi("Total Sales",peso(total),null,COLORS.green),
@@ -3567,7 +3597,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     const activePortal=portalMeta[s.pendingRole]||portalMeta.cashier;
     const navMap={
       cashier:[{label:null,items:[{key:"pos",label:"Checkout"},{key:"refunds",label:"Refunds / Exchanges / Voids"},{key:"shift",label:"My Shift Transactions"}]}],
-      manager:[{label:"OPERATIONS",items:[{key:"mgrDashboard",label:"Dashboard"},{key:"pos",label:"Checkout"}]},
+      manager:[{label:"OPERATIONS",items:[{key:"mgrDashboard",label:"Dashboard"},{key:"pos",label:"Checkout"},{key:"cashDrawers",label:"Cash Drawer Shifts"}]},
         {label:"PURCHASE ORDERS",items:[{key:"mgrRequest",label:"Create Purchase Request"},{key:"mgrRequestView",label:"Purchase Requests"},{key:"purchaseOrders",label:"Purchase Orders"},{key:"supplierAccounts",label:"Supplier Balances"},{key:"mgrPurchaseHistory",label:"Transaction History"},{key:"mgrPO",label:"Stock Receiving"}]},
         {label:"INVENTORY",items:[{key:"mgrInventory",label:"Inventory"},{key:"mgrCategories",label:"Categories / Brands"},{key:"mgrRegistration",label:"Barcode/Item Registration"},{key:"archive",label:"Archive"}]},
         {label:"REPORTS",items:[{key:"admReports",label:"Reports"}]},
@@ -3581,14 +3611,14 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     const navGroups=(navMap[s.role]||[]).map(g=>({label:g.label,items:g.items.map(it=>({key:it.key,label:it.label,icon:navigationIcon(it.key),go:this.goScreen(it.key),className:s.screen===it.key?"nav-item nav-item--active":"nav-item",current:s.screen===it.key?"page":undefined,
       style:{padding:"9px 12px",borderRadius:8,fontSize:13,fontWeight:600,cursor:"pointer",marginBottom:2,background:s.screen===it.key?"rgba(255,255,255,0.14)":"transparent"}}))}));
     const titles={purchaseOrders:"Purchase Orders",supplierAccounts:"Supplier Balances",pos:"Checkout",refunds:"Refunds / Exchanges / Voids",shift:"My Shift Transactions",mgrDashboard:"Manager Dashboard",mgrRequest:"Create Purchase Request",mgrRequestView:"Purchase Requests",mgrPurchaseHistory:"Transaction History",mgrPO:"Stock Receiving",
-      mgrInventory:"Inventory",mgrCategories:"Categories",mgrRegistration:"Barcode/Item Registration",mgrCashiers:"Cashier Accounts",mgrPromotions:"Promotions",mgrSupplier:"Suppliers",archive:"Archive",
+      cashDrawers:"Cash Drawer Shifts",mgrInventory:"Inventory",mgrCategories:"Categories",mgrRegistration:"Barcode/Item Registration",mgrCashiers:"Cashier Accounts",mgrPromotions:"Promotions",mgrSupplier:"Suppliers",archive:"Archive",
       admDashboard:"Dashboard/Analytics",admPurchasedOrders:"Purchase Requests",admForwarded:"Approved Purchase Requests",admDisapproved:"Rejected Purchase Requests",
       admReceivingApprovals:"Receiving History",admInventoryApprovals:"Inventory Adjustment Approvals",admSuppliers:"Suppliers",admReports:"Reports",admManagers:"Manage Accounts",admNotifications:"Notifications",
       saDashboard:"Dashboard",saAdmins:"Account Management",saRoles:"Roles & Permissions",saBackup:"Database Backup",saAudit:"Audit Logs"};
     let activeScreen=null;
     if(data || s.role==="superadmin"){
       const map={pos:()=>this.buildPos(), refunds:()=>this.buildRefunds(), shift:()=>this.buildShift(),
-        purchaseOrders:()=>this.buildPurchaseOrderWorkspace(), supplierAccounts:()=>this.buildSupplierAccounts(), mgrDashboard:()=>this.buildMgrDashboard(), mgrRequest:()=>this.buildMgrRequest(), mgrRequestView:()=>this.buildPurchaseRequests(), mgrPurchaseHistory:()=>this.buildPurchaseHistory(), mgrPO:()=>this.buildMgrPO(),
+        cashDrawers:()=>this.buildCashDrawerHistory(),purchaseOrders:()=>this.buildPurchaseOrderWorkspace(), supplierAccounts:()=>this.buildSupplierAccounts(), mgrDashboard:()=>this.buildMgrDashboard(), mgrRequest:()=>this.buildMgrRequest(), mgrRequestView:()=>this.buildPurchaseRequests(), mgrPurchaseHistory:()=>this.buildPurchaseHistory(), mgrPO:()=>this.buildMgrPO(),
         mgrInventory:()=>this.buildMgrInventory(), mgrCategories:()=>this.buildMgrCategories(), mgrRegistration:()=>this.buildMgrRegistration(), mgrCashiers:()=>this.buildMgrCashiers(), mgrPromotions:()=>this.buildMgrPromotions(), mgrSupplier:()=>this.buildMgrSupplier(), archive:()=>this.buildArchive(),
         admDashboard:()=>this.buildAdmDashboard(), admPurchasedOrders:()=>this.buildAdmPurchasedOrders(), admForwarded:()=>this.buildAdmForwarded(), admDisapproved:()=>this.buildAdmDisapproved(),
         admReceivingApprovals:()=>this.buildAdmReceivingApprovals(), admInventoryApprovals:()=>this.buildAdmInventoryApprovals(), admSuppliers:()=>this.buildAdmSuppliers(), admReports:()=>this.buildAdmReports(),
