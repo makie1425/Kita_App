@@ -319,7 +319,7 @@ class Component extends DCLogic {
     itemRequestsLocal:null, purchaseOrdersLocal:null, receivingLocal:null, adjustmentsLocal:null,
     approvalNoteDraft:{}, rolesMatrix:null, notificationsLocal:null,
     newAdjForm:{productId:"",qtyChange:"",reason:"Shrinkage",comment:""},
-    cashShift:null,cashShiftLoaded:false,cashShiftError:"",openingCash:"",countedCash:"",differenceReason:"",cashMoveType:"added",cashMoveAmount:"",cashMoveReason:"",cashMoveManagerId:"",cashMovePin:"",cashShiftHistory:[],
+    cashShift:null,cashShiftLoaded:false,cashShiftError:"",cashShiftPromptDismissed:false,openingCash:"",countedCash:"",differenceReason:"",cashMoveType:"added",cashMoveAmount:"",cashMoveReason:"",cashMoveManagerId:"",cashMovePin:"",cashShiftHistory:[],
     cashierModalOpen:false, cashierModalMode:"add", cashierForm:{id:null,name:"",username:"",schedule:"",status:"Active"}, cashiersLocal:null,
     productsLocal:null, fieldVersionHistoryLocal:null, categoriesLocal:null, suppliersLocal:null,
     priceEditOpen:false, priceEditTarget:null, priceEditValue:"", priceEditReason:"",
@@ -1596,7 +1596,14 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
     const h=React.createElement,s=this.state,shift=s.cashShift,field=(label,value,onChange,extra={})=>h('label',{className:'field-group'},[label,h('input',{type:'number',min:0,step:'0.01',value,onChange,...extra})]);
     if(!s.cashShiftLoaded)return card(loadingStatus('Loading cash drawer shift...'));
     if(s.cashShiftError)return card([h('p',{role:'alert'},s.cashShiftError),btn('Retry',this.loadCashShift)]);
-    if(!shift){const form=card([h('h2',null,'Open Cash Drawer Shift'),h('p',null,'Count the starting cash before checkout.'),field('Starting Cash (PHP)',s.openingCash,e=>this.setState({openingCash:e.target.value}),{required:true}),btn('Open Shift',this.openCashShift,'primary')]);return asPrompt?h('div',{style:{position:'fixed',inset:0,background:'rgba(15,31,74,0.38)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:50,padding:16}},h('div',{role:'dialog','aria-modal':true,'aria-label':'Open Cash Drawer Shift',style:{width:460,maxWidth:'100%',background:'#fff',padding:20}},form)):form;}
+    if(!shift){
+      if(asPrompt&&s.cashShiftPromptDismissed)return card([h('p',null,'Open a cash drawer shift before checkout.'),btn('Open Cash Drawer Shift',()=>this.setState({cashShiftPromptDismissed:false}),'primary')]);
+      const closePrompt=()=>this.setState({cashShiftPromptDismissed:true});
+      const form=card([h('h2',null,'Open Cash Drawer Shift'),h('p',null,'Count the starting cash before checkout.'),field('Starting Cash (PHP)',s.openingCash,e=>this.setState({openingCash:e.target.value}),{required:true}),btn('Open Shift',this.openCashShift,'primary')]);
+      return asPrompt?h('div',{style:{position:'fixed',inset:0,background:'rgba(15,31,74,0.38)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:50,padding:16}},h('div',{role:'dialog','aria-modal':true,'aria-label':'Open Cash Drawer Shift',onKeyDown:e=>{if(e.key==='Escape'){e.preventDefault();closePrompt();}},style:{position:'relative',width:460,maxWidth:'100%',background:'#fff',padding:20}},[
+        h('button',{type:'button','aria-label':'Close starting cash popup',title:'Close',autoFocus:true,onClick:closePrompt,style:{position:'absolute',top:8,right:8,width:36,height:36,display:'flex',alignItems:'center',justifyContent:'center',border:0,borderRadius:8,background:'#fff',color:COLORS.text,fontSize:26,cursor:'pointer'}},'\u00d7'),form
+      ])):form;
+    }
     const expected=Number(s.cashShiftExpected||0),difference=Number(s.countedCash||0)-expected;
     return h('div',null,[card([h('h2',null,'Current Cash Drawer'),h('p',null,'Cashier: '+shift.cashier_name+' ? Opened: '+shift.opened_at),kpi('Starting Cash',peso(shift.opening_cash)),kpi('Expected Cash',peso(expected)),btn('Refresh Balance',this.loadCashShift),btn('Print Shift Summary',()=>window.open('/api/cashier-shifts/'+shift.id+'/report','_blank','noopener'))]),
       card([h('h3',null,'Add or Remove Cash'),h('select',{value:s.cashMoveType,onChange:e=>this.setState({cashMoveType:e.target.value})},[h('option',{value:'added'},'Add cash'),h('option',{value:'removed'},'Remove cash')]),field('Amount (PHP)',s.cashMoveAmount,e=>this.setState({cashMoveAmount:e.target.value})),h('input',{placeholder:'Reason',value:s.cashMoveReason,onChange:e=>this.setState({cashMoveReason:e.target.value})}),h('select',{value:s.cashMoveManagerId,onChange:e=>this.setState({cashMoveManagerId:e.target.value})},[h('option',{value:''},'Select approving manager'),...(s.data?.USERS?.manager||[]).filter(m=>m.status==='Active').map(m=>h('option',{key:m.id,value:m.id},m.name))]),h('input',{type:'password',placeholder:'Manager 4-digit PIN',value:s.cashMovePin,onChange:e=>this.setState({cashMovePin:e.target.value})}),btn('Record Cash Movement',this.moveCashShift)]),
