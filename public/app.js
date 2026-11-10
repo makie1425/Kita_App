@@ -1911,7 +1911,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
         this.state.purchaseReviewError?h('p',{className:'form-error',role:'alert'},this.state.purchaseReviewError):null,
         h('div',{className:'purchase-actions','aria-busy':!!this.state.purchaseReviewSaving},[
           h('button',{type:'button',className:'kita-button',disabled:!!this.state.purchaseReviewSaving,onClick:close},'Cancel'),
-          h('button',{type:'button',className:'kita-button kita-button--primary',disabled:!!this.state.purchaseReviewSaving||(editing&&!this.purchaseReviewChanged(r)),onClick:()=>this.reviewPurchase(r,editing?'modify':mode)},this.state.purchaseReviewSaving?'Saving...':editing?'Save edits':mode==='approved'?'Confirm approval':'Confirm rejection'),
+          h('button',{type:'button',className:'kita-button kita-button--primary',disabled:!!this.state.purchaseReviewSaving||(editing&&!this.purchaseReviewChanged(r)),onClick:()=>this.reviewPurchase(r,editing?'modify':mode)},this.state.purchaseReviewSaving?'Saving...':editing?'Save Changes':mode==='approved'?'Confirm approval':'Confirm rejection'),
           this.state.purchaseReviewSaving===r.id?h('span',{role:'status'},'Updating purchase request. Please wait.'):null
         ])
       ])

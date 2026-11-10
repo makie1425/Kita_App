@@ -29,6 +29,6 @@ class BatchReportController extends Controller
         ]);
         return response()->view('reports.batch', ['number' => $entry->batchNumber ?: 'Batch #'.$id,
             'rows' => $rows, ...\App\Services\BatchPrintReport::build($rows),
-            'generatedAt' => now()])->header('Cache-Control', 'private, no-store');
+            'generatedAt' => now(), 'preparedBy' => $request->user()->name])->header('Cache-Control', 'private, no-store');
     }
 }
