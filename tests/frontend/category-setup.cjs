@@ -19,8 +19,10 @@ const button=(tree,label)=>nodes(tree).find(n=>n.type==='button'&&text(n)===labe
   assert.strictEqual(calls.length,1);assert(!app.state.categoryModalOpen);
   assert.strictEqual(app.state.regCategory,'Appliances');assert.strictEqual(app.state.regBrandId,7);
   let tree=app.buildMgrCategories();
+  for(const label of ['+ Add Category','+ Add Subcategory','+ Add Brand'])assert.strictEqual(nodes(tree).filter(n=>n.type==='button'&&text(n)===label).length,1);
+  assert(!nodes(app.buildMasterLists()).some(n=>n.type==='button'&&text(n).startsWith('Add ')),'No add buttons above individual tables');
   assert(!nodes(tree).some(n=>n.props?.role==='dialog'),'Forms stay closed until clicked');
-  button(tree,'Add subcategory').props.onClick();
+  button(tree,'+ Add Subcategory').props.onClick();
   assert(nodes(app.buildMasterLists()).some(n=>n.props?.role==='dialog'),'Subcategory opens in a popup');
   assert(!nodes(app.buildMasterModal()).some(n=>n.props?.id==='master-name'),'Choose category before entering the name');
   assert(button(app.buildMasterModal(),'Save Subcategory').props.disabled);
@@ -35,11 +37,11 @@ const button=(tree,label)=>nodes(tree).find(n=>n.type==='button'&&text(n)===labe
   Object.assign(app.state.masterForm,{name:'Refrigerators',category:'Appliances'});
   await app.saveMaster();assert.strictEqual(calls.at(-1).url,'/api/product-master/subcategories');
   assert(!app.buildMasterModal(),'Successful save closes the popup');
-  button(tree,'Add brand').props.onClick();
+  button(tree,'+ Add Brand').props.onClick();
   assert(nodes(app.buildMasterModal()).some(n=>n.props?.role==='dialog'));
   assert(!nodes(app.buildMasterModal()).some(n=>n.props?.id==='master-category'));
   app.closeMasterModal();assert(!app.state.masterForm,'Cancel closes without saving');
-  button(tree,'Add brand').props.onClick();app.state.masterForm.name='Brand A';
+  button(tree,'+ Add Brand').props.onClick();app.state.masterForm.name='Brand A';
   await app.saveMaster();assert.strictEqual(calls.at(-1).url,'/api/product-master/brands');
   app.editCategory({name:'Appliances',classification:'Non-Perishable',status:'Active'})();
   app.state.categoryForm.name='Equipment';await app.saveCategory();

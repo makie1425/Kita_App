@@ -2630,6 +2630,8 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
       moduleTitle("Categories, Subcategories & Brands"),
       React.createElement("div",{key:"actions",style:{display:"flex",gap:8,flexWrap:"wrap",marginBottom:16}},[
         btn("+ Add Category",this.openCategoryModal,"primary"),
+        btn("+ Add Subcategory",()=>this.setState({masterForm:{kind:'subcategories',name:'',category:'',status:'Active'}})),
+        btn("+ Add Brand",()=>this.setState({masterForm:{kind:'brands',name:'',category:'',status:'Active'}})),
         !(this.state.categoriesLocal||[]).some(c=>c.name.trim().toLowerCase()==='supplies')?btn("+ Add Supplies Category",()=>{this.openCategoryModal();this.setState({categoryForm:{name:'Supplies',classification:'Non-Perishable',status:'Active'}});}):null,
         btn("Register New Product",this.goScreen("mgrRegistration")),
         btn("Request Purchase",this.goScreen("mgrRequest")),
@@ -2677,17 +2679,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
   buildMasterLists(){
     const h=React.createElement,f=this.state.masterForm,data=this.state.data;
     return h('section',null,[...['brands','subcategories'].map(kind=>card([
-      sectionTitle(kind==='brands'?'Brands':'Subcategories'),btn('Add '+(kind==='brands'?'brand':'subcategory'),()=>this.setState({masterForm:{kind,name:'',category:'',status:'Active'}})),
-      kind==='brands'?h('div',{style:{margin:'12px 0'}},[
-        btn('Add standard brands',this.populateBrands,'primary'),
-        null,
-        this.state.brandImportMessage?h('p',{role:'status'},this.state.brandImportMessage):null
-      ]):null,
-      kind==='subcategories'?h('div',{style:{margin:'12px 0'}},[
-        btn('Add standard subcategories',this.populateSubcategories,'primary'),
-        null,
-        this.state.subcategoryImportMessage?h('p',{role:'status'},this.state.subcategoryImportMessage):null
-      ]):null,
+      sectionTitle(kind==='brands'?'Brands':'Subcategories'),
       this.recordTable(kind,['Name',...(kind==='subcategories'?['Category']:[]),'Status','Actions'],(data[kind.toUpperCase()]||[]).map(r=>tr([td(r.name),...(kind==='subcategories'?[td(r.category)]:[]),td(badge(r.status)),td([btn('Edit',()=>this.setState({masterForm:{...r,kind}})),btn(r.status==='Active'?'Deactivate':'Activate',async()=>{try{await this.authPost('/api/product-master/'+kind+'/'+r.id,{...r,status:r.status==='Active'?'Inactive':'Active'},'PATCH');await this.reloadCatalog();}catch(e){this.toast(e.message,'error');}})])],r.id)))
     ])),f?this.buildMasterModal():null]);
   }
