@@ -39,6 +39,25 @@ class ProductFifoTest extends TestCase
         $this->product = $this->postJson('/api/products', $this->input)->assertCreated()->assertJsonPath('product.stock', 0)->json('product.id');
     }
 
+    public function test_subcategory_is_optional_on_creation_and_can_be_cleared_on_edit(): void
+    {
+        $payload = array_replace($this->input, ['name' => 'Without subcategory', 'barcode' => 'NO-SUB']);
+        unset($payload['subcategoryId']);
+        $this->postJson('/api/products', $payload)->assertCreated()->assertJsonPath('product.subcategoryId', null);
+        $payload = array_replace($this->input, ['subcategoryId' => null, 'reason' => 'Remove optional subcategory']);
+        $this->patchJson('/api/products/'.$this->product, $payload)->assertOk()->assertJsonPath('product.subcategoryId', null);
+        $this->assertDatabaseHas('products', ['id' => $this->product, 'category' => 'Beverages', 'brandId' => $this->input['brandId'], 'subcategoryId' => null]);
+    }
+
+    public function test_subcategories_and_brands_can_be_renamed_without_losing_product_links(): void
+    {
+        $this->patchJson('/api/product-master/subcategories/'.$this->input['subcategoryId'], ['name' => 'Soft beverages', 'category' => 'Beverages', 'status' => 'Active'])->assertOk();
+        $this->patchJson('/api/product-master/brands/'.$this->input['brandId'], ['name' => 'Renamed brand', 'status' => 'Active'])->assertOk();
+        $this->assertDatabaseHas('products', ['id' => $this->product, 'brandId' => $this->input['brandId'], 'subcategoryId' => $this->input['subcategoryId']]);
+        $this->assertDatabaseHas('brands', ['id' => $this->input['brandId'], 'name' => 'Renamed brand']);
+        $this->assertDatabaseHas('subcategories', ['id' => $this->input['subcategoryId'], 'name' => 'Soft beverages']);
+    }
+
     public function test_existing_product_is_rejected_even_with_a_different_barcode(): void
     {
         $this->postJson('/api/products', array_replace($this->input, ['name' => '  cOkE  ', 'barcode' => 'DUPLICATE']))
@@ -287,7 +306,7 @@ class ProductFifoTest extends TestCase
 
     public function test_registration_rejects_every_blank_required_field(): void
     {
-        foreach (['name','manufacturer','brandId','subcategoryId','category','size','sizeUnit','stockUnit','barcode','supplierId','minStock','status'] as $field) {
+        foreach (['name','manufacturer','brandId','category','size','sizeUnit','stockUnit','barcode','supplierId','minStock','status'] as $field) {
             $input = array_merge($this->input, ['name'=>'New item', 'barcode'=>'NEW-ITEM', $field=>'']);
             $this->postJson('/api/products', $input)->assertUnprocessable()->assertJsonValidationErrors($field);
         }

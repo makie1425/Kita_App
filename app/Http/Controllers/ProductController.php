@@ -145,7 +145,7 @@ class ProductController extends Controller
             'unitPrice' => InventoryRules::moneyRules(),
             'stock' => ['sometimes', 'integer', 'min:0', $id === null ? 'max:0' : 'max:2147483647'],
             'brandId' => ['required', 'integer', Rule::exists('brands', 'id')->where('status', 'Active')->where(fn ($query) => \App\Services\WorkspaceWrite::scopeValidation($query))],
-            'subcategoryId' => ['required', 'integer', Rule::exists('subcategories', 'id')->where('category', $request->input('category'))->where('status', 'Active')->where(fn ($query) => \App\Services\WorkspaceWrite::scopeValidation($query))],
+            'subcategoryId' => ['nullable', 'integer', Rule::exists('subcategories', 'id')->where('category', $request->input('category'))->where('status', 'Active')->where(fn ($query) => \App\Services\WorkspaceWrite::scopeValidation($query))],
             'size' => ['required', 'numeric', 'gt:0', 'max:999999999', 'decimal:0,3'],
             'sizeUnit' => ['required', Rule::in(\App\Services\ProductMeasurementUnits::VALUES)],
             'minStock' => ['required', 'integer', 'min:0', 'max:2147483647'],

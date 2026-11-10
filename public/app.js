@@ -1093,45 +1093,25 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     if(order){window.open(`/purchase-orders/${encodeURIComponent(order.id)}/report`,'_blank','noopener');return;}
     this.setState({screen:'mgrPurchaseHistory'});this.reloadPurchasing().catch(()=>{});this.toast('Open a recorded delivery from Transaction History to print its report.');
   };
-  openCategoryModal=()=>this.setState({categoryModalOpen:true,categoryEditing:false,categoryStep:'category',categorySetupCategory:'',categorySetupSubcategory:null,categorySetupSubcategoryDraft:'',categorySetupBrandDraft:'',categorySetupName:'',categorySetupBrandId:'',categoryForm:{name:"",status:"Active",classification:""},categoryError:""});
+  openCategoryModal=()=>this.setState({categoryModalOpen:true,categoryEditing:false,categoryForm:{name:"",status:"Active",classification:""},categoryError:""});
   editCategory=c=>()=>this.setState({categoryModalOpen:true,categoryEditing:true,categoryForm:{...c},categoryOriginalName:c.name,categoryError:""});
   closeCategoryModal=()=>{if(!this.categoryBusy)this.setState({categoryModalOpen:false});};
-  previousCategoryStep=()=>{
-    if(this.categoryBusy)return;
-    this.setState(s=>s.categoryStep==='brand'?{categoryStep:'subcategory',categorySetupBrandDraft:s.categorySetupName,categorySetupName:s.categorySetupSubcategoryDraft||s.categorySetupSubcategory?.name||'',categoryError:''}:s.categoryStep==='subcategory'?{categoryStep:'category',categorySetupSubcategoryDraft:s.categorySetupName,categoryError:''}:{});
-  };
   setCategoryField=field=>e=>this.setState(s=>({categoryForm:{...s.categoryForm,[field]:e.target.value},categoryError:""}));
   saveCategory=async()=>{
     if(this.categoryBusy)return;
-    if(!this.state.categoryEditing&&['subcategory','brand'].includes(this.state.categoryStep))return this.saveCategorySetup();
     const f=this.state.categoryForm;
     if(!(f.name||"").trim()||!["Perishable","Non-Perishable"].includes(f.classification)){this.setState({categoryError:"Enter a category name and classification."});return;}
     this.categoryBusy=true;
     try{
-      const original=this.state.categoryEditing?this.state.categoryOriginalName:this.state.categorySetupCategory;
+      const original=this.state.categoryEditing?this.state.categoryOriginalName:null;
       const response=await this.authPost(original?`/api/categories/${encodeURIComponent(original)}`:"/api/categories",f,original?"PATCH":"POST");
       const category=response.category;
-      this.setState(s=>({categoryModalOpen:!s.categoryEditing,categoryStep:'subcategory',categorySetupCategory:category.name,categoryForm:{...s.categoryForm,...category},categorySetupName:s.categorySetupSubcategoryDraft||s.categorySetupSubcategory?.name||'',categoryError:'',
+      this.setState(s=>({categoryModalOpen:false,categoryForm:{...s.categoryForm,...category},categoryError:'',
         categoriesLocal:[...(s.categoriesLocal||[]).filter(c=>c.name!==category.name&&c.name!==original),category],
         data:{...s.data,CATEGORIES:[...(s.data.CATEGORIES||[]).filter(c=>c.name!==category.name&&c.name!==original),category],SUBCATEGORIES:(s.data.SUBCATEGORIES||[]).map(c=>c.category===original?{...c,category:category.name}:c)},
-        ...(!s.categoryEditing?{regCategory:category.name,...(!original?{regSubcategoryId:"",regBrandId:""}:{})}:{})}));
+        ...(!s.categoryEditing?{regCategory:category.name,...(!original?{regSubcategoryId:""}:{})}:{})}));
       this.toast("Category saved.");
       await this.reloadCatalog().catch(()=>this.toast("Category saved, but the catalog could not refresh. Reload the page.","warn"));
-    }catch(error){this.setState({categoryError:error.message});}finally{this.categoryBusy=false;}
-  };
-  saveCategorySetup=async()=>{
-    if(this.categoryBusy)return;
-    const s=this.state,isSub=s.categoryStep==='subcategory',kind=isSub?'subcategories':'brands',name=(s.categorySetupName||'').trim();
-    const existing=!isSub&&(s.data.BRANDS||[]).find(b=>String(b.id)===String(s.categorySetupBrandId)&&b.status==='Active');
-    if(!name&&!existing){this.setState({categoryError:isSub?'Enter a subcategory name.':'Enter a brand name or choose an existing brand.'});return;}
-    this.categoryBusy=true;
-    try{
-      const savedId=isSub?s.categorySetupSubcategory?.id:null;
-      const record=existing||(await this.authPost('/api/product-master/'+kind+(savedId?'/'+savedId:''),{name,status:'Active',...(isSub?{category:s.categorySetupCategory}:{})},savedId?'PATCH':'POST')).record;
-      this.setState(current=>({data:{...current.data,[kind.toUpperCase()]:[...(current.data[kind.toUpperCase()]||[]).filter(r=>String(r.id)!==String(record.id)),record]},categoryError:'',categorySetupName:isSub?(s.categorySetupBrandDraft||''):'',
-        ...(isSub?{categoryStep:'brand',categorySetupSubcategory:record,categorySetupSubcategoryDraft:record.name,regSubcategoryId:record.id}:{categoryModalOpen:false,regBrandId:record.id})}));
-      this.toast(isSub?'Subcategory saved. Add the brand next.':'Category setup complete.');
-      await this.reloadCatalog().catch(()=>this.toast('Saved, but the catalog could not refresh. Reload the page.','warn'));
     }catch(error){this.setState({categoryError:error.message});}finally{this.categoryBusy=false;}
   };
   setArchiveTab=tab=>()=>this.setState({archiveTab:tab,archiveChecked:{}});
@@ -1246,7 +1226,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
   };
   saveRegistration=()=>{
     if(this.registrationBusy)return;
-    const requiredFields={regProductName:'Product name',regManufacturer:'Manufacturer',regScannedBarcode:'Barcode',regCategory:'Category',regBrandId:'Brand',regSubcategoryId:'Subcategory',regSize:'Size',regSizeUnit:'Measurement Unit',regSupplier:'Supplier',regStatus:'Status',regStockUnit:'Stock Unit',regReorderLevel:'Minimum Stock',...(this.state.regParentId?{regVariantLabel:'Variant label'}:{}),...(this.state.regEditing?{regUnitPrice:'Purchase cost',regRetailPrice:'Selling price',regEditReason:'Reason for changes'}:{})};
+    const requiredFields={regProductName:'Product name',regManufacturer:'Manufacturer',regScannedBarcode:'Barcode',regCategory:'Category',regBrandId:'Brand',regSize:'Size',regSizeUnit:'Measurement Unit',regSupplier:'Supplier',regStatus:'Status',regStockUnit:'Stock Unit',regReorderLevel:'Minimum Stock',...(this.state.regParentId?{regVariantLabel:'Variant label'}:{}),...(this.state.regEditing?{regUnitPrice:'Purchase cost',regRetailPrice:'Selling price',regEditReason:'Reason for changes'}:{})};
     const missing=Object.entries(requiredFields).filter(([key])=>this.state[key]==null||String(this.state[key]).trim()==='').map(([,label])=>label);
     if(missing.length){this.toast('Complete all required fields: '+missing.join(', ')+'.','error');return;}
 
@@ -2647,9 +2627,10 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
   buildMgrCategories(){
     const categories=(this.state.categoriesLocal||[]).filter(c=>!c.archivedAt);
     return React.createElement("div",null,[
-      moduleTitle("Categories"),
+      moduleTitle("Categories, Subcategories & Brands"),
       React.createElement("div",{key:"actions",style:{display:"flex",gap:8,flexWrap:"wrap",marginBottom:16}},[
         btn("+ Add Category",this.openCategoryModal,"primary"),
+        !(this.state.categoriesLocal||[]).some(c=>c.name.trim().toLowerCase()==='supplies')?btn("+ Add Supplies Category",()=>{this.openCategoryModal();this.setState({categoryForm:{name:'Supplies',classification:'Non-Perishable',status:'Active'}});}):null,
         btn("Register New Product",this.goScreen("mgrRegistration")),
         btn("Request Purchase",this.goScreen("mgrRequest")),
       ]),
@@ -2659,6 +2640,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
         td(badge(c.status)),
         td([btn("Edit",this.editCategory(c)),btn(c.status==="Active"?"Deactivate":"Activate",()=>this.authPost("/api/categories/"+encodeURIComponent(c.name),{status:c.status==="Active"?"Inactive":"Active"},"PATCH").then(()=>this.reloadCatalog()).catch(e=>this.toast(e.message,"error")))]),
       ],c.name))),
+      this.buildMasterLists(),
       this.state.categoryModalOpen?this.buildCategoryModal():null,
     ]);
   }
@@ -2709,7 +2691,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
     ])),f?card([
       h('h3',null,(f.id?'Edit ':'Add ')+f.kind),h('label',null,['Name ',h('input',{value:f.name,maxLength:100,onChange:e=>this.setState({masterForm:{...f,name:e.target.value}})})]),
       f.kind==='subcategories'?h('label',null,['Category ',h('select',{value:f.category,onChange:e=>this.setState({masterForm:{...f,category:e.target.value}})},[h('option',{value:''},'Select category'),...data.CATEGORIES.filter(c=>c.status==='Active').map(c=>h('option',{value:c.name,key:c.name},c.name))])]):null,
-      btn('Save',this.saveMaster),btn('Cancel',()=>this.setState({masterForm:null}))
+      btn(f.id?'Save Changes':'Save '+(f.kind==='brands'?'Brand':'Subcategory'),this.saveMaster),btn('Cancel',()=>this.setState({masterForm:null}))
     ]):null]);
   }
   loadInventoryHistory=async(filters=this.state.inventoryAppliedFilters||{})=>{
@@ -2771,31 +2753,11 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
   }
   buildCategoryModal(){
     const h=React.createElement,{categoryForm:f,categoryError,categoryEditing}=this.state;
-    const step=categoryEditing?'category':this.state.categoryStep||'category';
-    const steps=['category','subcategory','brand'],stepIndex=steps.indexOf(step);
     const dialog=children=>h('div',{key:'category-setup-overlay',style:{position:'fixed',inset:0,background:'rgba(15,31,74,0.38)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:50,padding:16},onKeyDown:e=>{if(e.key==='Escape')this.closeCategoryModal();}},
       h('div',{key:'category-setup-dialog',role:'dialog','aria-modal':true,'aria-labelledby':'category-dialog-title',className:'category-dialog',style:{width:460,maxWidth:'100%',maxHeight:'90vh',overflowY:'auto',background:'#fff',padding:24}},[
         h('h2',{key:'title',id:'category-dialog-title',className:'panel-title'},categoryEditing?'Edit category':'Add category'),
-        !categoryEditing?h('ol',{key:'steps','aria-label':'Category setup steps',style:{display:'flex',gap:8,listStyle:'none',padding:0,margin:'16px 0'}},steps.map((name,index)=>h('li',{key:name,'aria-current':step===name?'step':undefined,style:{flex:1,padding:'10px 6px',borderRadius:8,fontSize:13,fontWeight:700,textAlign:'center',background:index===stepIndex?COLORS.brand:COLORS.brandBg,color:index===stepIndex?'#fff':COLORS.brandDark}},`${index+1}. ${name[0].toUpperCase()+name.slice(1)}`))):null,
-        !categoryEditing?h('p',{key:'progress',role:'status'},`Step ${stepIndex+1} of 3`):null,
-        h('div',{key:step},children)
+        h('div',{key:'fields'},children)
       ]));
-    if(step!=='category'){
-      const isSub=step==='subcategory',s=this.state;
-      return dialog([
-          h('h3',null,isSub?'Add subcategory':'Add brand'),
-          h('p',null,'Category: '+s.categorySetupCategory),
-          !isSub?h('p',null,'Subcategory: '+((s.data.SUBCATEGORIES||[]).find(r=>String(r.id)===String(s.regSubcategoryId))?.name||'')):null,
-          h('div',{className:'field-group'},[
-            h('label',{htmlFor:'category-setup-name'},isSub?'Subcategory name *':'New brand name'),
-            h('input',{key:step,id:'category-setup-name',autoFocus:true,maxLength:100,value:s.categorySetupName||'',placeholder:isSub?'e.g. Refrigerators':'e.g. Samsung',onChange:e=>this.setState({categorySetupName:e.target.value,...(!isSub?{categorySetupBrandId:''}:{}),categoryError:''})})
-          ]),
-          !isSub?h('div',{className:'field-group'},[h('label',{htmlFor:'category-setup-brand'},'Or choose an existing brand'),h('select',{id:'category-setup-brand',value:s.categorySetupBrandId||'',onChange:e=>this.setState({categorySetupBrandId:e.target.value,categorySetupName:'',categoryError:''})},[h('option',{value:''},'Select brand'),...(s.data.BRANDS||[]).filter(b=>b.status==='Active').map(b=>h('option',{key:b.id,value:b.id},b.name))])]):null,
-          categoryError?h('div',{role:'alert',className:'alert'},categoryError):null,
-          null,
-          h('div',{className:'dialog-actions'},[btn('Cancel',this.closeCategoryModal),btn('Previous',this.previousCategoryStep),btn(isSub?'Next: Brand':'Finish setup',this.saveCategory,'primary')])
-        ]);
-    }
     return dialog([
         null,
         h("div",{key:"name",className:"field-group"},[
@@ -2805,15 +2767,14 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,mgrNotificatio
           h("label",{htmlFor:"category-classification"},"Classification *"),h("select",{id:"category-classification",required:true,value:f.classification||"",onChange:this.setCategoryField("classification"),"aria-invalid":!!categoryError,"aria-describedby":categoryError?"category-error":undefined},[h("option",{key:"empty",value:""},"Select classification"),...["Perishable","Non-Perishable"].map(value=>h("option",{key:value,value},value))]),
         ]),
         categoryError?h("div",{key:"error",id:"category-error",role:"alert",className:"alert"},categoryError):null,
-        !categoryEditing&&this.state.categorySetupCategory?null:null,
-        h("div",{key:"actions",className:"dialog-actions"},[btn("Cancel",this.closeCategoryModal),btn(categoryEditing?"Save changes":"Next: Subcategory",this.saveCategory,"primary")]),
+        h("div",{key:"actions",className:"dialog-actions"},[btn("Cancel",this.closeCategoryModal),btn(categoryEditing?"Save Changes":"Save Category",this.saveCategory,"primary")]),
       ]);
   }
   subcategoriesFor=(category,includeInactive=false)=>(this.state.data.SUBCATEGORIES||[]).filter(c=>c.category===category&&(includeInactive||c.status==='Active'));
   buildSubcategorySelect(category,value,onChange,{registration=false,includeInactive=false}={}){
     const h=React.createElement,options=this.subcategoriesFor(category,includeInactive);
-    const placeholder=!category?'Select category first':!options.length?'No subcategories':registration?'Select subcategory':'All subcategories';
-    return h('label',{key:'subcategory',className:'field-group'},['Subcategory',registration?h('span',{className:'required-marker','aria-hidden':true},' *'):null,h('select',{'aria-label':'Subcategory',value:value||'',onChange,disabled:!category||!options.length,required:registration},[
+    const placeholder=!category?'Select category first':!options.length?'No subcategories':registration?'No subcategory (optional)':'All subcategories';
+    return h('label',{key:'subcategory',className:'field-group'},[registration?'Subcategory (optional)':'Subcategory',h('select',{'aria-label':'Subcategory',value:value||'',onChange,disabled:!category||!options.length,required:false},[
       h('option',{key:'empty',value:''},placeholder),...options.map(c=>h('option',{key:c.id,value:c.id},c.name))
     ])]);
   }
