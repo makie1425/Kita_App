@@ -73,6 +73,23 @@ class ProductFifoTest extends TestCase
         $this->assertDatabaseHas('products', ['id' => $this->product, 'category' => 'Beverages', 'brandId' => $this->input['brandId'], 'subcategoryId' => null]);
     }
 
+    public function test_product_can_be_registered_without_barcode_and_barcode_requires_receiving(): void
+    {
+        $input = array_diff_key($this->input, array_flip(['barcode', 'status']));
+        $input['name'] = 'Printer paper';
+        $input['description'] = 'White bond paper for office printing';
+        $input['stockUnit'] = 'Ream';
+        $input['purchaseUnit'] = 'Ream';
+        $id = $this->postJson('/api/products', $input)->assertCreated()
+            ->assertJsonPath('product.barcode', null)
+            ->assertJsonPath('product.status', 'Active')
+            ->assertJsonPath('product.description', $input['description'])
+            ->json('product.id');
+        $this->postJson('/api/products/'.$id.'/barcode', ['barcode' => 'PAPER-REAM', 'receiptId' => 'UNKNOWN'])
+            ->assertUnprocessable()->assertJsonValidationErrors('receiptId');
+        $this->assertDatabaseHas('products', ['id' => $id, 'barcode' => null, 'description' => $input['description']]);
+    }
+
     public function test_subcategories_and_brands_can_be_renamed_without_losing_product_links(): void
     {
         $this->patchJson('/api/product-master/subcategories/'.$this->input['subcategoryId'], ['name' => 'Soft beverages', 'category' => 'Beverages', 'status' => 'Active'])->assertOk();
@@ -330,7 +347,7 @@ class ProductFifoTest extends TestCase
 
     public function test_registration_rejects_every_blank_required_field(): void
     {
-        foreach (['name','manufacturer','brandId','category','size','sizeUnit','stockUnit','barcode','supplierId','minStock','status'] as $field) {
+        foreach (['name','manufacturer','brandId','category','size','sizeUnit','stockUnit','supplierId','minStock'] as $field) {
             $input = array_merge($this->input, ['name'=>'New item', 'barcode'=>'NEW-ITEM', $field=>'']);
             $this->postJson('/api/products', $input)->assertUnprocessable()->assertJsonValidationErrors($field);
         }

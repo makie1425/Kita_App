@@ -60,6 +60,7 @@ Route::middleware('role:manager,admin')->group(function () {
     Route::post('/api/purchase-orders/{id}/items', [OperationsController::class, 'addPurchaseOrderItems']);
     Route::post('/api/products', [ProductController::class, 'store'])->name('products.store');
     Route::patch('/api/products/{id}', [ProductController::class, 'update']);
+    Route::post('/api/products/{id}/barcode', [ProductController::class, 'assignBarcode']);
     Route::post('/api/categories', [CategoryController::class, 'store']);
     Route::patch('/api/categories/{name}', [CategoryController::class, 'update']);
 });

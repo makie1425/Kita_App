@@ -326,7 +326,7 @@ class Component extends DCLogic {
     addDamageOpen:false, addDamageForm:{productId:"",qty:""},
     categoryModalOpen:false, categoryForm:{name:"",status:"Active",classification:""}, categoryError:"",
     archiveTab:"items", archiveChecked:{}, archiveConfirmOpen:false,
-    regProductMode:"select", regProductName:"", regOtherProductName:"", regCategory:"", regSupplier:"", regScannedBarcode:"", regQuantity:"",
+    regProductMode:"select", regProductName:"", regDescription:"", regNewStockUnit:"", regOtherProductName:"", regCategory:"", regSupplier:"", regScannedBarcode:"", regQuantity:"",
     regCostPrice:"", regUnitPrice:"", regRetailPrice:"", regBatch:"", regLot:"", regExpiry:"", regPurchaseUnit:"Piece", regStockUnit:"Piece", regConversionFactor:"1", regStatus:"Active", regVatClass:"VAT-Exempt",
     regSaved:false, regSku:"", regBarcode:"", regRegisteredQty:0, regPrintQty:1,
     promoPickerOpen:false, promoPickerSearch:"", promoPickerChecked:{},
@@ -1229,7 +1229,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
   };
   saveRegistration=()=>{
     if(this.registrationBusy)return;
-    const requiredFields={regProductName:'Product name',regManufacturer:'Manufacturer',regScannedBarcode:'Barcode',regCategory:'Category',regBrandId:'Brand',regSize:'Size',regSizeUnit:'Measurement Unit',regSupplier:'Supplier',regStatus:'Status',regStockUnit:'Stock Unit',regReorderLevel:'Minimum Stock',...(this.state.regParentId?{regVariantLabel:'Variant label'}:{}),...(this.state.regEditing?{regUnitPrice:'Purchase cost',regRetailPrice:'Selling price',regEditReason:'Reason for changes'}:{})};
+    const requiredFields={regProductName:'Product name',regManufacturer:'Manufacturer',regCategory:'Category',regBrandId:'Brand',regSize:'Size',regSizeUnit:'Measurement Unit',regSupplier:'Supplier',regStockUnit:'Stock Unit',regReorderLevel:'Minimum Stock',...(this.state.regParentId?{regVariantLabel:'Variant label'}:{}),...(this.state.regEditing?{regUnitPrice:'Purchase cost',regRetailPrice:'Selling price',regEditReason:'Reason for changes'}:{})};
     const missing=Object.entries(requiredFields).filter(([key])=>this.state[key]==null||String(this.state[key]).trim()==='').map(([,label])=>label);
     if(missing.length){this.toast('Complete all required fields: '+missing.join(', ')+'.','error');return;}
 
@@ -1238,7 +1238,6 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
     if(duplicate){this.setState({registrationError:'This product already exists in inventory (Item Code '+duplicate.id+'). Use the existing product to receive stock or edit its details.'});return;}
     const name = regProductName.trim();
     if(!name||!regCategory){ this.toast("Product name and category are required.","error"); return; }
-    if(!regScannedBarcode.trim()){ this.toast("Scan the item barcode before saving registration.","error"); return; }
     const qty=this.state.regEditing?(productsLocal||data.PRODUCTS).find(p=>p.id===this.state.regEditing).stock:0;
     const unitPrice=this.state.regEditing?regUnitPrice:"0";
     const retailPrice=this.state.regEditing?(regRetailPrice||regUnitPrice):"0";
@@ -1256,14 +1255,13 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
     const purchaseUnit=existing?.purchaseUnit||regStockUnit;
     const conversionFactor=existing?.conversionFactor??1;
     const catalog=productsLocal||data.PRODUCTS;
-    if(catalog.some(p=>p.id!==this.state.regEditing&&p.barcode===regScannedBarcode.trim())){ this.toast("This barcode is already registered.","error"); return; }
     const sku="";
-    const barcode=regScannedBarcode.trim();
+    const barcode=this.state.regEditing?(existing?.barcode||null):null;
     const nextId=Math.max(0,...catalog.map(p=>Number(p.id)||0))+1;
     const supplier=(data.SUPPLIERS||[]).find(s=>s.name===regSupplier);
     const product={id:nextId,name,category:regCategory,vatClass:"VAT-Exempt",price,cost,stock:qty,minStock:0,unit:regStockUnit||"Piece",status:regStatus||"Active",batch:regBatch||"",lot:regLot||"",expiry:regExpiry||"",barcode,supplierId:supplier?supplier.id:regSupplier,parentId:null,variantLabel:"",purchaseUnit,stockUnit:regStockUnit||"Piece",conversionFactor,barcodeStatus:"Scanned",archivedAt:null,archivedBy:null,unitPrice:Number(unitPrice)};
     this.registrationBusy=true;this.setState({registrationSaving:true,registrationError:"",registrationNotice:null});
-    this.authPost("/api/products"+(this.state.regEditing?"/"+this.state.regEditing:""),{parentId:this.state.regParentId?Number(this.state.regParentId):null,variantLabel:this.state.regVariantLabel||'',reason:this.state.regEditReason||null,manufacturer:this.state.regManufacturer||null,unitPrice:Number(unitPrice),brandId:this.state.regBrandId||null,subcategoryId:this.state.regSubcategoryId||null,size:this.state.regSize||null,sizeUnit:this.state.regSizeUnit||null,minStock:Number(this.state.regReorderLevel||0),name,category:regCategory,vatClass:"VAT-Exempt",price,cost,stock:qty,barcode,supplierId:supplier?supplier.id:null,purchaseUnit,stockUnit:regStockUnit,conversionFactor,status:regStatus},this.state.regEditing?"PATCH":"POST").then(response=>{
+    this.authPost("/api/products"+(this.state.regEditing?"/"+this.state.regEditing:""),{parentId:this.state.regParentId?Number(this.state.regParentId):null,variantLabel:this.state.regVariantLabel||'',reason:this.state.regEditReason||null,manufacturer:this.state.regManufacturer||null,description:this.state.regDescription||null,unitPrice:Number(unitPrice),brandId:this.state.regBrandId||null,subcategoryId:this.state.regSubcategoryId||null,size:this.state.regSize||null,sizeUnit:this.state.regSizeUnit||null,minStock:Number(this.state.regReorderLevel||0),name,category:regCategory,vatClass:"VAT-Exempt",price,cost,stock:qty,supplierId:supplier?supplier.id:null,purchaseUnit,stockUnit:regStockUnit,conversionFactor},this.state.regEditing?"PATCH":"POST").then(response=>{
       const savedProduct={...product,...response.product};
       this.setState({productsLocal:[...catalog.filter(p=>p.id!==savedProduct.id),savedProduct],regSaved:true,regSku:String(response.product.id),regBarcode:barcode,regRegisteredQty:qty});
       this.reloadCatalog().then(()=>this.toast(`"${name}" registered and saved to the product catalog.`)).catch(()=>this.toast(`"${name}" saved, but the catalog could not refresh. Reload the page.` ,"warn"));
@@ -2206,6 +2204,11 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
     return [...totals].map(([unit,n])=>n+' '+unit).join(' · ')||'0 units';
   }
   receivingActivity=order=>String(order.received_at||(order.receipts||[]).map(r=>r.received_at||r.date||'').sort().at(-1)||order.request?.approved_at||order.created||'');
+  assignReceivedBarcode=(productId,receiptId)=>{
+    const barcode=String(this.state.receivingBarcodeDrafts?.[productId]||'').trim();
+    if(!barcode){this.toast('Enter the barcode before assigning it.','error');return;}
+    this.authPost('/api/products/'+productId+'/barcode',{barcode,receiptId}).then(()=>this.reloadCatalog()).then(()=>this.setState(s=>({receivingBarcodeDrafts:{...(s.receivingBarcodeDrafts||{}),[productId]:''}}))).then(()=>this.toast('Barcode assigned to the received product.')).catch(error=>this.toast(error.message,'error'));
+  };
   buildPurchaseReceiving(){
     const h=React.createElement,state=this.purchasingState();if(state)return state;
     const orders=this.state.purchaseData.orders,tab=this.state.receivingTab||'active';
@@ -2257,7 +2260,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
       h('header',{className:'receipt-history-dialog-header'},[h('div',null,[h('small',null,'TRANSACTION DETAILS'),h('h2',{id:'receipt-transaction-title'},r.id)]),h('button',{type:'button',className:'receipt-history-close','aria-label':'Close transaction',onClick:close},'\u00d7')]),
       h('div',{className:'receipt-history-dialog-body'},[
         h('dl',{className:'receiving-transaction-details'},[['Receipt No.',r.id],['Purchase Order No.',o.id],['Supplier',o.supplierName||this.purchaseSupplier(o.supplierId)],['Date and Time',r.received_at||r.date],['Received By',r.receivedBy||'Not recorded'],['Status','Posted'],['Remarks',r.remarks||'No remarks']].map(([label,value])=>h('div',{key:label},[h('dt',null,label),h('dd',null,value)]))),
-        h('div',{className:'table-scroll'},table(['Product','Received Quantity','Stock Unit'],(r.lines||[]).map((l,i)=>tr([td(l.name||o.lines.find(p=>Number(p.productId)===Number(l.productId))?.name||l.productId),td(l.deliveredQty),td(this.purchaseUnit(l))],i))))
+        h('div',{className:'table-scroll'},table(['Product','Received Quantity','Stock Unit','Barcode'],(r.lines||[]).map((l,i)=>{const product=(this.state.productsLocal||this.state.data?.PRODUCTS||[]).find(p=>Number(p.id)===Number(l.productId));return tr([td(l.name||o.lines.find(p=>Number(p.productId)===Number(l.productId))?.name||l.productId),td(l.deliveredQty),td(this.purchaseUnit(l)),td(product?.barcode|| (Number(l.deliveredQty)<=0?'Pending':h('div',null,[h('input',{'aria-label':'Barcode for '+(l.name||product?.name||l.productId),value:this.state.receivingBarcodeDrafts?.[l.productId]||'',onChange:e=>this.setState(s=>({receivingBarcodeDrafts:{...(s.receivingBarcodeDrafts||{}),[l.productId]:e.target.value}}))}),btn('Assign Barcode',()=>this.assignReceivedBarcode(l.productId,r.id))])))],i);})))
       ]),
       h('footer',{className:'receipt-history-dialog-footer'},[btn('Close',close),h('a',{className:'kita-button kita-button--primary',href:'/receipts/'+encodeURIComponent(r.id)+'/report',target:'_blank',rel:'noopener'},'Print Receipt')])
     ]);})():null;
@@ -2825,7 +2828,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
     ])]);
   }
   productLabel=p=>[p.name,p.variantLabel,(this.state.data?.BRANDS||[]).find(b=>String(b.id)===String(p.brandId))?.name,p.size?Number(p.size):null,p.sizeUnit].filter(Boolean).join(' ');
-  editProductMaster=p=>this.setState({screen:'mgrRegistration',regEditing:p.id,registrationNotice:null,registrationError:"",regParentId:p.parentId||'',regVariantLabel:p.variantLabel||'',regStockId:String(p.id),regProductName:p.name,regManufacturer:p.manufacturer||'',regCategory:p.category,regBrandId:p.brandId||'',regSubcategoryId:p.subcategoryId||'',regSize:p.size||'',regSizeUnit:p.sizeUnit||'',regReorderLevel:p.minStock||0,regScannedBarcode:p.barcode||'',regSupplier:(this.state.data.SUPPLIERS.find(s=>s.id===p.supplierId)||{}).name||'',regStockUnit:p.stockUnit||p.unit,regPurchaseUnit:p.purchaseUnit||p.unit,regConversionFactor:p.conversionFactor||1,regUnitPrice:String(p.unitPrice??0),regRetailPrice:String(p.price??0),regStatus:p.status,regSaved:false,regBatch:'',regLot:'',regExpiry:'',regEditReason:''});
+  editProductMaster=p=>this.setState({screen:'mgrRegistration',regEditing:p.id,registrationNotice:null,registrationError:"",regParentId:p.parentId||'',regVariantLabel:p.variantLabel||'',regStockId:String(p.id),regProductName:p.name,regDescription:p.description||'',regManufacturer:p.manufacturer||'',regCategory:p.category,regBrandId:p.brandId||'',regSubcategoryId:p.subcategoryId||'',regSize:p.size||'',regSizeUnit:p.sizeUnit||'',regReorderLevel:p.minStock||0,regScannedBarcode:p.barcode||'',regSupplier:(this.state.data.SUPPLIERS.find(s=>s.id===p.supplierId)||{}).name||'',regStockUnit:p.stockUnit||p.unit,regPurchaseUnit:p.purchaseUnit||p.unit,regConversionFactor:p.conversionFactor||1,regUnitPrice:String(p.unitPrice??0),regRetailPrice:String(p.price??0),regStatus:p.status,regSaved:false,regBatch:'',regLot:'',regExpiry:'',regEditReason:''});
   buildMgrRegistration(){
     const h=React.createElement,s=this.state,data=s.data;
     const products=s.productsLocal||data.PRODUCTS;
@@ -2838,7 +2841,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
       ]),
     ]);
     const field=(key,label,options={})=>{
-      options={...options,required:!options.readOnly};
+      options={...options,required:options.required??!options.readOnly};
       const id="registration-"+key,helpId=id+"-help";
       return h("div",{key,className:"field-group"},[
         h("label",{key:"label",htmlFor:id},[label,options.required?h("span",{className:"required-marker","aria-hidden":true}," *"):null]),
@@ -2856,11 +2859,10 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
     return h("div",{className:"registration-page"},[
       s.regEditing?sectionTitle("Edit Product"):moduleTitle("Product Registration"),
       s.registrationFromPurchase?btn('Continue Purchase Order',this.continuePurchaseRegistration):null,
-      h("div",{key:"actions",className:"page-toolbar"},[btn("New Product",()=>this.setState({regEditing:null,regParentId:"",regVariantLabel:"",registrationNotice:null,registrationError:"",regStockId:"",regProductName:"",regManufacturer:"",regScannedBarcode:"",regSaved:false,regBatch:"",regLot:"",regExpiry:"",regUnitPrice:"",regRetailPrice:"",regCategory:"",regSupplier:"",regReorderLevel:0,regPurchaseUnit:"Piece",regStockUnit:"Piece",regConversionFactor:"1",regStatus:"Active",regBrandId:"",regSubcategoryId:"",regSize:"",regSizeUnit:"",regEditReason:""}))]),
+      h("div",{key:"actions",className:"page-toolbar"},[btn("New Product",()=>this.setState({regEditing:null,regParentId:"",regVariantLabel:"",registrationNotice:null,registrationError:"",regStockId:"",regProductName:"",regDescription:"",regManufacturer:"",regScannedBarcode:"",regSaved:false,regBatch:"",regLot:"",regExpiry:"",regUnitPrice:"",regRetailPrice:"",regCategory:"",regSupplier:"",regReorderLevel:0,regPurchaseUnit:"Piece",regStockUnit:"Piece",regNewStockUnit:"",regConversionFactor:"1",regStatus:"Active",regBrandId:"",regSubcategoryId:"",regSize:"",regSizeUnit:"",regEditReason:""}))]),
       h('div',{id:'registration-feedback',className:'registration-feedback'},[s.registrationNotice?h('p',{role:s.registrationNotice.tone==='error'?'alert':'status',className:'registration-notice registration-notice--'+s.registrationNotice.tone},s.registrationNotice.message):null,
       s.regSaved?h("div",{key:"print",className:"kita-card registration-receipt"},[
-        h("h2",{className:"panel-title"},"Registration complete"),h("p",null,`Item Code: ${s.regSku} | Barcode: ${s.regBarcode} | Available stock: ${s.regRegisteredQty}`),
-        h("label",{className:"record-page-size"},["Label quantity",h("input",{type:"number",min:1,value:s.regPrintQty,onChange:this.setRegPrintQty})]),btn("Print labels",this.printLabels),
+        h("h2",{className:"panel-title"},"Registration complete"),h("p",null,`Item Code: ${s.regSku} | Barcode assigned after receiving | Available stock: ${s.regRegisteredQty}`),
       ]):null,
       ]),
       h("datalist",{key:"names",id:"reg-product-options"},[...new Set(products.map(p=>p.name))].filter(name=>searchMatches(name,s.regProductName)).map(name=>h("option",{key:name,value:name}))),
@@ -2869,16 +2871,15 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
         field("regProductName","Product name",{required:true,placeholder:"e.g. Organic Almond Milk 1L"}),field("regManufacturer","Manufacturer",{placeholder:"e.g. Pure Harvest Ltd.",help:"Company that makes the product; separate from brand and supplier."}),s.regEditing?field("regStockId","Item Code",{type:"number",step:1,readOnly:true}):null,
 
         s.regParentId?field('regVariantLabel','Variant label',{required:true,help:'For example: Red, Vanilla or Family pack. Each variant has its own barcode and stock.'}):null,
-        field("regScannedBarcode","Barcode",{required:true,placeholder:"Scan or enter the item barcode"}),
+        field("regDescription","Description",{required:false,placeholder:"Describe the product"}),
         h('div',{className:'registration-category'},[select("regCategory","Category",data.CATEGORIES.filter(c=>c.status==="Active").map(c=>c.name),true),btn('+ Add Category',this.openCategoryModal)]),
         h("label",{className:"field-group"},["Brand *",h("select",{required:true,"aria-required":true,value:s.regBrandId||"",onChange:this.setRegField("regBrandId")},[h("option",{value:""},"Select brand"),...(data.BRANDS||[]).filter(b=>b.status==="Active").map(b=>h("option",{value:b.id,key:b.id},b.name))])]),
         this.buildSubcategorySelect(s.regCategory,s.regSubcategoryId,this.setRegField("regSubcategoryId"),{registration:true}),
         h('div',{className:'registration-size'},[h('div',{className:'registration-size-fields'},[field("regSize","Size",{type:"number",step:"0.001",placeholder:'e.g. 500'}),measurement]),null]),
         select("regSupplier","Supplier",data.SUPPLIERS.filter(sp=>sp.status==="Active").map(sp=>sp.name)),
-        select("regStatus","Status",["Active","Inactive"]),
       ]),
       group("02","Stock settings","Stock Unit is one inventory unit, such as Bottle, Pack, or Piece. Quantities are whole units; use Size and Measurement Unit for the contents (for example, 500 mL per Bottle). New products start with zero stock.",[
-        select("regStockUnit","Stock Unit",units,true),
+        h('div',{className:'field-group'},[select("regStockUnit","Stock Unit",units,true),field('regNewStockUnit','Add a new unit of measure',{required:false,placeholder:'e.g. Ream'}),btn('Use New Unit',()=>{const unit=String(this.state.regNewStockUnit||'').trim();if(unit&&unit.length<=40)this.setState({regStockUnit:unit,regNewStockUnit:''});else this.toast('Enter a unit of measure up to 40 characters.','error');})]),
         field("regReorderLevel","Minimum Stock",{type:"number",step:1,help:'Low-stock threshold, counted in the selected Stock Unit.'}),
       ]),
       s.regEditing?group("03","Pricing","Purchase cost and selling price are recorded separately.",[

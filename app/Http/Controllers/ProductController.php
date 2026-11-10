@@ -33,7 +33,7 @@ class ProductController extends Controller
                 }
                 $product = $this->productValues($validated) + [
                     'created_at' => now()->format('Y-m-d H:i:s.u'), 'id' => $id, 'parentId' => null, 'variantLabel' => '',
-                    'barcodeStatus' => 'Scanned', 'archivedAt' => null, 'archivedBy' => null,
+                    'barcodeStatus' => empty($validated['barcode']) ? 'Pending receiving' : 'Scanned', 'archivedAt' => null, 'archivedBy' => null,
                 ];
                 $product['registrationQuantity'] = 0;
                 DB::table('products')->insert(\App\Services\WorkspaceWrite::owned($product));
@@ -55,7 +55,7 @@ class ProductController extends Controller
         abort_unless(ctype_digit($id), 404, 'Product not found.');
         $current = \App\Services\WorkspaceRead::table('products')->where('id', $id)->first();
         abort_unless($current, 404, 'Product not found.');
-        foreach (['manufacturer', 'brandId', 'subcategoryId', 'size', 'sizeUnit', 'minStock'] as $field) {
+        foreach (['manufacturer', 'brandId', 'subcategoryId', 'size', 'sizeUnit', 'minStock', 'description', 'barcode', 'status'] as $field) {
             if (! $request->exists($field)) $request->merge([$field => $current->{$field}]);
         }
         $validated = $this->validateProduct($request, (int) $id);
@@ -110,6 +110,36 @@ class ProductController extends Controller
         return response()->json(['message' => 'Product updated.', 'product' => $product]);
     }
 
+    public function assignBarcode(Request $request, string $id): JsonResponse
+    {
+        InventoryRules::authorize($request);
+        abort_unless(ctype_digit($id), 404);
+        if (is_string($request->input('barcode'))) $request->merge(['barcode' => trim($request->input('barcode'))]);
+        $data = $request->validate([
+            'barcode' => ['required', 'string', 'max:80', Rule::unique('products', 'barcode')->ignore($id)->where(fn ($query) => \App\Services\WorkspaceWrite::scopeValidation($query))],
+            'receiptId' => ['required', 'string', 'max:120'],
+        ]);
+        try {
+            $product = DB::transaction(function () use ($request, $id, $data) {
+            InventoryRules::lockActor($request);
+            $product = \App\Services\WorkspaceRead::table('products')->where('id', $id)->lockForUpdate()->first();
+            abort_unless($product, 404);
+            if ($product->barcode) throw ValidationException::withMessages(['barcode' => 'This product already has a barcode.']);
+            $received = \App\Services\WorkspaceRead::table('receiving_record_lines as l')
+                ->join('receiving_records as r', 'r.id', '=', 'l.receivingId')
+                ->where('l.productId', $id)->where('r.id', $data['receiptId'])->where('l.deliveredQty', '>', 0)->exists();
+            if (! $received) throw ValidationException::withMessages(['receiptId' => 'Select a posted receipt containing this product.']);
+            $barcode = trim($data['barcode']);
+            \App\Services\WorkspaceRead::table('products')->where('id', $id)->update(['barcode' => $barcode, 'barcodeStatus' => 'Scanned']);
+            InventoryRules::audit($request->user()->name, 'Assigned barcode after receiving', $id, null, json_encode(['receiptId' => $data['receiptId'], 'barcode' => $barcode]));
+            return \App\Services\WorkspaceRead::table('products')->where('id', $id)->first();
+            }, 3);
+        } catch (QueryException $exception) {
+            $this->handleDuplicate($exception);
+        }
+        return response()->json(['message' => 'Barcode assigned.', 'product' => $product]);
+    }
+
     private function rejectExistingProduct(array $values): void
     {
         $normalize = fn ($value) => mb_strtolower(preg_replace('/\s+/u', ' ', trim((string) $value)));
@@ -149,7 +179,8 @@ class ProductController extends Controller
             'size' => ['required', 'numeric', 'gt:0', 'max:999999999', 'decimal:0,3'],
             'sizeUnit' => ['required', Rule::in(\App\Services\ProductMeasurementUnits::VALUES)],
             'minStock' => ['required', 'integer', 'min:0', 'max:2147483647'],
-            'barcode' => ['required', 'string', 'max:80', Rule::unique('products', 'barcode')->ignore($id)->where(fn ($query) => \App\Services\WorkspaceWrite::scopeValidation($query))],
+            'barcode' => ['nullable', 'string', 'max:80', Rule::unique('products', 'barcode')->ignore($id)->where(fn ($query) => \App\Services\WorkspaceWrite::scopeValidation($query))],
+            'description' => ['nullable', 'string', 'max:2000'],
             'supplierId' => ['required', 'integer', Rule::exists('suppliers', 'id')->where('status', 'Active')->whereNull('archivedAt')->where(fn ($query) => \App\Services\WorkspaceWrite::scopeValidation($query))],
             'batch' => ['nullable', 'string', 'max:40'],
             'lot' => ['nullable', 'string', 'max:40'],
@@ -157,7 +188,7 @@ class ProductController extends Controller
             'purchaseUnit' => ['required', 'string', 'max:40'],
             'stockUnit' => ['required', 'string', 'max:40'],
             'conversionFactor' => ['required', 'numeric', 'decimal:0,2', 'gt:0', 'max:99999999.99'],
-            'status' => ['required', Rule::in(['Active', 'Inactive'])],
+            'status' => ['nullable', Rule::in(['Active', 'Inactive'])],
             'reason' => [Rule::requiredIf($id !== null), 'nullable', 'string', 'max:255'],
         ], [
             'id.unique' => 'Stock ID already exists.', 'barcode.unique' => 'Barcode already exists.',
@@ -177,6 +208,7 @@ class ProductController extends Controller
     {
         return [
             'manufacturer'=>filled($validated['manufacturer'] ?? null)?trim($validated['manufacturer']):null,
+            'description' => $validated['description'] ?? null,
             'name' => $validated['name'], 'category' => $validated['category'], 'vatClass' => $validated['vatClass'],
             'parentId' => $validated['parentId'] ?? null, 'variantLabel' => trim($validated['variantLabel'] ?? ''),
             'price' => $validated['price'], 'unitPrice' => $validated['unitPrice'], 'cost' => $validated['cost'],
@@ -184,7 +216,7 @@ class ProductController extends Controller
             'brandId' => $validated['brandId'] ?? null, 'subcategoryId' => $validated['subcategoryId'] ?? null,
             'size' => $validated['size'] ?? null, 'sizeUnit' => $validated['sizeUnit'] ?? null, 'minStock' => $validated['minStock'] ?? 0, 'unit' => trim($validated['stockUnit']), 'status' => $validated['status'] ?? 'Active',
             'batch' => $validated['batch'] ?? '', 'lot' => $validated['lot'] ?? '', 'expiry' => $validated['expiry'] ?? null,
-            'barcode' => $validated['barcode'], 'supplierId' => $validated['supplierId'] ?? null,
+            'barcode' => $validated['barcode'] ?? null, 'supplierId' => $validated['supplierId'] ?? null,
             'purchaseUnit' => trim($validated['purchaseUnit']), 'stockUnit' => trim($validated['stockUnit']),
             'conversionFactor' => $validated['conversionFactor'],
         ];
