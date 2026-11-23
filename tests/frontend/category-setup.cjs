@@ -59,13 +59,18 @@ const button=(tree,label)=>nodes(tree).find(n=>n.type==='button'&&text(n)===labe
   app.state.data.SUBCATEGORIES=[{id:1,name:'Refrigerators',category:'Equipment',status:'Active'}];
   app.state.data.BRANDS=[{id:2,name:'Brand A',category:'Equipment',status:'Active'}];
   tree=app.buildMasterLists();
-  const edits=nodes(tree).filter(n=>n.type==='button'&&text(n)==='Edit');
+  const edits=nodes(tree).filter(n=>n.type==='button'&&['Edit Brand','Edit Subcategory'].includes(text(n)));
   assert.strictEqual(edits.length,2);
   for(const edit of edits){edit.props.onClick();const {kind,id}=app.state.masterForm;app.state.masterForm.name='Renamed';await app.saveMaster();assert.strictEqual(calls.at(-1).url,'/api/product-master/'+kind+'/'+id);assert.strictEqual(calls.at(-1).method,'PATCH');}
   const select=nodes(app.buildSubcategorySelect('Equipment','',()=>{},{registration:true})).find(n=>n.type==='select');
   assert.strictEqual(select.props.required,false);assert(text(select).includes('No subcategory (optional)'));
-  button(app.buildMgrCategories(),'+ Add Supplies Category').props.onClick();
-  assert.strictEqual(app.state.categoryForm.name,'Supplies');assert.strictEqual(app.state.categoryForm.classification,'Non-Perishable');
+  assert(!nodes(app.buildMgrCategories()).some(n=>n.type==='button'&&text(n)==='+ Add Supplies Category'));
+  app.state.data.PRODUCT_UNITS=[{kind:'stock',name:'Ream'},{kind:'size',name:'Gross'}];
+  app.state.tableViews['category-stock-units']={query:'Ream'};
+  const lists=app.buildMgrCategories();
+  assert.strictEqual(nodes(lists).filter(n=>n.type==='details'&&n.props?.className==='category-list-panel').length,5);
+  assert(JSON.stringify(lists).includes('Ream')&&JSON.stringify(lists).includes('Gross'));
+  for(const label of ['+ Add Category','+ Add Subcategory','+ Add Brand','+ Add Stock Unit','+ Add Size Unit'])assert(button(lists,label).props.className.includes('primary'));
   const count=calls.length;app.closeCategoryModal();assert.strictEqual(calls.length,count);
   app.openCategoryModal();app.state.categoryForm={name:'Test',classification:'Non-Perishable'};
   app.authPost=async()=>{throw new Error('Please retry');};await app.saveCategory();
@@ -75,5 +80,5 @@ const button=(tree,label)=>nodes(tree).find(n=>n.type==='button'&&text(n)===labe
   let payload;
   app.authPost=async(url,body)=>{payload=body;return {product:{...body,id:1}};};
   app.saveRegistration();assert(payload,'Registration must submit without a subcategory');assert.strictEqual(payload.subcategoryId,null);
-  console.log('Separate category/subcategory/brand creation and editing, optional subcategory, Supplies shortcut, and retry behavior passed.');
+  console.log('Category, subcategory, brand and unit lists and actions, optional subcategory, and retry behavior passed.');
 })().catch(error=>{console.error(error);process.exitCode=1;});

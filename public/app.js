@@ -291,6 +291,7 @@ function salesHistoryChart(sales,period){
     points.length?h("details",{key:"values"},[h("summary",null,"View sales history values"),table([unit,"Sales (PHP)"],points.map(point=>tr([td(point.label),td(peso(point.value))],point.key)))]):null,
   ],{marginBottom:16});
 }
+const PRODUCT_STOCK_UNITS=["Piece","Pair","Set","Dozen","Pack","Packet","Pouch","Bag","Box","Case","Carton","Sack","Tray","Bottle","Can","Jar","Tub","Cup","Tube","Roll","Sheet","Bundle","Bunch","Bar","Stick","Sachet","Strip","Blister pack","Tablet","Capsule","Vial","Ampoule","Drum","Bucket","Pail","Crate","Pallet","Kg","g","Liter","mL","m"];
 function btn(label,onClick,variant){ const styles={primary:{background:COLORS.brand,color:"#fff",border:"none"},ghost:{background:"#fff",color:COLORS.text,border:"1px solid "+COLORS.border},danger:{background:COLORS.redBg,color:COLORS.red,border:"1px solid #f5c6c6"},green:{background:COLORS.greenBg,color:COLORS.green,border:"1px solid #bfe8d3"},amber:{background:COLORS.amberBg,color:COLORS.amber,border:"1px solid #f3e0ac"}};
   return React.createElement("button",{type:"button",className:"kita-button kita-button--"+(variant||"ghost"),onClick,style:Object.assign({padding:"8px 14px",borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer"},styles[variant||"ghost"])},label); }
 function loadingStatus(label){
@@ -2682,24 +2683,34 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
       ]));
   }
   buildMgrCategories(){
+    const h=React.createElement,data=this.state.data||{},products=this.state.productsLocal||[];
     const categories=(this.state.categoriesLocal||[]).filter(c=>!c.archivedAt);
+    const panel=(title,count,content)=>h('details',{className:'category-list-panel',key:title},[
+      h('summary',null,[h('span',null,title),h('span',{className:'category-list-count'},count)]),
+      h('div',{className:'category-list-content'},content),
+    ]);
+    const stockUnits=[...new Set([...(data.PRODUCT_UNITS||[]).filter(u=>u.kind==='stock').map(u=>u.name),...products.map(p=>p.stockUnit||p.unit),...PRODUCT_STOCK_UNITS].filter(Boolean))];
+    const sizeDefaults=Object.values(PRODUCT_MEASUREMENT_UNITS).flatMap(group=>Object.entries(group));
+    const sizeLabels=new Map(sizeDefaults);
+    const sizeUnits=[...new Set([...(data.PRODUCT_UNITS||[]).filter(u=>u.kind==='size').map(u=>u.name),...products.map(p=>p.sizeUnit),...sizeLabels.keys()].filter(Boolean))];
     return React.createElement("div",null,[
-      moduleTitle("Categories, Subcategories & Brands"),
+      moduleTitle("Categories, Subcategories, Brands & Units"),
       React.createElement("div",{key:"actions",style:{display:"flex",gap:8,flexWrap:"wrap",marginBottom:16}},[
         btn("+ Add Category",this.openCategoryModal,"primary"),
-        btn("+ Add Subcategory",()=>this.setState({masterForm:{kind:'subcategories',name:'',category:'',status:'Active'}})),
-        btn("+ Add Brand",()=>this.setState({masterForm:{kind:'brands',name:'',category:'',status:'Active'}})),
-        btn("+ Add Stock Unit",()=>this.setState({regUnitDialog:'stock',regUnitDraft:'',regUnitError:''})),
-        btn("+ Add Size Unit",()=>this.setState({regUnitDialog:'size',regUnitDraft:'',regUnitError:''})),
-        !(this.state.categoriesLocal||[]).some(c=>c.name.trim().toLowerCase()==='supplies')?btn("+ Add Supplies Category",()=>{this.openCategoryModal();this.setState({categoryForm:{name:'Supplies',classification:'Non-Perishable',status:'Active'}});}):null,
+        btn("+ Add Subcategory",()=>this.setState({masterForm:{kind:'subcategories',name:'',category:'',status:'Active'}}),"primary"),
+        btn("+ Add Brand",()=>this.setState({masterForm:{kind:'brands',name:'',category:'',status:'Active'}}),"primary"),
+        btn("+ Add Stock Unit",()=>this.setState({regUnitDialog:'stock',regUnitDraft:'',regUnitError:''}),"primary"),
+        btn("+ Add Size Unit",()=>this.setState({regUnitDialog:'size',regUnitDraft:'',regUnitError:''}),"primary"),
       ]),
-      this.recordTable("categories",["Category","Classification","Products","Status","Actions"],categories.map(c=>tr([
+      panel('Categories',categories.length,this.recordTable("categories",["Category","Classification","Products","Status","Actions"],categories.map(c=>tr([
         td(c.name),td(c.classification||"Not classified"),
-        td((this.state.productsLocal||[]).filter(p=>p.category===c.name).length),
+        td(products.filter(p=>p.category===c.name).length),
         td(badge(c.status)),
         td([btn("Edit Category",this.editCategory(c)),btn(c.status==="Active"?"Deactivate":"Activate",()=>this.authPost("/api/categories/"+encodeURIComponent(c.name),{status:c.status==="Active"?"Inactive":"Active"},"PATCH").then(()=>this.reloadCatalog()).catch(e=>this.toast(e.message,"error")))]),
-      ],c.name))),
+      ],c.name)))),
       this.buildMasterLists(),
+      panel('Stock Units',stockUnits.length,this.recordTable('category-stock-units',['Stock Unit'],stockUnits.map(unit=>tr([td(unit)],unit)))),
+      panel('Size Units',sizeUnits.length,this.recordTable('category-size-units',['Size Unit'],sizeUnits.map(unit=>tr([td(sizeLabels.get(unit)||unit)],unit)))),
       this.state.categoryModalOpen?this.buildCategoryModal():null,
       this.buildRegistrationUnitDialog(),
     ]);
@@ -2736,9 +2747,11 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
   };
   buildMasterLists(){
     const h=React.createElement,f=this.state.masterForm,data=this.state.data;
-    return h('section',null,[...['brands','subcategories'].map(kind=>card([
-      sectionTitle(kind==='brands'?'Brands':'Subcategories'),
+    return h('section',null,[...['subcategories','brands'].map(kind=>h('details',{className:'category-list-panel',key:kind},[
+      h('summary',null,[h('span',null,kind==='brands'?'Brands':'Subcategories'),h('span',{className:'category-list-count'},(data[kind.toUpperCase()]||[]).length)]),
+      h('div',{className:'category-list-content'},
       this.recordTable(kind,['Name','Main Category',...(kind==='brands'?['Subcategory']:[]),'Status','Actions'],(data[kind.toUpperCase()]||[]).map(r=>tr([td(r.name),td(r.category||'Not assigned'),...(kind==='brands'?[td((data.SUBCATEGORIES||[]).find(c=>String(c.id)===String(r.subcategoryId))?.name||'None')]:[]),td(badge(r.status)),td([btn(kind==='brands'?'Edit Brand':'Edit Subcategory',()=>this.setState({masterForm:{...r,kind}})),btn(r.status==='Active'?'Deactivate':'Activate',async()=>{try{await this.authPost('/api/product-master/'+kind+'/'+r.id,{...r,status:r.status==='Active'?'Inactive':'Active'},'PATCH');await this.reloadCatalog();}catch(e){this.toast(e.message,'error');}})])],r.id)))
+      ),
     ])),f?this.buildMasterModal():null]);
   }
   closeMasterModal=()=>{if(!this.masterBusy)this.setState({masterForm:null});};
@@ -2871,7 +2884,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
   buildMgrRegistration(){
     const h=React.createElement,s=this.state,data=s.data;
     const products=s.productsLocal||data.PRODUCTS;
-    const units=[...new Set(["Piece","Pair","Set","Dozen","Pack","Packet","Pouch","Bag","Box","Case","Carton","Sack","Tray","Bottle","Can","Jar","Tub","Cup","Tube","Roll","Sheet","Bundle","Bunch","Bar","Stick","Sachet","Strip","Blister pack","Tablet","Capsule","Vial","Ampoule","Drum","Bucket","Pail","Crate","Pallet","Kg","g","Liter","mL","m",...(data.PRODUCT_UNITS||[]).filter(u=>u.kind==='stock').map(u=>u.name),...products.map(p=>p.stockUnit||p.unit),s.regStockUnit].filter(Boolean))];
+    const units=[...new Set([...PRODUCT_STOCK_UNITS,...(data.PRODUCT_UNITS||[]).filter(u=>u.kind==='stock').map(u=>u.name),...products.map(p=>p.stockUnit||p.unit),s.regStockUnit].filter(Boolean))];
     const standardMeasurements=Object.values(PRODUCT_MEASUREMENT_UNITS).flatMap(group=>Object.keys(group));
     const customMeasurements=[...new Set([...(data.PRODUCT_UNITS||[]).filter(u=>u.kind==='size').map(u=>u.name),...products.map(p=>p.sizeUnit),s.regSizeUnit].filter(unit=>unit&&!standardMeasurements.includes(unit)))];
     const measurement=h('div',{className:'field-group'},[
