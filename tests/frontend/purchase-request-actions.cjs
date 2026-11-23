@@ -5,6 +5,8 @@ const app=new ctx.App();
 const nodes=n=>!n||typeof n!=='object'?[]:Array.isArray(n)?n.flatMap(nodes):[n,...nodes(n.children)];
 const text=n=>n==null?'':typeof n==='string'?n:Array.isArray(n)?n.map(text).join(' '):text(n.children);
 const request={id:'PR-1',status:'Pending',requestedBy:'Manager',supplierName:'Supplier',dateRequested:'2026-11-23',lines:[{id:1,productId:1,name:'Paper',category:'Supplies',qty:2,unit:'Ream',unitCost:50}]};
+const ordered=app.pendingRequestsFirst([{id:'old',status:'Rejected'},{id:'new',status:'Pending'},{id:'middle',status:'Approved'},{id:'next',status:'Pending Approval'}]);
+assert.deepEqual(ordered.map(r=>r.id),['new','next','old','middle']);
 Object.assign(app.state,{role:'admin',purchaseData:{requests:[request],orders:[],receipts:[]},data:{PRODUCTS:[],SUPPLIERS:[]}});
 const rowActions=app.purchaseRequestActions(request);
 assert.equal(rowActions.length,1);

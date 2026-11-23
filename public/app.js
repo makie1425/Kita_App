@@ -1793,6 +1793,10 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
     const supplier=r.supplierId??r.lines?.[0]?.supplierId,date=String(r.request?.dateRequested||r.dateRequested||r.created||'').slice(0,10);
     return (!this.state.purchaseSupplierFilter||String(supplier)===this.state.purchaseSupplierFilter)&&(ignoreStatus||!this.state.purchaseStatusFilter||r.status===this.state.purchaseStatusFilter)&&(!this.state.purchaseFrom||date>=this.state.purchaseFrom)&&(!this.state.purchaseTo||date<=this.state.purchaseTo);
   });
+  pendingRequestsFirst=records=>records.map((record,index)=>({record,index})).sort((a,b)=>{
+    const pending=r=>['Pending','Pending Approval','Proceed to Purchase'].includes(r.status)?0:1;
+    return pending(a.record)-pending(b.record)||a.index-b.index;
+  }).map(({record})=>record);
   submitPurchase=async()=>{
     if(this.purchaseBusy)return;
     const supplierId=Number(this.state.newReqSupplier);
@@ -1824,7 +1828,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
     if(tab==='view'){
       const state=this.purchasingState();if(state)return state;
       return h('div',null,[moduleTitle('Purchase Requests'),this.purchaseFilters(),
-        this.recordTable('purchase-requests',['Request Number','Request Date','Supplier','Items','Received batches','Status','Admin notes / decline reason','Actions'],this.filterPurchases(s.purchaseData.requests).map(r=>tr([td(r.id),td(r.requested_at||r.dateRequested),td(r.supplierName||this.purchaseSupplier(r.lines[0]?.supplierId)),td(r.lines.length),td(this.purchaseBatchSummary(r.poId||r.id)),td(badge(r.status)),td(r.disapprovalReason||r.adminNote||''),td(this.purchaseRequestActions(r))],r.id))),
+        this.recordTable('purchase-requests',['Request Number','Request Date','Supplier','Items','Received batches','Status','Admin notes / decline reason','Actions'],this.pendingRequestsFirst(this.filterPurchases(s.purchaseData.requests)).map(r=>tr([td(r.id),td(r.requested_at||r.dateRequested),td(r.supplierName||this.purchaseSupplier(r.lines[0]?.supplierId)),td(r.lines.length),td(this.purchaseBatchSummary(r.poId||r.id)),td(badge(r.status)),td(r.disapprovalReason||r.adminNote||''),td(this.purchaseRequestActions(r))],r.id))),
         this.purchaseRequestDetails(),this.purchaseReviewDetails()
       ]);
     }
@@ -1934,7 +1938,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
   }
   buildPurchaseReview(){
     const h=React.createElement,state=this.purchasingState();if(state)return state;
-    const requests=this.filterPurchases(this.state.purchaseData.requests);
+    const requests=this.pendingRequestsFirst(this.filterPurchases(this.state.purchaseData.requests));
     return h('div',null,[moduleTitle('Purchase Requests'),this.purchaseFilters(),this.buildReceivingBudgetReviews(),this.buildStockReceiptHistory(true),
       this.recordTable('purchase-review',['Request Number','Request Date','Supplier','Requested By','Items','Total Cost','Status','Actions'],requests.map(r=>tr([td(r.id),td(r.requested_at||r.dateRequested),td(r.supplierName||this.purchaseSupplier(r.lines[0]?.supplierId)),td(r.requestedBy),td(r.lines.length),td(peso(r.lines.reduce((sum,l)=>sum+Number(l.confirmedQty??l.qty)*Number(l.unitCost||0),0))),td(badge(r.status)),td(this.purchaseRequestActions(r))],r.id))),this.purchaseRequestDetails(),this.purchaseReviewDetails()
     ]);
