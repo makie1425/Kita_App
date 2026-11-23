@@ -8,18 +8,25 @@ let tree=app.buildMgrRegistration();
 for(const id of ['regSupplier','regReorderLevel','regNewStockUnit','regScannedBarcode','regStatus'])assert(!nodes(tree).some(n=>n.props?.id==='registration-'+id));
 assert(!nodes(tree).some(n=>n.type==='button'&&['New Product','Clear Form','+ Add Category'].includes(text(n))));
 assert.equal(nodes(tree).find(n=>n.props?.id==='registration-regManufacturer').props.required,false);
-for(const [id,kind,unit] of [['regSizeUnit','size','Gross'],['regStockUnit','stock','Ream']]){
- nodes(app.buildMgrRegistration()).find(n=>n.props?.['aria-label']===(kind==='size'?'Add new size unit':'Add new stock unit')).props.onClick();
- assert.equal(app.state.regUnitDialog,kind);
- let dialog=app.buildRegistrationUnitDialog();
- nodes(dialog).find(n=>n.type==='input').props.onChange({target:{value:unit}});
- dialog=app.buildRegistrationUnitDialog();nodes(dialog).find(n=>n.type==='button'&&text(n).startsWith('Use ')).props.onClick();
- assert.equal(app.state[id],unit);assert.equal(app.state.regUnitDialog,null);
-}
+assert(!nodes(tree).some(n=>n.type==='button'&&text(n).includes('Add Unit')));
+for(const kind of ['Stock','Size'])assert(nodes(app.buildMgrCategories()).some(n=>n.type==='button'&&text(n)==='+ Add '+kind+' Unit'));
+app.setState({regProductName:'Draft'});
 nodes(app.buildMgrRegistration()).find(n=>n.type==='button'&&text(n)==='Clear Form').props.onClick();
 assert.equal(app.state.regStockUnit,'Piece');assert.equal(app.state.regSizeUnit,'');
 Object.assign(app.state,{regProductName:'Paper',regCategory:'Supplies',regBrandId:1,regSize:'500',regSizeUnit:'Sheet'});
 app.toast=()=>{};app.reloadCatalog=async()=>{};let payload;
 app.authPost=async(url,data)=>{payload=data;return {product:{...data,id:1}};};app.saveRegistration();
 assert(payload);assert(!Object.hasOwn(payload,'supplierId'));assert(!Object.hasOwn(payload,'minStock'));
-console.log('Simplified registration, optional manufacturer, unit popup, clear form and deferred inventory settings passed.');
+console.log('Simplified registration, unit actions in Categories, clear form and deferred inventory settings passed.');
+(async()=>{
+ app.setState({regUnitDialog:'stock',regUnitDraft:'Ream'});
+ let saved;
+ app.authPost=async(url,payload)=>{saved={url,payload};return {message:'Unit added.'};};
+ app.reloadCatalog=async()=>{app.state.data.PRODUCT_UNITS=[{kind:'stock',name:'Ream'}];};
+ nodes(app.buildRegistrationUnitDialog()).find(n=>n.type==='button'&&text(n)==='Save Stock Unit').props.onClick();
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(saved.url,'/api/product-units');
+ assert.equal(saved.payload.kind,'stock');
+ assert(nodes(nodes(app.buildMgrRegistration()).find(n=>n.props?.id==='registration-regStockUnit')).some(n=>n.props?.value==='Ream'));
+ assert.equal(app.state.regUnitDialog,null);
+})().catch(error=>{console.error(error);process.exitCode=1;});

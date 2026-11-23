@@ -2023,9 +2023,6 @@ button, .primary-button, .kita-button,
 .registration-page .registration-category > .kita-button { flex: 0 0 auto; min-height: 40px; padding: 9px 14px !important; white-space: nowrap; }
 .registration-page .registration-size { grid-column: 1 / -1; width: 100%; max-width: none; }
 .registration-page .registration-size-fields { grid-template-columns: minmax(120px, 1fr) minmax(0, 2fr); gap: 28px; }
-.registration-page .registration-unit-control { display: flex; align-items: center; gap: 10px; }
-.registration-page .registration-unit-control > select { flex: 1; min-width: 0; width: 100%; min-height: 40px; box-sizing: border-box; border: 1px solid #cad8ed; border-radius: 8px; background: #fff; padding: 9px 12px; font-size: 13px; color: #17345d; }
-.registration-page .registration-add-unit { flex: 0 0 auto; min-height: 40px; padding: 9px 14px !important; white-space: nowrap; }
 .registration-page .registration-stock-unit { grid-column: 1 / -1; max-width: 640px; }
 .registration-page .registration-stock-unit > small { display: block; margin-top: 7px; color: #7188a8; font-size: 11px; line-height: 1.5; }
 .registration-page .form-actions { padding: 10px 8px 24px; gap: 18px; }
@@ -2039,7 +2036,7 @@ button, .primary-button, .kita-button,
   .registration-page .form-action-note { width: 100%; }
   .registration-page .form-actions .primary-button { width: 100%; }
 }
-@media (max-width: 380px) { .registration-page .registration-category { flex-wrap: wrap; } .registration-page .registration-category > .kita-button { width: 100%; } .registration-page .registration-unit-control { flex-wrap: wrap; } .registration-page .registration-unit-control > select, .registration-page .registration-add-unit { width: 100%; } }
+@media (max-width: 380px) { .registration-page .registration-category { flex-wrap: wrap; } .registration-page .registration-category > .kita-button { width: 100%; } }
 
 /* Purchase item selection: supplier filtering and compact responsive layout. */
 .po-item-dialog{width:760px;background:#fff}

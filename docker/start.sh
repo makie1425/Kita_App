@@ -46,6 +46,7 @@ else
     artisan migrate --force --path=database/migrations/2026_11_10_000001_add_brand_categories.php
     artisan migrate --force --path=database/migrations/2026_11_10_000002_create_cashier_shifts.php
     artisan migrate --force --path=database/migrations/2026_11_10_000002_add_product_description.php
+    artisan migrate --force --path=database/migrations/2026_11_23_000001_create_product_units.php
 fi
 if [[ "${SEED_DEMO_USERS:-false}" == 'true' ]]; then
     artisan accounts:seed-demo

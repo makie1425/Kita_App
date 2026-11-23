@@ -63,6 +63,7 @@ Route::middleware('role:manager,admin')->group(function () {
     Route::patch('/api/products/{id}/inventory-settings', [ProductController::class, 'inventorySettings']);
     Route::post('/api/products/{id}/barcode', [ProductController::class, 'assignBarcode']);
     Route::post('/api/categories', [CategoryController::class, 'store']);
+    Route::post('/api/product-units', [\App\Http\Controllers\ProductUnitController::class, 'store']);
     Route::patch('/api/categories/{name}', [CategoryController::class, 'update']);
 });
 Route::middleware('role:manager,admin,super_admin')->group(function () {

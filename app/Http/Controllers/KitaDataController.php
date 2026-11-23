@@ -24,7 +24,7 @@ class KitaDataController extends Controller
                     'BUSINESS_DATE' => now()->toDateString(),
                     'USERS' => ['cashier' => [], 'manager' => [], 'admin' => $admins->orderBy('id')->get(['id','name','username','email','status','createdBy'])->toArray(), 'superadmin' => []],
                     'NOTIFICATIONS' => \App\Services\NotificationAccess::owned(request()->user())->orderByDesc('id')->limit(50)->get(['id','type','priority','message'])->toArray(),
-                ] + array_fill_keys(['CATEGORIES','PRODUCTS','EXPIRING_BATCHES','BRANDS','SUBCATEGORIES','SUPPLIERS','ITEM_REQUESTS','PURCHASE_ORDERS','RECEIVING_RECORDS','ADJUSTMENTS','PROMOTIONS','AUDIT_LOGS','FIELD_VERSION_HISTORY','SALES_LOG','TRANSACTIONS'], []) + ['EXPIRY_ALERT_DAYS' => 30, 'BATCH_RECALL' => ['batch' => '', 'lot' => '', 'product' => '', 'affected' => []]])->header('Cache-Control', 'private, no-store');
+                ] + array_fill_keys(['CATEGORIES','PRODUCTS','EXPIRING_BATCHES','BRANDS','SUBCATEGORIES','PRODUCT_UNITS','SUPPLIERS','ITEM_REQUESTS','PURCHASE_ORDERS','RECEIVING_RECORDS','ADJUSTMENTS','PROMOTIONS','AUDIT_LOGS','FIELD_VERSION_HISTORY','SALES_LOG','TRANSACTIONS'], []) + ['EXPIRY_ALERT_DAYS' => 30, 'BATCH_RECALL' => ['batch' => '', 'lot' => '', 'product' => '', 'affected' => []]])->header('Cache-Control', 'private, no-store');
             }
             $pdo = DB::connection()->getPdo();
 
@@ -35,6 +35,7 @@ class KitaDataController extends Controller
                 'EXPIRING_BATCHES' => \App\Services\ExpiryMonitoring::batches(),
                 'EXPIRY_ALERT_DAYS' => \App\Services\ExpiryMonitoring::days(),
                 'BRANDS' => WorkspaceRead::table('brands')->orderByDesc('id')->get(),
+                'PRODUCT_UNITS' => WorkspaceRead::table('product_units')->orderBy('name')->get(['kind', 'name']),
                 'SUBCATEGORIES' => WorkspaceRead::table('subcategories')->orderByDesc('id')->get(),
                 'SUPPLIERS' => $this->suppliers($pdo),
                 'ITEM_REQUESTS' => $this->itemRequests($pdo),

@@ -2689,6 +2689,8 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
         btn("+ Add Category",this.openCategoryModal,"primary"),
         btn("+ Add Subcategory",()=>this.setState({masterForm:{kind:'subcategories',name:'',category:'',status:'Active'}})),
         btn("+ Add Brand",()=>this.setState({masterForm:{kind:'brands',name:'',category:'',status:'Active'}})),
+        btn("+ Add Stock Unit",()=>this.setState({regUnitDialog:'stock',regUnitDraft:'',regUnitError:''})),
+        btn("+ Add Size Unit",()=>this.setState({regUnitDialog:'size',regUnitDraft:'',regUnitError:''})),
         !(this.state.categoriesLocal||[]).some(c=>c.name.trim().toLowerCase()==='supplies')?btn("+ Add Supplies Category",()=>{this.openCategoryModal();this.setState({categoryForm:{name:'Supplies',classification:'Non-Perishable',status:'Active'}});}):null,
       ]),
       this.recordTable("categories",["Category","Classification","Products","Status","Actions"],categories.map(c=>tr([
@@ -2699,6 +2701,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
       ],c.name))),
       this.buildMasterLists(),
       this.state.categoryModalOpen?this.buildCategoryModal():null,
+      this.buildRegistrationUnitDialog(),
     ]);
   }
   saveMaster=async()=>{
@@ -2857,28 +2860,27 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
     const h=React.createElement,s=this.state;if(!s.regUnitDialog)return null;
     const size=s.regUnitDialog==='size',label=size?'Size Unit':'Stock Unit',limit=size?20:40;
     const close=()=>this.setState({regUnitDialog:null,regUnitDraft:'',regUnitError:''});
-    const save=()=>{const unit=String(s.regUnitDraft||'').trim();if(!unit||unit.length>limit||/[\x00-\x1F\x7F]/.test(unit)){this.setState({regUnitError:'Enter a unit name up to '+limit+' characters.'});return;}this.setState({[size?'regSizeUnit':'regStockUnit']:unit,regSaved:false});close();};
+    const save=async()=>{const unit=String(this.state.regUnitDraft||'').trim();if(!unit||unit.length>limit||/[\x00-\x1F\x7F]/.test(unit)){this.setState({regUnitError:'Enter a unit name up to '+limit+' characters.'});return;}if(this.unitSaving)return;this.unitSaving=true;try{await this.authPost('/api/product-units',{kind:size?'size':'stock',name:unit});await this.reloadCatalog();close();this.toast(label+' added.');}catch(error){this.setState({regUnitError:error.message});}finally{this.unitSaving=false;}};
     return h('dialog',{className:'purchase-details-dialog','aria-labelledby':'registration-unit-title',ref:n=>{if(n&&!n.open)n.showModal();},onCancel:e=>{e.preventDefault();close();}},[
       h('header',{className:'dialog-actions'},[h('h2',{id:'registration-unit-title'},'Add '+label),h('button',{type:'button','aria-label':'Close add unit',onClick:close},'\u00d7')]),
       h('label',null,[label,h('input',{autoFocus:true,maxLength:limit,value:s.regUnitDraft||'',onChange:e=>this.setState({regUnitDraft:e.target.value,regUnitError:''}),onKeyDown:e=>{if(e.key==='Enter'){e.preventDefault();save();}}})]),
       s.regUnitError?h('p',{role:'alert'},s.regUnitError):null,
-      h('div',{className:'dialog-actions'},[btn('Cancel',close),btn('Use '+label,save,'primary')])
+      h('div',{className:'dialog-actions'},[btn('Cancel',close),btn('Save '+label,save,'primary')])
     ]);
   }
   buildMgrRegistration(){
     const h=React.createElement,s=this.state,data=s.data;
     const products=s.productsLocal||data.PRODUCTS;
-    const units=[...new Set(["Piece","Pair","Set","Dozen","Pack","Packet","Pouch","Bag","Box","Case","Carton","Sack","Tray","Bottle","Can","Jar","Tub","Cup","Tube","Roll","Sheet","Bundle","Bunch","Bar","Stick","Sachet","Strip","Blister pack","Tablet","Capsule","Vial","Ampoule","Drum","Bucket","Pail","Crate","Pallet","Kg","g","Liter","mL","m",...products.map(p=>p.stockUnit||p.unit),s.regStockUnit].filter(Boolean))];
+    const units=[...new Set(["Piece","Pair","Set","Dozen","Pack","Packet","Pouch","Bag","Box","Case","Carton","Sack","Tray","Bottle","Can","Jar","Tub","Cup","Tube","Roll","Sheet","Bundle","Bunch","Bar","Stick","Sachet","Strip","Blister pack","Tablet","Capsule","Vial","Ampoule","Drum","Bucket","Pail","Crate","Pallet","Kg","g","Liter","mL","m",...(data.PRODUCT_UNITS||[]).filter(u=>u.kind==='stock').map(u=>u.name),...products.map(p=>p.stockUnit||p.unit),s.regStockUnit].filter(Boolean))];
     const standardMeasurements=Object.values(PRODUCT_MEASUREMENT_UNITS).flatMap(group=>Object.keys(group));
-    const customMeasurements=[...new Set([...products.map(p=>p.sizeUnit),s.regSizeUnit].filter(unit=>unit&&!standardMeasurements.includes(unit)))];
-    const unitControl=(control,kind)=>h('div',{className:'registration-unit-control'},[control,h('button',{type:'button',className:'kita-button kita-button--primary registration-add-unit','aria-label':kind==='size'?'Add new size unit':'Add new stock unit',onClick:()=>this.setState({regUnitDialog:kind,regUnitDraft:'',regUnitError:''})},'+ Add Unit')]);
+    const customMeasurements=[...new Set([...(data.PRODUCT_UNITS||[]).filter(u=>u.kind==='size').map(u=>u.name),...products.map(p=>p.sizeUnit),s.regSizeUnit].filter(unit=>unit&&!standardMeasurements.includes(unit)))];
     const measurement=h('div',{className:'field-group'},[
       h('label',{htmlFor:'registration-regSizeUnit'},['Size Unit',h('span',{className:'required-marker','aria-hidden':true},' *')]),
-      unitControl(h('select',{id:'registration-regSizeUnit',required:true,'aria-required':true,value:s.regSizeUnit||'',onChange:this.setRegField('regSizeUnit')},[
+      h('select',{id:'registration-regSizeUnit',required:true,'aria-required':true,value:s.regSizeUnit||'',onChange:this.setRegField('regSizeUnit')},[
         h('option',{value:''},'Select size unit'),
         ...Object.entries(PRODUCT_MEASUREMENT_UNITS).map(([group,values])=>h('optgroup',{key:group,label:group},Object.entries(values).map(([value,label])=>h('option',{key:value,value},label)))),
         ...customMeasurements.map(value=>h('option',{key:value,value},value)),
-      ]),'size'),
+      ]),
     ]);
     const field=(key,label,options={})=>{
       options={...options,required:options.required??!options.readOnly};
@@ -2891,7 +2893,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
     };
     const select=(key,label,values,required=true)=>h("div",{key,className:"field-group"},[
       h("label",{key:"label",htmlFor:"registration-"+key},[label,required?h("span",{className:"required-marker","aria-hidden":true}," *"):null]),
-      ((control)=>key==="regStockUnit"?unitControl(control,"stock"):control)(h("select",{key:"input",id:"registration-"+key,value:s[key],onChange:this.setRegField(key),required,"aria-required":required},[h("option",{key:"empty",value:""},"Select "+label.toLowerCase()),...values.map(value=>h("option",{key:value,value},["regSizeUnit","regStockUnit"].includes(key)?({mL:"mL (Milliliter)",Liter:"L (Liter)",g:"g (Gram)",kg:"kg (Kilogram)",Kg:"kg (Kilogram)",cm:"cm (Centimeter)",m:"m (Meter)"}[value]||value):value))])),
+      h("select",{key:"input",id:"registration-"+key,value:s[key],onChange:this.setRegField(key),required,"aria-required":required},[h("option",{key:"empty",value:""},"Select "+label.toLowerCase()),...values.map(value=>h("option",{key:value,value},["regSizeUnit","regStockUnit"].includes(key)?({mL:"mL (Milliliter)",Liter:"L (Liter)",g:"g (Gram)",kg:"kg (Kilogram)",Kg:"kg (Kilogram)",cm:"cm (Centimeter)",m:"m (Meter)"}[value]||value):value))]),
     ]);
     const group=(number,title,description,fields)=>h("fieldset",{className:"form-section",key:title},[
       h("legend",null,[h("span",{className:"section-number"},number),title]),null,h("div",{className:"form-grid"},fields),
@@ -2927,10 +2929,9 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
       ]):null,
       s.regEditing?field("regEditReason","Reason for changes"):null,
       h("div",{key:"save",className:"form-actions"},[
-        h("span",{className:"form-action-note"},"Fields marked * are required. Assign suppliers in Suppliers and set minimum stock in Inventory. New units are saved with the product."),
+        h("span",{className:"form-action-note"},"Fields marked * are required. Assign suppliers in Suppliers and set minimum stock in Inventory. Add new units in Categories."),
         h("button",{type:"button",className:"primary-button",disabled:!!s.registrationSaving,"aria-busy":!!s.registrationSaving,onClick:this.saveRegistration},s.registrationSaving?"Saving product...":s.regSaved?"Product registered":"Save product registration"),
       ]),
-      this.buildRegistrationUnitDialog(),
     ]);
   }
   buildMgrCashiers(){ return this.buildAdmManagers(); }
