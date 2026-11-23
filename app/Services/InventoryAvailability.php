@@ -7,6 +7,11 @@ use Illuminate\Validation\ValidationException;
 
 class InventoryAvailability
 {
+    public static function requiresBarcodeRegistration(array $product): bool
+    {
+        return ($product['barcodeStatus'] ?? null) === 'Pending receiving';
+    }
+
     public static function reservations(?array $productIds = null)
     {
         $transactions = DB::table('transactions');
@@ -60,6 +65,10 @@ class InventoryAvailability
             }
             if ($product['expiredRecalledStock']) {
                 $reasons[] = 'Both expired and recalled: '.$product['expiredRecalledStock'].' (counted once in unavailable total)';
+            }
+            if (self::requiresBarcodeRegistration($product)) {
+                $sellable = 0;
+                $reasons[] = 'Barcode registration required after receiving';
             }
             if (($product['status'] ?? 'Active') !== 'Active' || ! empty($product['archivedAt']) || ! in_array($product['category'] ?? '', $categories, true)) {
                 $sellable = 0;

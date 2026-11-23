@@ -65,6 +65,9 @@ class ProductController extends Controller
                 DB::table('inventory_sequences')->where('name', 'products')->lockForUpdate()->first();
                 $existing = \App\Services\WorkspaceRead::table('products')->where('id', $id)->lockForUpdate()->first();
                 abort_unless($existing, 404, 'Product not found.');
+                if ($existing->barcodeStatus === 'Pending receiving' && $validated['barcode'] !== $existing->barcode) {
+                    throw ValidationException::withMessages(['barcode' => 'Register the barcode after receiving the product.']);
+                }
                 if (isset($validated['id']) && (int) $validated['id'] !== (int) $id) {
                     throw ValidationException::withMessages(['id' => 'Stock ID cannot be changed.']);
                 }

@@ -1,0 +1,16 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert/strict');
+const ctx=vm.createContext({React:{createElement:(type,props,...children)=>({type,props,children})},DCLogic:class{setState(p){Object.assign(this.state,typeof p==='function'?p(this.state):p)}},window:{}});
+vm.runInContext(fs.readFileSync('public/app.js','utf8')+';globalThis.App=Component;',ctx);
+const app=new ctx.App();
+const nodes=n=>!n||typeof n!=='object'?[]:Array.isArray(n)?n.flatMap(nodes):[n,...nodes(n.children)];
+const text=n=>n==null?'':typeof n==='string'?n:Array.isArray(n)?n.map(text).join(' '):text(n.children);
+Object.assign(app.state,{invTab:'unregistered',data:{PRODUCTS:[{id:1,name:'Paper',stockOnHand:2,stockUnit:'Ream',barcodeStatus:'Pending receiving'},{id:2,name:'Ink',stockOnHand:3,stockUnit:'Bottle',barcodeStatus:'Scanned'}],RECEIVING_RECORDS:[{id:'R-1',lines:[{productId:1,deliveredQty:2}]}],BRANDS:[]},categoriesLocal:[],adjustmentsLocal:[]});
+let called;app.assignReceivedBarcode=(productId,receiptId)=>{called=[productId,receiptId]};
+const tree=app.buildMgrInventory();
+assert(nodes(tree).some(n=>n.type==='button'&&text(n)==='Unregistered Products'));
+assert(JSON.stringify(tree).includes('Paper'));
+assert(!JSON.stringify(tree).includes('Ink'));
+nodes(tree).find(n=>n.type==='button'&&text(n)==='Register Barcode').props.onClick();
+assert.deepEqual(called,[1,'R-1']);
+assert(!JSON.stringify(app.buildManualLookupModal()).includes('Paper'));
+console.log('Unregistered Products tab shows received pending items and registers against their receipt.');

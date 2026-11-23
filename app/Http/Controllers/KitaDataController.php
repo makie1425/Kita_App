@@ -51,6 +51,10 @@ class KitaDataController extends Controller
                 'TRANSACTIONS' => $this->transactions($pdo),
                 'BATCH_RECALL' => $this->batchRecall($pdo),
             ];
+            if (request()->user()->normalizedRole() === 'cashier') {
+                $payload['PRODUCTS'] = array_values(array_filter($payload['PRODUCTS'],
+                    fn (array $product) => ! \App\Services\InventoryAvailability::requiresBarcodeRegistration($product)));
+            }
             if(config('workspaces.enabled') && request()->user()->normalizedRole()==='cashier'){
                 foreach(['SUPPLIERS','ITEM_REQUESTS','PURCHASE_ORDERS','RECEIVING_RECORDS','ADJUSTMENTS','AUDIT_LOGS','FIELD_VERSION_HISTORY','SALES_LOG','EXPIRING_BATCHES'] as $key)$payload[$key]=[];
                 $payload['BATCH_RECALL']=['batch'=>'','lot'=>'','product'=>'','affected'=>[]];

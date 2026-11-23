@@ -112,6 +112,31 @@ class ProductFifoTest extends TestCase
         $this->assertSame($input['description'], $catalog['description']);
     }
 
+    public function test_received_product_requires_barcode_before_cashier_can_see_or_sell_it(): void
+    {
+        $input = array_diff_key($this->input, array_flip(['barcode']));
+        $input['name'] = 'Awaiting barcode';
+        $id = $this->postJson('/api/products', $input)->assertCreated()->json('product.id');
+        $this->patchJson('/api/products/'.$id, array_replace($input, ['barcode' => 'BYPASS-RECEIPT', 'reason' => 'Correction']))->assertUnprocessable()->assertJsonValidationErrors('barcode');
+        $po = $this->receive(2, 55, null, $id);
+        $receiptId = DB::table('receiving_records')->where('poId', $po)->value('id');
+
+        $catalog = collect($this->getJson('/api/kita-data')->assertOk()->json('PRODUCTS'))->firstWhere('id', $id);
+        $this->assertSame(2, $catalog['stockOnHand']);
+        $this->assertSame(0, $catalog['sellableStock']);
+        $this->postJson('/api/transactions', ['uuid' => 'UNREGISTERED-SALE', 'items' => [['productId' => $id, 'qty' => 1]], 'paymentMode' => 'Cash', 'tendered' => 80])->assertUnprocessable();
+
+        $cashier = User::factory()->create(['role' => 'cashier']);
+        $this->assignMember($cashier);
+        $this->actingAs($cashier);
+        $this->assertNull(collect($this->getJson('/api/kita-data')->assertOk()->json('PRODUCTS'))->firstWhere('id', $id));
+        $this->actingAs($this->manager)->postJson('/api/products/'.$id.'/barcode', ['barcode' => 'AWAITING-2', 'receiptId' => $receiptId])->assertOk();
+        $this->actingAs($cashier);
+        $this->assertNotNull(collect($this->getJson('/api/kita-data')->assertOk()->json('PRODUCTS'))->firstWhere('id', $id));
+        $this->postJson('/api/cashier-shifts', ['openingCash' => 100])->assertCreated();
+        $this->postJson('/api/transactions', ['uuid' => 'REGISTERED-SALE', 'items' => [['productId' => $id, 'qty' => 1]], 'paymentMode' => 'Cash', 'tendered' => 80])->assertCreated();
+    }
+
     public function test_subcategories_and_brands_can_be_renamed_without_losing_product_links(): void
     {
         $this->patchJson('/api/product-master/subcategories/'.$this->input['subcategoryId'], ['name' => 'Soft beverages', 'category' => 'Beverages', 'status' => 'Active'])->assertOk();
@@ -171,15 +196,16 @@ class ProductFifoTest extends TestCase
         $this->getJson('/api/inventory-history')->assertOk()->assertJsonPath('movementCount', 501)->assertJsonPath('movementLimit', 500)->assertJsonCount(500, 'movements');
     }
 
-    private function receive(int $qty, float $cost, ?float $retail = null): string
+    private function receive(int $qty, float $cost, ?float $retail = null, ?int $productId = null): string
     {
+        $productId ??= $this->product;
         $this->actingAs($this->manager);
-        $id = $this->postJson('/api/purchase-requests', ['category' => 'Beverages', 'lines' => [['productId' => $this->product, 'supplierId' => $this->input['supplierId'], 'qty' => $qty, 'unitCost' => $cost]]])->assertCreated()->json('id');
-        $before = DB::table('products')->where('id', $this->product)->value('stock');
+        $id = $this->postJson('/api/purchase-requests', ['category' => 'Beverages', 'lines' => [['productId' => $productId, 'supplierId' => $this->input['supplierId'], 'qty' => $qty, 'unitCost' => $cost]]])->assertCreated()->json('id');
+        $before = DB::table('products')->where('id', $productId)->value('stock');
         $this->actingAs($this->admin)->patchJson('/api/purchase-requests/'.$id, ['action' => 'approved', 'revision' => 0])->assertOk();
-        $this->assertEquals($before, DB::table('products')->where('id', $this->product)->value('stock'));
+        $this->assertEquals($before, DB::table('products')->where('id', $productId)->value('stock'));
         $this->actingAs($this->manager)->postJson('/api/purchase-orders/'.$id.'/receive', ['version' => 0, 'idempotencyKey' => (string) Str::uuid(),
-            'receivedDate' => now()->toDateString(), 'lines' => [['productId' => $this->product, 'qty' => $qty, 'unitCost' => $cost, 'batchNumber' => 'DELIVERY-'.$qty, ...($retail !== null ? ['sellingPrice' => $retail] : [])]]])->assertCreated();
+            'receivedDate' => now()->toDateString(), 'lines' => [['productId' => $productId, 'qty' => $qty, 'unitCost' => $cost, 'batchNumber' => 'DELIVERY-'.$qty, ...($retail !== null ? ['sellingPrice' => $retail] : [])]]])->assertCreated();
 
         return $id;
     }

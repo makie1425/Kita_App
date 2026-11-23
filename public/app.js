@@ -573,7 +573,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
     if(!this.state.scannerConnected){ this.toast("Scanner disconnected. Use Manual Product Lookup.","error"); this.setState({barcodeInput:""}); return; }
     const code=barcodeInput.trim();
     const normalizedCode=code.replace(/\D/g,"");
-    const findProduct=catalog=>catalog.find(p=>String(p.barcode||"").trim()===code)||(/^\d+$/.test(code)?catalog.find(p=>String(p.id)===code):null);
+    const findProduct=catalog=>catalog.find(p=>p.barcodeStatus!=='Pending receiving'&&String(p.barcode||"").trim()===code)||(/^\d+$/.test(code)?catalog.find(p=>p.barcodeStatus!=='Pending receiving'&&String(p.id)===code):null);
     const productCatalog=productsLocal||data.PRODUCTS;
     const p=findProduct(productCatalog);
     if(p){ this.addProductToCart(p,false,source); this.setState({barcodeInput:""}); return; }
@@ -1266,7 +1266,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
     const barcode=this.state.regEditing?(existing?.barcode||null):null;
     const nextId=Math.max(0,...catalog.map(p=>Number(p.id)||0))+1;
     const supplier=(data.SUPPLIERS||[]).find(s=>s.name===regSupplier);
-    const product={id:nextId,name,category:regCategory,vatClass:"VAT-Exempt",price,cost,stock:qty,minStock:0,unit:regStockUnit||"Piece",status:regStatus||"Active",batch:regBatch||"",lot:regLot||"",expiry:regExpiry||"",barcode,supplierId:supplier?supplier.id:regSupplier,parentId:null,variantLabel:"",purchaseUnit,stockUnit:regStockUnit||"Piece",conversionFactor,barcodeStatus:"Scanned",archivedAt:null,archivedBy:null,unitPrice:Number(unitPrice)};
+    const product={id:nextId,name,category:regCategory,vatClass:"VAT-Exempt",price,cost,stock:qty,minStock:0,unit:regStockUnit||"Piece",status:regStatus||"Active",batch:regBatch||"",lot:regLot||"",expiry:regExpiry||"",barcode,supplierId:supplier?supplier.id:regSupplier,parentId:null,variantLabel:"",purchaseUnit,stockUnit:regStockUnit||"Piece",conversionFactor,barcodeStatus:barcode?"Scanned":"Pending receiving",archivedAt:null,archivedBy:null,unitPrice:Number(unitPrice)};
     this.registrationBusy=true;this.setState({registrationSaving:true,registrationError:"",registrationNotice:null});
     this.authPost("/api/products"+(this.state.regEditing?"/"+this.state.regEditing:""),{parentId:this.state.regParentId?Number(this.state.regParentId):null,variantLabel:this.state.regVariantLabel||'',reason:this.state.regEditReason||null,manufacturer:this.state.regManufacturer||null,description:this.state.regDescription||null,unitPrice:Number(unitPrice),brandId:this.state.regBrandId||null,subcategoryId:this.state.regSubcategoryId||null,size:this.state.regSize||null,sizeUnit:this.state.regSizeUnit||null,name,category:regCategory,vatClass:"VAT-Exempt",price,cost,stock:qty,purchaseUnit,stockUnit:regStockUnit,conversionFactor},this.state.regEditing?"PATCH":"POST").then(response=>{
       const savedProduct={...product,...response.product};
@@ -1451,7 +1451,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
     const brands=data.BRANDS||[];
     if(this.manualLookupIndex?.catalog!==catalog||this.manualLookupIndex?.brands!==brands){
       const names=new Map(brands.map(b=>[String(b.id),b.name]));
-      const rows=catalog.map(p=>({p,category:String(p.category||'').trim()||'Uncategorized',label:[p.name,names.get(String(p.brandId)),p.size,p.sizeUnit].filter(Boolean).join(' '),search:[p.name,names.get(String(p.brandId)),p.size,p.sizeUnit,p.barcode,p.category].filter(Boolean).join(' ')}));
+      const rows=catalog.filter(p=>p.barcodeStatus!=='Pending receiving').map(p=>({p,category:String(p.category||'').trim()||'Uncategorized',label:[p.name,names.get(String(p.brandId)),p.size,p.sizeUnit].filter(Boolean).join(' '),search:[p.name,names.get(String(p.brandId)),p.size,p.sizeUnit,p.barcode,p.category].filter(Boolean).join(' ')}));
       this.manualLookupIndex={catalog,brands,rows,categories:[...new Set(rows.map(r=>r.category))].sort((a,b)=>a.localeCompare(b))};
     }
     const {rows,categories}=this.manualLookupIndex,categoryOf=p=>String(p.category||'').trim()||'Uncategorized';
@@ -2564,7 +2564,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
   buildMgrInventory(){
     if(this.state.inventoryHistoryOpen)return this.buildInventoryHistory();
     const {data,invTab,adjustmentsLocal}=this.state; if(!data) return null;
-    const tabs=[["table","Stock Balance"],["adjustments","Stock Adjustments"],["writeoffs","Stock Issues / Returns"],["recall","Batch Recall"],["reconciliation","Stock Count"],["expiry","Expiry Monitoring"],["categories","Product Item"]];
+    const tabs=[["table","Stock Balance"],["adjustments","Stock Adjustments"],["writeoffs","Stock Issues / Returns"],["recall","Batch Recall"],["reconciliation","Stock Count"],["expiry","Expiry Monitoring"],["categories","Product Item"],["unregistered","Unregistered Products"]];
     let body;
     if(invTab==="adjustments"){
       const {newAdjForm}=this.state;
@@ -2589,6 +2589,15 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
       ]);
     } else if(['writeoffs','recall','reconciliation','expiry'].includes(invTab)){
       body=this.buildInventoryWorkflows(invTab);
+    } else if(invTab==="unregistered"){
+      const pending=data.PRODUCTS.filter(p=>p.barcodeStatus==='Pending receiving');
+      body=React.createElement('div',null,[
+        React.createElement('p',{className:'inventory-help'},'Received products stay unavailable at checkout until their barcode is registered.'),
+        this.recordTable('unregistered-products',['Item Code','Product','Received Stock','Receipt','Barcode','Action'],pending.map(p=>{
+          const receipt=(data.RECEIVING_RECORDS||[]).find(r=>(r.lines||[]).some(l=>Number(l.productId)===Number(p.id)&&Number(l.deliveredQty)>0));
+          return tr([td(p.id),td(this.productLabel(p)),td(Number(p.stockOnHand??p.stock??0)+' '+(p.stockUnit||p.unit||'')),td(receipt?.id||'Awaiting receipt'),td(React.createElement('input',{'aria-label':'Barcode for '+p.name,value:this.state.receivingBarcodeDrafts?.[p.id]||'',disabled:!receipt,onChange:e=>this.setState(s=>({receivingBarcodeDrafts:{...(s.receivingBarcodeDrafts||{}),[p.id]:e.target.value}}))})),td(receipt?btn('Register Barcode',()=>this.assignReceivedBarcode(p.id,receipt.id),'primary'):'Receive product first')],p.id);
+        })),
+      ]);
     } else if(invTab==="categories"){
       const {catSelected,categoriesLocal}=this.state; const catCount=Object.values(catSelected).filter(Boolean).length;
       const list = categoriesLocal.filter(c=>c.status==="Active");
