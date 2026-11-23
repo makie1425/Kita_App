@@ -60,7 +60,7 @@ class OperationalMonitoringTest extends TestCase {
  }
  public function test_real_resources_are_measured_or_explicitly_unavailable(): void {
   $service=app(OperationalMonitoring::class);$storage=$service->storage();
-  if($storage!==null){$this->assertGreaterThan(0,$storage['limit_bytes']);$this->assertGreaterThanOrEqual(0,$storage['used_bytes']);}
+  if($storage!==null){$this->assertNull($storage['limit_bytes']);$this->assertGreaterThanOrEqual(0,$storage['used_bytes']);$this->assertStringContainsString('KITA storage files',$storage['scope']);}
   $memory=$service->memory();$this->assertTrue($memory===null||($memory['used_bytes']>=0&&$memory['scope']==='Application container'));
  }
 }

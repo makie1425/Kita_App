@@ -16,8 +16,14 @@ class OperationalMonitoring
   return null;
  }
  public function storage(): ?array {
-  $total=@disk_total_space(storage_path());$free=@disk_free_space(storage_path());
-  return $total===false||$free===false?null:['used_bytes'=>$total-$free,'limit_bytes'=>$total,'scope'=>'Filesystem containing application storage; excludes cloud database'];
+  $root=storage_path();
+  if(!is_dir($root)||!is_readable($root))return null;
+  $used=0;
+  try {
+   $files=new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($root,\FilesystemIterator::SKIP_DOTS));
+   foreach($files as $file)if($file->isFile()&&!$file->isLink())$used+=$file->getSize();
+  }catch(Throwable){return null;}
+  return ['used_bytes'=>$used,'limit_bytes'=>null,'scope'=>'KITA storage files only; excludes application image and cloud database'];
  }
  public function snapshot(): array {
   $now=now()->utc();$rpm=null;$availability=null;$errors=null;

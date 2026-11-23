@@ -2,7 +2,7 @@
 
 ## Data sources and limits
 
-- Storage: real usage/capacity of the filesystem containing Laravel storage. This is **not** Aiven database usage or app-directory size. Shared/container filesystem capacity can differ from the purchased service quota; the dashboard labels the scope.
+- Storage: total size of files under Laravel's `storage` directory. Symlinks are skipped. This excludes the application image, public assets and Aiven database. Render does not expose an application-specific storage quota here, so capacity and percentage are unavailable. The old filesystem-wide reading included other host usage and could report hundreds of GB unrelated to KITA.
 - RAM: Linux cgroup v2 or v1 container usage/limit. Missing files or unlimited limits display Unavailable. PHP process memory is not substituted for container RAM.
 - RPM: atomic database counters for requests reaching Laravel, including health checks, monitoring polling and denied requests. Static assets served directly by nginx are excluded. The chart contains the last 30 completed UTC minutes; missing buckets remain gaps, not invented zeros.
 - Availability: external probe observations. Adjacent samples up to 90 seconds apart describe a sampled interval; larger gaps are unknown. Totals cover the last 24 hours. Latest status expires after 90 seconds. This is sampled availability, not exact second-by-second outage detection.

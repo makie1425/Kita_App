@@ -3504,11 +3504,11 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
       h('figcaption',{className:'sa-note'},'Laravel requests/minute, including health checks. Missing samples are gaps.')]);
     const metric=(label,value,note,extra)=>h('article',{className:'monitor-summary',key:label},[h('div',null,label),h('strong',{style:label==='System Status'?{color:value==='Operational'?'#059669':value==='Down'?'#b91c1c':'#667085'}:undefined},value),h('p',{className:'sa-note'},note),extra]);
     const resource=(label,data)=>{
-      const displayBytes=v=>label==='Storage Consumption'?(v==null?'Unavailable':(v/1e9).toFixed(2)+' GB'):bytes(v);
+      const displayBytes=v=>label==='Storage Consumption'?(v==null?'Unavailable':v>=1e9?(v/1e9).toFixed(2)+' GB':v>=1e6?(v/1e6).toFixed(2)+' MB':(v/1e3).toFixed(1)+' KB'):bytes(v);
       const used=data?.used_bytes,limit=data?.limit_bytes,ratio=used!=null&&limit>0?used/limit*100:null;
       const high=ratio!=null&&ratio>=80;
       return h('article',{className:'monitor-resource'},[
-        h('header',null,[h('h2',null,label),h('span',{className:'monitor-badge'+(ratio==null?' is-unknown':high?' is-high':'')},ratio==null?'Unavailable':ratio.toFixed(1)+'% '+(high?'High usage':'Normal usage'))]),
+        h('header',null,[h('h2',null,label),h('span',{className:'monitor-badge'+(ratio==null?' is-unknown':high?' is-high':'')},ratio==null?'Capacity unknown':ratio.toFixed(1)+'% '+(high?'High usage':'Normal usage'))]),
         h('strong',{className:'monitor-resource-value'},displayBytes(used)),h('p',{className:'sa-note'},data?.scope||'Measurement unavailable'),
         h('div',{className:'monitor-meter-labels'},[h('span',null,'Used: '+displayBytes(used)),h('span',null,'Limit: '+displayBytes(limit))]),
         ratio==null?h('p',{className:'sa-note'},'Capacity unavailable'):h('div',{className:'monitor-meter',role:'progressbar','aria-label':label,'aria-valuemin':0,'aria-valuemax':100,'aria-valuenow':Math.min(100,Math.max(0,ratio))},h('span',{style:{width:Math.min(100,Math.max(0,ratio))+'%',background:high?'#f59e0b':'#2563eb'}})),
