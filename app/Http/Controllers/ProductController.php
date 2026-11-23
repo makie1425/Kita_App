@@ -158,7 +158,7 @@ class ProductController extends Controller
 
     private function validateProduct(Request $request, ?int $id = null): array
     {
-        foreach (['name', 'barcode', 'stockUnit', 'purchaseUnit'] as $field) {
+        foreach (['name', 'barcode', 'stockUnit', 'purchaseUnit', 'sizeUnit'] as $field) {
             if (is_string($request->input($field))) {
                 $request->merge([$field => trim($request->input($field))]);
             }
@@ -177,7 +177,7 @@ class ProductController extends Controller
             'brandId' => ['required', 'integer', Rule::exists('brands', 'id')->where('status', 'Active')->where(fn ($query) => \App\Services\WorkspaceWrite::scopeValidation($query))],
             'subcategoryId' => ['nullable', 'integer', Rule::exists('subcategories', 'id')->where('category', $request->input('category'))->where('status', 'Active')->where(fn ($query) => \App\Services\WorkspaceWrite::scopeValidation($query))],
             'size' => ['required', 'numeric', 'gt:0', 'max:999999999', 'decimal:0,3'],
-            'sizeUnit' => ['required', Rule::in(\App\Services\ProductMeasurementUnits::VALUES)],
+            'sizeUnit' => ['required', 'string', 'max:20', 'regex:/^[^\x00-\x1F\x7F]+$/u'],
             'minStock' => ['required', 'integer', 'min:0', 'max:2147483647'],
             'barcode' => ['nullable', 'string', 'max:80', Rule::unique('products', 'barcode')->ignore($id)->where(fn ($query) => \App\Services\WorkspaceWrite::scopeValidation($query))],
             'description' => ['nullable', 'string', 'max:2000'],

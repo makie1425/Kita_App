@@ -105,7 +105,7 @@ class KitaDataController extends Controller
     {
         return \App\Services\InventoryAvailability::products($this->numericRows(
             $pdo,
-            ['table'=>'products','columns'=>['manufacturer','brandId','subcategoryId','size','sizeUnit','id','name','category','vatClass','price','cost','unitPrice','registrationQuantity','stock','minStock','unit','status','batch','lot','expiry','barcode','supplierId','parentId','variantLabel','purchaseUnit','stockUnit','conversionFactor','barcodeStatus','archivedAt','archivedBy'],'order'=>'created_at DESC, id DESC'],
+            ['table'=>'products','columns'=>['description','manufacturer','brandId','subcategoryId','size','sizeUnit','id','name','category','vatClass','price','cost','unitPrice','registrationQuantity','stock','minStock','unit','status','batch','lot','expiry','barcode','supplierId','parentId','variantLabel','purchaseUnit','stockUnit','conversionFactor','barcodeStatus','archivedAt','archivedBy'],'order'=>'created_at DESC, id DESC'],
             ['id', 'price', 'cost', 'unitPrice', 'registrationQuantity', 'stock', 'minStock', 'supplierId', 'parentId', 'conversionFactor']
         ));
     }

@@ -113,7 +113,7 @@ let registrationPayload;
 app.authPost=(url,payload)=>{registrationPayload=payload;return Promise.resolve({product:{...payload,id:99}})};
 app.reloadCatalog=()=>Promise.resolve();app.toast=()=>{};
 Object.assign(app.state,{regEditing:null,regProductName:'New item',regCategory:'Beverages',regScannedBarcode:'NEW-ITEM',regConversionFactor:'1',regUnitPrice:'55',regRetailPrice:'80',regManufacturer:'Factory',regBrandId:1,regSubcategoryId:1,regSize:1,regSizeUnit:'Liter',regSupplier:'Supplier',regStatus:'Active',regStockUnit:'Bottle',regReorderLevel:0});
-app.state.data.SUPPLIERS=[{id:1,name:'Supplier',status:'Active'}];app.saveRegistration();
+app.state.data.SUPPLIERS=[{id:1,name:'Supplier',status:'Active',category:'Beverages'}];app.saveRegistration();
 assert(registrationPayload,'New registration saves without pricing inputs');
 assert.strictEqual(registrationPayload.unitPrice,0);
 assert.strictEqual(registrationPayload.price,0);

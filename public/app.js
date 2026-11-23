@@ -326,7 +326,7 @@ class Component extends DCLogic {
     addDamageOpen:false, addDamageForm:{productId:"",qty:""},
     categoryModalOpen:false, categoryForm:{name:"",status:"Active",classification:""}, categoryError:"",
     archiveTab:"items", archiveChecked:{}, archiveConfirmOpen:false,
-    regProductMode:"select", regProductName:"", regDescription:"", regNewStockUnit:"", regOtherProductName:"", regCategory:"", regSupplier:"", regScannedBarcode:"", regQuantity:"",
+    regProductMode:"select", regProductName:"", regDescription:"", regNewStockUnit:"", regNewMeasurementUnit:"", purchaseSupplyCategory:"", regOtherProductName:"", regCategory:"", regSupplier:"", regScannedBarcode:"", regQuantity:"",
     regCostPrice:"", regUnitPrice:"", regRetailPrice:"", regBatch:"", regLot:"", regExpiry:"", regPurchaseUnit:"Piece", regStockUnit:"Piece", regConversionFactor:"1", regStatus:"Active", regVatClass:"VAT-Exempt",
     regSaved:false, regSku:"", regBarcode:"", regRegisteredQty:0, regPrintQty:1,
     promoPickerOpen:false, promoPickerSearch:"", promoPickerChecked:{},
@@ -1219,13 +1219,19 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
     const value=e.target.value;
     this.setState(s=>{
       const next={...s,[field]:value};
-      return {[field]:value,registrationError:"",registrationNotice:null,regSaved:false,...(field==="regCategory"?{regSubcategoryId:"",...(!s.regEditing?{regParentId:"",regVariantLabel:""}:{})}:{}),...(field==='regParentId'&&!value?{regVariantLabel:''}:{}),...(["regUnitPrice","regQuantity"].includes(field)?{regCostPrice:this.registrationCost(next.regUnitPrice,next.regQuantity)}:{})};
+      return {[field]:value,registrationError:"",registrationNotice:null,regSaved:false,...(field==="regCategory"?{regSubcategoryId:"",regSupplier:"",...(!s.regEditing?{regParentId:"",regVariantLabel:""}:{})}:{}),...(field==='regParentId'&&!value?{regVariantLabel:''}:{}),...(["regUnitPrice","regQuantity"].includes(field)?{regCostPrice:this.registrationCost(next.regUnitPrice,next.regQuantity)}:{})};
     });
   };
   registrationDuplicate=()=>{
     const s=this.state,normalize=value=>String(value??'').trim().replace(/\s+/g,' ').toLocaleLowerCase();
     if(s.regEditing||!normalize(s.regProductName))return null;
     return (s.productsLocal||s.data?.PRODUCTS||[]).find(p=>String(p.parentId||'')===String(s.regParentId||'')&&normalize(p.variantLabel)===normalize(s.regVariantLabel)&&normalize(p.name)===normalize(s.regProductName)&&String(p.brandId||'')===String(s.regBrandId||'')&&Number(p.size||0)===Number(s.regSize||0)&&normalize(p.sizeUnit)===normalize(s.regSizeUnit)&&normalize(p.stockUnit||p.unit)===normalize(s.regStockUnit));
+  };
+  suppliersForProduct=product=>(this.state.data?.SUPPLIERS||[]).filter(s=>s.status==='Active'&&!s.archivedAt&&(String(product?.supplierId)===String(s.id)||(s.products||[]).some(link=>String(link.productId)===String(product?.id))));
+  suppliersForCategory=category=>{
+    const normalize=value=>String(value||'').trim().toLocaleLowerCase(),products=this.state.productsLocal||this.state.data?.PRODUCTS||[];
+    if(!normalize(category))return [];
+    return (this.state.data?.SUPPLIERS||[]).filter(s=>s.status==='Active'&&!s.archivedAt&&(normalize(s.category)===normalize(category)||products.some(p=>normalize(p.category)===normalize(category)&&(String(p.supplierId)===String(s.id)||(s.products||[]).some(link=>String(link.productId)===String(p.id))))));
   };
   saveRegistration=()=>{
     if(this.registrationBusy)return;
@@ -1259,6 +1265,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
     const barcode=this.state.regEditing?(existing?.barcode||null):null;
     const nextId=Math.max(0,...catalog.map(p=>Number(p.id)||0))+1;
     const supplier=(data.SUPPLIERS||[]).find(s=>s.name===regSupplier);
+    if(!supplier||!this.suppliersForCategory(regCategory).some(s=>String(s.id)===String(supplier.id))){this.toast('Choose a supplier that provides products in this category.','error');return;}
     const product={id:nextId,name,category:regCategory,vatClass:"VAT-Exempt",price,cost,stock:qty,minStock:0,unit:regStockUnit||"Piece",status:regStatus||"Active",batch:regBatch||"",lot:regLot||"",expiry:regExpiry||"",barcode,supplierId:supplier?supplier.id:regSupplier,parentId:null,variantLabel:"",purchaseUnit,stockUnit:regStockUnit||"Piece",conversionFactor,barcodeStatus:"Scanned",archivedAt:null,archivedBy:null,unitPrice:Number(unitPrice)};
     this.registrationBusy=true;this.setState({registrationSaving:true,registrationError:"",registrationNotice:null});
     this.authPost("/api/products"+(this.state.regEditing?"/"+this.state.regEditing:""),{parentId:this.state.regParentId?Number(this.state.regParentId):null,variantLabel:this.state.regVariantLabel||'',reason:this.state.regEditReason||null,manufacturer:this.state.regManufacturer||null,description:this.state.regDescription||null,unitPrice:Number(unitPrice),brandId:this.state.regBrandId||null,subcategoryId:this.state.regSubcategoryId||null,size:this.state.regSize||null,sizeUnit:this.state.regSizeUnit||null,minStock:Number(this.state.regReorderLevel||0),name,category:regCategory,vatClass:"VAT-Exempt",price,cost,stock:qty,supplierId:supplier?supplier.id:null,purchaseUnit,stockUnit:regStockUnit,conversionFactor},this.state.regEditing?"PATCH":"POST").then(response=>{
@@ -1307,7 +1314,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
   };
   setRepDateMode=e=>this.setState({repDateMode:e.target.value});
   setRepField=field=>e=>this.setState({[field]:e.target.value});
-  openItemPicker=()=>this.setState({productPickerOpen:false,productPickerIndex:0,purchaseItemDraft:{},purchaseItemError:"",itemPickerOpen:true,itemPickerSearch:"",itemPickerFilterCategory:"",itemPickerSubcategoryId:"",itemPickerFilterSupplier:this.state.newReqCart.length?this.state.newReqSupplier||"":"",itemPickerChecked:{},itemPickerLowStockOnly:false});
+  openItemPicker=()=>this.setState({productPickerOpen:false,productPickerIndex:0,purchaseItemDraft:{},purchaseItemError:"",itemPickerOpen:true,purchaseSupplyCategory:"",itemPickerSearch:"",itemPickerFilterCategory:"",itemPickerSubcategoryId:"",itemPickerFilterSupplier:this.state.newReqCart.length?this.state.newReqSupplier||"":"",itemPickerChecked:{},itemPickerLowStockOnly:false});
   closeItemPicker=()=>this.setState({itemPickerOpen:false});
   setItemPickerSearch=e=>this.setState({itemPickerSearch:e.target.value});
   setItemPickerFilterCategory=e=>this.setState({itemPickerFilterCategory:e.target.value,itemPickerSubcategoryId:""});
@@ -1387,7 +1394,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
           !scannerConnected?React.createElement("div",{key:"w",style:{background:COLORS.redBg,color:COLORS.red,padding:"8px 12px",borderRadius:8,fontSize:12,fontWeight:600,marginBottom:10}},"⚠ Scanner disconnected — use manual entry below."):null,
           React.createElement("div",{key:"row",style:{display:"flex",gap:8}},[
             React.createElement("input",{key:"i",autoFocus:true,disabled:!!this.state.checkoutStockChecking||paymentState==="processing",value:barcodeInput,onChange:this.setBarcodeInput,onKeyDown:this.onBarcodeKey,placeholder:"Scan or type barcode, then Enter...",style:{flex:1,padding:"12px 14px",border:"1px solid "+COLORS.border,borderRadius:8,fontFamily:"'JetBrains Mono',monospace",fontSize:14}}),
-            React.createElement("button",{key:"add",onClick:()=>this.scanBarcode('button'),disabled:controlsBusy,style:{padding:"0 16px",background:COLORS.brand,color:"#fff",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer"}},this.state.barcodeCatalogLookup?"Finding...":this.state.stockSelectionPending?"Adding...":"Add"),
+            React.createElement("button",{key:"add",onClick:()=>this.scanBarcode('button'),disabled:controlsBusy,style:{padding:"0 16px",background:COLORS.brand,color:"#fff",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer"}},this.state.barcodeCatalogLookup?"Finding...":this.state.stockSelectionPending?"Adding...":"Add to Cart"),
           ]),
           React.createElement("button",{key:"ml",onClick:this.openManualLookup,disabled:controlsBusy,style:{marginTop:10,fontSize:12,fontWeight:700,color:COLORS.brand,background:"none",border:"none",cursor:"pointer"}},"Search Products"),
         ],{marginBottom:16}),
@@ -1547,7 +1554,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
     const field=(key,label,type="text")=>React.createElement("input",{key,type,placeholder:label,"aria-label":label,value:this.state[key]||"",onChange:e=>this.setState({[key]:e.target.value}),maxLength:type==="password"?4:255,...(type==="number"?{min:0,step:"0.01"}:{}),inputMode:type==="password"?"numeric":undefined,autoComplete:"off",style:{padding:10,marginBottom:10,width:"100%",boxSizing:"border-box"}});
     return React.createElement("div",null,[
       moduleTitle("Refunds, Exchanges & Voids"),
-      card([field("refundLookup","Transaction number"),btn("Look Up",this.doRefundLookup,"primary")],{marginBottom:16}),
+      card([field("refundLookup","Transaction number"),btn("Find Transaction",this.doRefundLookup,"primary")],{marginBottom:16}),
       refundError?React.createElement("p",{key:"error",role:"alert",style:{color:COLORS.red}},refundError):null,
       refundTxn?card([
         React.createElement("h3",{key:"transaction"},refundTxn.uuid+" ? "+peso(refundTxn.total)+" ? "+refundTxn.status),
@@ -1612,7 +1619,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
   };
   buildCashDrawerHistory(){
     const h=React.createElement,rows=this.state.cashShiftHistory||[];
-    return h('div',null,[moduleTitle('Cash Drawer Shifts'),btn('Refresh Shifts',this.loadCashShiftHistory,'primary'),rows.length?this.recordTable('drawer-history',['Shift','Cashier','Opened','Closed','Starting Cash','Expected Cash','Counted Cash','Difference','Report'],rows.map(x=>tr([td(x.id),td(x.cashier_name),td(x.opened_at),td(x.closed_at||'Open'),td(peso(x.opening_cash)),td(x.expected_cash===null?'Open':peso(x.expected_cash)),td(x.counted_cash===null?'Pending':peso(x.counted_cash)),td(x.counted_cash===null?'':peso(Number(x.counted_cash)-Number(x.expected_cash))),td(btn('Print',()=>window.open('/api/cashier-shifts/'+x.id+'/report','_blank','noopener')))],x.id))):h('p',null,'Select Refresh Shifts to view cashier shifts.')]);
+    return h('div',null,[moduleTitle('Cash Drawer Shifts'),btn('Refresh Shifts',this.loadCashShiftHistory,'primary'),rows.length?this.recordTable('drawer-history',['Shift','Cashier','Opened','Closed','Starting Cash','Expected Cash','Counted Cash','Difference','Report'],rows.map(x=>tr([td(x.id),td(x.cashier_name),td(x.opened_at),td(x.closed_at||'Open'),td(peso(x.opening_cash)),td(x.expected_cash===null?'Open':peso(x.expected_cash)),td(x.counted_cash===null?'Pending':peso(x.counted_cash)),td(x.counted_cash===null?'':peso(Number(x.counted_cash)-Number(x.expected_cash))),td(btn('Print Shift Summary',()=>window.open('/api/cashier-shifts/'+x.id+'/report','_blank','noopener')))],x.id))):h('p',null,'Select Refresh Shifts to view cashier shifts.')]);
   }
   buildShift(){
     const {data}=this.state;
@@ -1627,7 +1634,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
       moduleTitle("My Shift Transactions",`${me.name} ? Today, ${today||""}`),
       this.buildCashShift(),
       btn("View Past Shifts",this.loadCashShiftHistory),
-      (this.state.cashShiftHistory||[]).length?this.recordTable("cash-shift-history",["Shift","Cashier","Opened","Closed","Starting Cash","Expected","Counted","Report"],this.state.cashShiftHistory.map(x=>tr([td(x.id),td(x.cashier_name),td(x.opened_at),td(x.closed_at||"Open"),td(peso(x.opening_cash)),td(x.expected_cash===null?"Open":peso(x.expected_cash)),td(x.counted_cash===null?"Pending":peso(x.counted_cash)),td(btn("Print",()=>window.open("/api/cashier-shifts/"+x.id+"/report","_blank","noopener")))],x.id))):null,
+      (this.state.cashShiftHistory||[]).length?this.recordTable("cash-shift-history",["Shift","Cashier","Opened","Closed","Starting Cash","Expected","Counted","Report"],this.state.cashShiftHistory.map(x=>tr([td(x.id),td(x.cashier_name),td(x.opened_at),td(x.closed_at||"Open"),td(peso(x.opening_cash)),td(x.expected_cash===null?"Open":peso(x.expected_cash)),td(x.counted_cash===null?"Pending":peso(x.counted_cash)),td(btn("Print Shift Summary",()=>window.open("/api/cashier-shifts/"+x.id+"/report","_blank","noopener")))],x.id))):null,
       btn("Refresh transactions",()=>this.reloadCatalog().catch(()=>this.toast("Could not refresh shift transactions.","error"))),
       React.createElement("div",{style:{display:"flex",gap:14,marginTop:16,marginBottom:16}},[
         kpi("Transactions Today",transactions.length),kpi("Completed Sales",sales.length),kpi("Total Sales",peso(total),null,COLORS.green),
@@ -1900,7 +1907,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
   openPurchaseReview=(r,mode)=>this.setState({purchaseReviewError:'',purchaseRequestDetail:null,purchaseReviewRecord:r.id,purchaseReviewMode:mode,purchaseReviewId:mode==='edit'?r.id:null,purchaseReviewLines:mode==='edit'?r.lines.map(l=>({...l})):[]});
   purchaseRequestActions(r){
     const h=React.createElement;
-    return [btn('View',()=>this.setState({purchaseRequestDetail:r.id})),...(this.canReviewPurchase(r)?[['edit','Edit'],['approved','Approve'],['disapproved','Reject']].map(([mode,label])=>h('button',{type:'button',className:'kita-button',disabled:!!this.state.purchaseReviewSaving,onClick:()=>this.openPurchaseReview(r,mode)},label)):[])];
+    return [btn('View Purchase Request',()=>this.setState({purchaseRequestDetail:r.id})),...(this.canReviewPurchase(r)?[['edit','Edit Purchase Request'],['approved','Approve Purchase Request'],['disapproved','Reject Purchase Request']].map(([mode,label])=>h('button',{type:'button',className:'kita-button',disabled:!!this.state.purchaseReviewSaving,onClick:()=>this.openPurchaseReview(r,mode)},label)):[])];
   }
   purchaseReviewDetails(){
     const h=React.createElement,r=this.state.purchaseData?.requests.find(r=>r.id===this.state.purchaseReviewRecord);
@@ -2022,7 +2029,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
     const resolutions=(data.resolutions||[]).filter(r=>allocations.some(a=>a.id===r.carryoverId));
     const days=(a,r)=>{const source=orders.find(o=>o.id===a.sourcePo),start=source?.receipts?.map(x=>x.received_at||x.date).sort()[0];return start?Math.max(0,Math.floor((new Date(r.created_at)-new Date(start))/86400000)):null;};
     return h('section',{className:'supplier-performance'},[h('h3',null,'Supplier Performance'),h('div',{className:'supplier-performance-metrics'},[kpi('Ordered units',ordered),kpi('Accepted units',accepted),kpi('Fulfillment rate',ordered?(100*accepted/ordered).toFixed(1)+'%':'No orders'),kpi('Outstanding units',Math.max(0,ordered-accepted)),kpi('Initially missing (recorded)',missing),kpi('Damaged (recorded)',damaged)]),null,
-      h('h4',null,'Purchase orders'),this.recordTable('supplier-orders-'+supplierId,['Request Number','Request Date','Status','Actions'],orders.map(o=>tr([td(o.id),td(String(o.created||'').slice(0,10)),td(badge(o.status)),td(btn('View',()=>this.setState({purchaseOrderDetail:o.id})))],o.id))),this.purchaseOrderDetails(),this.purchaseReviewDetails(),
+      h('h4',null,'Purchase orders'),this.recordTable('supplier-orders-'+supplierId,['Request Number','Request Date','Status','Actions'],orders.map(o=>tr([td(o.id),td(String(o.created||'').slice(0,10)),td(badge(o.status)),td(btn('View Purchase Order',()=>this.setState({purchaseOrderDetail:o.id})))],o.id))),this.purchaseOrderDetails(),this.purchaseReviewDetails(),
       h('h4',null,'Shortage resolution history'),this.recordTable('supplier-resolutions-'+supplierId,['Original PO','Received under PO','Quantity','Received date','Days to resolve'],resolutions.map(r=>{const a=allocations.find(a=>a.id===r.carryoverId);return tr([td(a.sourcePo),td(a.targetPo),td(r.quantity),td(String(r.created_at).slice(0,10)),td(days(a,r)??'Not recorded')],r.id);})),
       h('h4',null,'Outstanding shortages'),this.recordTable('supplier-open-'+supplierId,['Original PO','Product','Outstanding','First receipt'],orders.flatMap(o=>o.receipts?.length?o.lines.filter(l=>this.receivingOutstanding(l)>0).map(l=>tr([td(o.id),td(l.name),td(this.receivingOutstanding(l)),td(o.receipts.map(r=>r.date).sort()[0])],l.id)):[])),
       h('h4',null,'Delivery and replacement history'),this.recordTable('supplier-deliveries-'+supplierId,['PO','Receipt','Received','Product','Accepted','Batch','Condition / replacement'],history.map(({o,r,l})=>tr([td(o.id),td(r.deliveryReference||r.id),td(r.date),td(l.name),td(l.deliveredQty),td(l.internalBatch||l.batchNumber||l.lotNumber||'Not recorded'),td([l.conditionText,l.followupNote].filter(Boolean).join(' · ')||'Not recorded')],l.id)))
@@ -2344,7 +2351,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
         field('purchaseSupplierFilter','Supplier',[['','All Suppliers'],...(this.state.data?.SUPPLIERS||[]).map(s=>[s.id,s.name])]),
         field('purchaseStatusFilter','Status',[['','All PO Status'],...['Pending Approval','Approved / Waiting for Delivery','Declined','Completed','Partially Received','Fully Received','Received with Discrepancy','Pending','Approved','Draft','Closed','Cancelled'].map(s=>[s,statusLabel(s)])]),field('purchaseFrom','PO Date From'),field('purchaseTo','PO Date To')]),
         h('div',{className:'po-filter-bottom'},[h('input',{type:'search','aria-label':'Search purchase records',placeholder:'Search purchase records...',value:this.state.tableViews['purchase-order-workspace']?.query||'',onChange:e=>this.setTableView('purchase-order-workspace',{query:e.target.value,page:1})}),h('div',{className:'po-filter-actions'},[btn('Clear Filters',()=>{this.setState({purchaseSupplierFilter:'',purchaseStatusFilter:'',purchaseFrom:'',purchaseTo:''});this.setTableView('purchase-order-workspace',{query:'',page:1});}),btn('Refresh',()=>this.reloadPurchasing())])])]),
-      this.recordTable('purchase-order-workspace',['Request Number','Request Date','Supplier','Items','Expected Delivery','Status','Actions'],orders.map(o=>tr([td(o.id),td(String(o.sourceRequest?.dateRequested||o.created||'').slice(0,10)),td(o.supplierName||this.purchaseSupplier(o.supplierId??o.lines[0]?.supplierId)),td(o.lines.length),td(o.expectedDeliveryDate||'Not scheduled'),td(badge(o.status)),td(h('div',{className:'po-row-actions'},[btn('View',()=>this.setState({purchaseOrderDetail:o.id})),o.posted?h('a',{className:'kita-button',href:'/purchase-orders/'+encodeURIComponent(o.id)+'/order',target:'_blank',rel:'noopener'},'Print Supplier PO'):null]))],o.id)),{externalSearch:true}),this.purchaseOrderDetails(),this.purchaseReviewDetails()]);
+      this.recordTable('purchase-order-workspace',['Request Number','Request Date','Supplier','Items','Expected Delivery','Status','Actions'],orders.map(o=>tr([td(o.id),td(String(o.sourceRequest?.dateRequested||o.created||'').slice(0,10)),td(o.supplierName||this.purchaseSupplier(o.supplierId??o.lines[0]?.supplierId)),td(o.lines.length),td(o.expectedDeliveryDate||'Not scheduled'),td(badge(o.status)),td(h('div',{className:'po-row-actions'},[btn('View Purchase Order',()=>this.setState({purchaseOrderDetail:o.id})),o.posted?h('a',{className:'kita-button',href:'/purchase-orders/'+encodeURIComponent(o.id)+'/order',target:'_blank',rel:'noopener'},'Print Supplier PO'):null]))],o.id)),{externalSearch:true}),this.purchaseOrderDetails(),this.purchaseReviewDetails()]);
   }
   loadSupplierAccounts=async()=>{
     this.setState({supplierAccountsLoading:true,supplierAccountsError:''});
@@ -2360,7 +2367,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
       h('div',{className:'purchase-filters'},[h('label',null,['Supplier',h('select',{value:s.accountSupplier||'',onChange:e=>this.setState({accountSupplier:e.target.value,supplierBalanceDetail:null})},[h('option',{value:''},'All suppliers'),...(s.data?.SUPPLIERS||[]).map(v=>h('option',{value:v.id},v.name))])]),btn('Refresh',this.loadSupplierAccounts),btn('Reports / Export',()=>this.setState({screen:'admReports',reportFilters:{type:'payables',supplierId:s.accountSupplier||''}}))]),
       s.supplierAccountsError?h('p',{role:'alert'},s.supplierAccountsError):null,
       h('div',{className:'inventory-summary'},[kpi('Supplier Balance',peso(rows.reduce((n,r)=>n+Number(r.balance||0),0))),kpi('Missing Item Value',peso(rows.reduce((n,r)=>n+(r.balance==null?0:Number(r.missingQty)*Number(r.unitCost)),0))),kpi('Damaged Item Value',peso(rows.reduce((n,r)=>n+(r.balance==null?0:Number(r.damagedQty)*Number(r.unitCost)),0))),kpi('Items Needing Review',rows.filter(r=>r.status==='Needs Review').length)]),
-      this.recordTable('supplier-balances',['Supplier','PO Number','Item','Missing Qty','Damaged Qty','Supplier Balance','Status','Actions'],rows.map(r=>tr([td(r.supplier),td(r.reportPo),td(r.name),td(r.missingQty??'Needs Review'),td(r.damagedQty??'Needs Review'),td(amount(r)),td(badge(r.status)),td(btn('View',()=>this.setState({supplierBalanceDetail:r.id})))],r.id))),
+      this.recordTable('supplier-balances',['Supplier','PO Number','Item','Missing Qty','Damaged Qty','Supplier Balance','Status','Actions'],rows.map(r=>tr([td(r.supplier),td(r.reportPo),td(r.name),td(r.missingQty??'Needs Review'),td(r.damagedQty??'Needs Review'),td(amount(r)),td(badge(r.status)),td(btn('View Supplier Balance',()=>this.setState({supplierBalanceDetail:r.id})))],r.id))),
       detail?h('dialog',{className:'purchase-details-dialog po-order-dialog','aria-labelledby':'supplier-balance-title',ref:node=>{if(node&&!node.open)node.showModal();},onCancel:e=>{e.preventDefault();this.setState({supplierBalanceDetail:null});}},[
         h('header',{className:'po-dialog-header'},[h('h2',{id:'supplier-balance-title'},detail.supplier+' / '+detail.reportPo),btn('Close',()=>this.setState({supplierBalanceDetail:null}))]),
         h('div',{className:'po-dialog-body'},[h('p',null,detail.name+' / '+amount(detail)),h('p',null,detail.remarks),this.recordTable('supplier-obligation-history',['Date and Time','Type','Accepted Qty','Damaged Qty','Remarks'],(detail.history||[]).map(e=>tr([td(e.created_at),td(e.type),td(e.accepted),td(e.damaged),td(e.reason||'')],e.id)))]),
@@ -2370,7 +2377,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
   buildPurchaseStatusList(declined=false){
     const h=React.createElement,state=this.purchasingState();if(state)return state;
     const records=this.filterPurchases(this.state.purchaseData.requests).filter(r=>declined?['Declined','Disapproved'].includes(r.status):!!r.poId);
-    return h('div',null,[moduleTitle(declined?'Rejected Purchase Requests':'Approved Purchase Requests'),this.purchaseFilters(),this.recordTable('purchase-status',['PO Number','Supplier','Received batches','Status','Reviewed By / Remarks','Actions'],records.map(r=>tr([td(r.poId||r.id),td(r.supplierName||this.purchaseSupplier(r.lines[0]?.supplierId)),td(this.purchaseBatchSummary(r.poId||r.id)),td(badge(r.status)),td(r.disapprovalReason||r.adminNote||r.approvedBy),td([btn('View',()=>this.setState({purchaseRequestDetail:r.id})),r.poId?this.purchaseReportLink(r.poId):null])],r.id))),this.purchaseRequestDetails()]);
+    return h('div',null,[moduleTitle(declined?'Rejected Purchase Requests':'Approved Purchase Requests'),this.purchaseFilters(),this.recordTable('purchase-status',['PO Number','Supplier','Received batches','Status','Reviewed By / Remarks','Actions'],records.map(r=>tr([td(r.poId||r.id),td(r.supplierName||this.purchaseSupplier(r.lines[0]?.supplierId)),td(this.purchaseBatchSummary(r.poId||r.id)),td(badge(r.status)),td(r.disapprovalReason||r.adminNote||r.approvedBy),td([btn('View Purchase Request',()=>this.setState({purchaseRequestDetail:r.id})),r.poId?this.purchaseReportLink(r.poId):null])],r.id))),this.purchaseRequestDetails()]);
   }
 
   buildMgrRequest(){ return this.buildPurchaseRequests(); }
@@ -2381,14 +2388,14 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
   buildItemPickerModal(){
     const h=React.createElement,s=this.state,d=s.purchaseItemDraft||{};
     const products=s.data.PRODUCTS.filter(p=>p.status==='Active'&&!p.archivedAt);
-    const eligible=p=>(s.data.SUPPLIERS||[]).filter(v=>v.status==='Active'&&!v.archivedAt&&(String(p?.supplierId)===String(v.id)||(v.products||[]).some(l=>String(l.productId)===String(p?.id))));
+    const eligible=this.suppliersForProduct;
     const product=products.find(p=>String(p.id)===String(d.productId));
-    const suppliers=(s.data.SUPPLIERS||[]).filter(v=>v.status==='Active'&&!v.archivedAt);
+    const suppliers=product?eligible(product):(s.data.SUPPLIERS||[]).filter(v=>v.status==='Active'&&!v.archivedAt&&(!s.purchaseSupplyCategory||this.suppliersForCategory(s.purchaseSupplyCategory).some(match=>String(match.id)===String(v.id))));
     const supplier=String(s.newReqCart.length?s.newReqSupplier:d.supplierId||'');
     const costFor=(p,id)=>s.data.SUPPLIERS.find(v=>String(v.id)===String(id))?.products?.find(l=>String(l.productId)===String(p.id))?.costPrice??p.unitPrice??0;
     const select=p=>{const choices=eligible(p),id=s.newReqCart.length?String(s.newReqSupplier):supplier&&choices.some(v=>String(v.id)===supplier)?supplier:choices.length===1?String(choices[0].id):'';
       this.setState({purchaseItemDraft:{productId:p.id,supplierId:id,qty:Math.max(1,Number(p.minStock||0)-this.sellableStock(p)),unitCost:costFor(p,id)},productPickerOpen:false,productPickerIndex:0,purchaseItemError:''});};
-    const filtered=products.filter(p=>!supplier||eligible(p).some(v=>String(v.id)===supplier));
+    const filtered=products.filter(p=>(!s.purchaseSupplyCategory||p.category===s.purchaseSupplyCategory)&&(!supplier||eligible(p).some(v=>String(v.id)===supplier)));
     const changeSupplier=id=>{const keep=product&&(!id||eligible(product).some(v=>String(v.id)===id));this.setState({purchaseItemDraft:keep?{...d,supplierId:id,unitCost:costFor(product,id)}:{supplierId:id},productPickerOpen:false,productPickerIndex:0,purchaseItemError:product&&!keep?'Item cleared. Select a product supplied by this supplier.':''});};
     const matching=filtered.filter(p=>searchMatches(this.productLabel(p)+' '+p.category+' '+(p.barcode||'')+' '+(p.sku||''),s.itemPickerSearch||'')).sort((a,b)=>this.purchaseProductRank(a)-this.purchaseProductRank(b)||this.productLabel(a).localeCompare(this.productLabel(b))||Number(a.id)-Number(b.id));
     const active=Math.min(s.productPickerIndex||0,Math.max(0,matching.length-1));
@@ -2416,6 +2423,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
     return h('dialog',{className:'po-item-dialog','aria-labelledby':'po-item-title',ref:n=>{if(n&&!n.open)n.showModal();},onCancel:e=>{e.preventDefault();this.closeItemPicker();}},[
       h('header',null,[h('div',null,[h('h2',{id:'po-item-title'},'Add Product to Purchase Order'),h('small',null,'Select a registered product and review its supplier, quantity, and purchase cost.')]),h('button',{type:'button',className:'po-close','aria-label':'Close',onClick:this.closeItemPicker},'\u00d7')]),
       h('div',{className:'po-item-fields'},[
+        field('Supply Category',h('select',{'aria-label':'Supply Category',value:s.purchaseSupplyCategory||'',onChange:e=>this.setState({purchaseSupplyCategory:e.target.value,purchaseItemDraft:s.newReqCart.length?{supplierId:s.newReqSupplier}:{},productPickerOpen:false,purchaseItemError:''})},[h('option',{value:''},'All supply categories'),...(s.data.CATEGORIES||[]).filter(c=>c.status==='Active').map(c=>h('option',{value:c.name,key:c.name},c.name))])),
         field('Search Products',h('input',{id:'po-product-search',type:'search',value:s.itemPickerSearch||'',placeholder:'Search by product, category, or barcode','aria-controls':'po-product-options',onBlur:e=>{if(e.relatedTarget?.id!=='po-product-combobox')this.setState({productPickerOpen:false});},onFocus:()=>this.setState({productPickerOpen:true}),onKeyDown:productKeys,onChange:e=>this.setState({itemPickerSearch:e.target.value,productPickerOpen:true,productPickerIndex:0})})),
         h('div',{className:'po-product-field'},[
           h('label',{id:'po-product-label',htmlFor:'po-product-combobox'},'Product'),
@@ -2540,7 +2548,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
       null,
       this.recordTable('inventory-balance',headers,list.map(p=>tr([
         td(h('input',{type:'checkbox','aria-label':'Select '+p.name,checked:!!s.invSelected?.[p.id],onChange:this.toggleInvSelect(p.id)})),td(p.id),td(h('button',{className:'inventory-item-link',onClick:()=>this.openInventoryView('movements',p.id)},this.productLabel(p))),td([p.size,p.sizeUnit].filter(Boolean).join(' ')||'—'),td(p.stockUnit||p.unit||'Not set'),td(p.stockOnHand??p.stock),td(p.reservedStock||0),td(this.sellableStock(p)),td(p.minStock||0),td(React.createElement('span',{className:this.inventoryCondition(p).toLowerCase()==='out of stock'?'stock-condition-out':''},badge(this.inventoryCondition(p)))),td(peso(p.inventoryValue||0)),td(p.category),td((d.BRANDS||[]).find(b=>String(b.id)===String(p.brandId))?.name||'—'),td(p.barcode||'—'),td(this.purchaseSupplier(p.supplierId)),td(p.expiredStock||0),td(p.recalledStock||0),td(p.unavailableStock||0),td((p.exclusionReasons||[]).join('; ')||'Available for sale'),td(peso(p.unitPrice)),td(peso(p.price)),
-        td(h('div',{className:'inventory-row-actions'},[btn('Batches',()=>this.openInventoryView('batches',p.id)),btn('Edit',()=>this.editProductMaster(p)),btn('Archive',()=>this.archiveAction('archive','products',[String(p.id)]),'danger'),p.needsReorder?btn('Request Stock',()=>this.draftInventoryRequest(p)):null]))
+        td(h('div',{className:'inventory-row-actions'},[btn('Batches',()=>this.openInventoryView('batches',p.id)),btn('Edit Product',()=>this.editProductMaster(p)),btn('Archive',()=>this.archiveAction('archive','products',[String(p.id)]),'danger'),p.needsReorder?btn('Request Stock',()=>this.draftInventoryRequest(p)):null]))
       ],p.id)),{columnPicker:true,defaultHidden:['Category','Brand','Barcode','Supplier','Expired Qty','Recalled Qty','Unavailable Qty','Availability Remarks','Purchase Cost','Selling Price']}),
       h('p',{className:'inventory-help'},s.stockCheckedAt?'Balances checked '+new Date(s.stockCheckedAt).toLocaleString()+'. Click Refresh balances to update.':'Click Refresh balances to load current stock.')
     ]);
@@ -2581,7 +2589,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
         this.recordTable("inventory-categories",["","Category","Classification","Item Count","Action"],list.map((c,i)=>tr([
           td(React.createElement("input",{type:"checkbox",checked:!!catSelected[c.name],onChange:this.toggleCatSelect(c.name)})),
           td(c.name,{fontWeight:600}),td(c.classification||"Not classified"),td(data.PRODUCTS.filter(p=>p.category===c.name).length),
-          td(React.createElement("button",{onClick:this.editCategory(c),style:{color:COLORS.brand,background:"none",border:"none",fontWeight:700,cursor:"pointer"}},"Edit"))],i))),
+          td(React.createElement("button",{onClick:this.editCategory(c),style:{color:COLORS.brand,background:"none",border:"none",fontWeight:700,cursor:"pointer"}},"Edit Category"))],i))),
       ]);
     } else {
       body=this.buildStockBalance();
@@ -2608,7 +2616,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
         React.createElement("div",{key:"s",style:{fontSize:12,color:COLORS.textSoft,marginBottom:12}},p.name),
         React.createElement("input",{key:"v",type:"number",value:priceEditValue,onChange:this.setPriceEditValue,style:{width:"100%",padding:9,border:"1px solid "+COLORS.border,borderRadius:8,marginBottom:8}}),
         React.createElement("textarea",{key:"r",value:priceEditReason,onChange:this.setPriceEditReason,placeholder:"Reason for change (required)",style:{width:"100%",padding:9,border:"1px solid "+COLORS.border,borderRadius:8,marginBottom:12,minHeight:50}}),
-        React.createElement("div",{key:"a",style:{display:"flex",gap:8}},[React.createElement("button",{key:"c",onClick:this.closePriceEdit,style:{flex:1,padding:10,background:"#f7f9fc",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer"}},"Cancel"),React.createElement("button",{key:"s",onClick:this.savePriceEdit,style:{flex:1,padding:10,background:COLORS.brand,color:"#fff",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer"}},"Save")]),
+        React.createElement("div",{key:"a",style:{display:"flex",gap:8}},[React.createElement("button",{key:"c",onClick:this.closePriceEdit,style:{flex:1,padding:10,background:"#f7f9fc",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer"}},"Cancel"),React.createElement("button",{key:"s",onClick:this.savePriceEdit,style:{flex:1,padding:10,background:COLORS.brand,color:"#fff",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer"}},"Save Changes")]),
       ]));
   }
   buildAddDamageModal(){
@@ -2660,7 +2668,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
         exceeds?React.createElement("div",{key:"err",style:{fontSize:12,color:COLORS.red,background:COLORS.redBg,padding:"8px 10px",borderRadius:8,fontWeight:600,marginBottom:16}},`Cannot exceed current stock (${selected.stock}) — negative inventory is blocked.`):React.createElement("div",{key:"sp",style:{marginBottom:16}}),
         React.createElement("div",{key:"a",style:{display:"flex",gap:10}},[
           React.createElement("button",{key:"c",onClick:this.closeAddDamage,style:{flex:1,padding:12,background:"#f7f9fc",border:"none",borderRadius:9,fontWeight:700,cursor:"pointer",fontSize:14}},"Cancel"),
-          React.createElement("button",{key:"s",onClick:this.confirmAddDamage,disabled:!selected||exceeds,style:{flex:1,padding:12,background:(!selected||exceeds)?"#f3c9c9":COLORS.red,color:"#fff",border:"none",borderRadius:9,fontWeight:800,cursor:(!selected||exceeds)?"not-allowed":"pointer",fontSize:14}},"Confirm"),
+          React.createElement("button",{key:"s",onClick:this.confirmAddDamage,disabled:!selected||exceeds,style:{flex:1,padding:12,background:(!selected||exceeds)?"#f3c9c9":COLORS.red,color:"#fff",border:"none",borderRadius:9,fontWeight:800,cursor:(!selected||exceeds)?"not-allowed":"pointer",fontSize:14}},"Record Damaged Stock"),
         ]),
       ]));
   }
@@ -2678,7 +2686,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
         td(c.name),td(c.classification||"Not classified"),
         td((this.state.productsLocal||[]).filter(p=>p.category===c.name).length),
         td(badge(c.status)),
-        td([btn("Edit",this.editCategory(c)),btn(c.status==="Active"?"Deactivate":"Activate",()=>this.authPost("/api/categories/"+encodeURIComponent(c.name),{status:c.status==="Active"?"Inactive":"Active"},"PATCH").then(()=>this.reloadCatalog()).catch(e=>this.toast(e.message,"error")))]),
+        td([btn("Edit Category",this.editCategory(c)),btn(c.status==="Active"?"Deactivate":"Activate",()=>this.authPost("/api/categories/"+encodeURIComponent(c.name),{status:c.status==="Active"?"Inactive":"Active"},"PATCH").then(()=>this.reloadCatalog()).catch(e=>this.toast(e.message,"error")))]),
       ],c.name))),
       this.buildMasterLists(),
       this.state.categoryModalOpen?this.buildCategoryModal():null,
@@ -2718,7 +2726,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
     const h=React.createElement,f=this.state.masterForm,data=this.state.data;
     return h('section',null,[...['brands','subcategories'].map(kind=>card([
       sectionTitle(kind==='brands'?'Brands':'Subcategories'),
-      this.recordTable(kind,['Name','Main Category',...(kind==='brands'?['Subcategory']:[]),'Status','Actions'],(data[kind.toUpperCase()]||[]).map(r=>tr([td(r.name),td(r.category||'Not assigned'),...(kind==='brands'?[td((data.SUBCATEGORIES||[]).find(c=>String(c.id)===String(r.subcategoryId))?.name||'None')]:[]),td(badge(r.status)),td([btn('Edit',()=>this.setState({masterForm:{...r,kind}})),btn(r.status==='Active'?'Deactivate':'Activate',async()=>{try{await this.authPost('/api/product-master/'+kind+'/'+r.id,{...r,status:r.status==='Active'?'Inactive':'Active'},'PATCH');await this.reloadCatalog();}catch(e){this.toast(e.message,'error');}})])],r.id)))
+      this.recordTable(kind,['Name','Main Category',...(kind==='brands'?['Subcategory']:[]),'Status','Actions'],(data[kind.toUpperCase()]||[]).map(r=>tr([td(r.name),td(r.category||'Not assigned'),...(kind==='brands'?[td((data.SUBCATEGORIES||[]).find(c=>String(c.id)===String(r.subcategoryId))?.name||'None')]:[]),td(badge(r.status)),td([btn(kind==='brands'?'Edit Brand':'Edit Subcategory',()=>this.setState({masterForm:{...r,kind}})),btn(r.status==='Active'?'Deactivate':'Activate',async()=>{try{await this.authPost('/api/product-master/'+kind+'/'+r.id,{...r,status:r.status==='Active'?'Inactive':'Active'},'PATCH');await this.reloadCatalog();}catch(e){this.toast(e.message,'error');}})])],r.id)))
     ])),f?this.buildMasterModal():null]);
   }
   closeMasterModal=()=>{if(!this.masterBusy)this.setState({masterForm:null});};
@@ -2789,7 +2797,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
     const {schema,rows}=this.inventoryExportData(kind),esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     const title={products:'Stock Balance',batches:'Batch Records',movements:'Inventory Ledger'}[kind];
     const note=kind==='movements'?'Balances are unreserved book quantities. Payment reservations and releases change this balance without a physical receipt or issue.':'Current quantities and values reflect the latest loaded balances. Receipt-date filters do not reconstruct historical stock.';
-    report.document.write('<!doctype html><html><head><title>KITA '+esc(title)+'</title><style>@page{size:landscape;margin:10mm}body{font:11px Arial;color:#172033}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccd4df;padding:5px;text-align:left;overflow-wrap:anywhere}thead{display:table-header-group}th{background:#eef3fa}h1{font-size:20px}@media print{button{display:none}}</style></head><body><button onclick="window.print()">Print</button><h1>KITA — '+esc(title)+'</h1><p>Checked '+esc(this.state.inventoryHistory.checkedAt)+' · '+rows.length+' records</p><p>'+esc(note)+'</p><p>Applied filters: '+esc(Object.entries(this.state.inventoryLoadedFilters||{}).filter(([,v])=>v).map(([key,value])=>(({from:'From',to:'To',productId:'Item Code',supplierId:'Supplier ID',brandId:'Brand ID',category:'Category',subcategoryId:'Item Group ID',lowStock:'Reorder items',movementType:'Transaction Type'})[key]||key)+': '+value).join('; ')||'All records')+'</p><table><thead><tr>'+schema.map(([label])=>'<th>'+esc(label)+'</th>').join('')+'</tr></thead><tbody>'+rows.map(row=>'<tr>'+schema.map(([,key])=>'<td>'+esc(row[key])+'</td>').join('')+'</tr>').join('')+'</tbody></table></body></html>');report.document.close();report.opener=null;
+    report.document.write('<!doctype html><html><head><title>KITA '+esc(title)+'</title><style>@page{size:landscape;margin:10mm}body{font:11px Arial;color:#172033}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccd4df;padding:5px;text-align:left;overflow-wrap:anywhere}thead{display:table-header-group}th{background:#eef3fa}h1{font-size:20px}@media print{button{display:none}}</style></head><body><button onclick="window.print()">Print Inventory Report</button><h1>KITA — '+esc(title)+'</h1><p>Prepared by: '+esc(this.state.authenticatedUser?.name||'Not recorded')+'</p><p>Checked '+esc(this.state.inventoryHistory.checkedAt)+' · '+rows.length+' records</p><p>'+esc(note)+'</p><p>Applied filters: '+esc(Object.entries(this.state.inventoryLoadedFilters||{}).filter(([,v])=>v).map(([key,value])=>(({from:'From',to:'To',productId:'Item Code',supplierId:'Supplier ID',brandId:'Brand ID',category:'Category',subcategoryId:'Item Group ID',lowStock:'Reorder items',movementType:'Transaction Type'})[key]||key)+': '+value).join('; ')||'All records')+'</p><table><thead><tr>'+schema.map(([label])=>'<th>'+esc(label)+'</th>').join('')+'</tr></thead><tbody>'+rows.map(row=>'<tr>'+schema.map(([,key])=>'<td>'+esc(row[key])+'</td>').join('')+'</tr>').join('')+'</tbody></table></body></html>');report.document.close();report.opener=null;
   };
   buildInventoryHistory(embedded=false){
     const h=React.createElement,d=this.state.data,f=this.state.inventoryFilters||{},history=this.state.inventoryHistory,kind=this.state.inventoryView||'products';
@@ -2799,7 +2807,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
     return h('div',{className:'inventory-workspace'},[sectionTitle(titles[kind]),
       !embedded?h('div',{className:'inventory-view-tabs'},[ ...Object.entries(titles).filter(([view])=>view===kind).map(([view,label])=>h('button',{type:'button',className:'kita-button','aria-pressed':kind===view,onClick:()=>{const filters={...f};delete filters.from;delete filters.to;delete filters.lowStock;delete filters.movementType;this.setState({inventoryView:view,inventoryFilters:filters,inventoryAppliedFilters:filters});this.loadInventoryHistory(filters);}},label))]):null,
       h('div',{className:'purchase-filters'},[field('category','Category',d.CATEGORIES.map(c=>[c.name,c.name])),this.buildSubcategorySelect(f.category,f.subcategoryId,e=>this.setInventoryHistoryFilter('subcategoryId',e.target.value),{includeInactive:true}),field('brandId','Brand',(d.BRANDS||[]).map(c=>[c.id,c.name])),field('productId','Item',d.PRODUCTS.filter(p=>(!f.category||p.category===f.category)&&(!f.subcategoryId||String(p.subcategoryId)===String(f.subcategoryId))&&(!f.brandId||String(p.brandId)===String(f.brandId))&&(kind==='batches'||!f.supplierId||String(p.supplierId)===String(f.supplierId))).map(c=>[c.id,c.name+' #'+c.id])),field('supplierId',kind==='batches'?'Receipt supplier':'Default item supplier',d.SUPPLIERS.map(c=>[c.id,c.name])),...(kind==='products'?[field('lowStock','Stock filter',[['1','Reorder level reached']])]:[field('from',kind==='movements'?'Posted from':'Receipt date from'),field('to',kind==='movements'?'Posted to':'Receipt date to')]),kind==='movements'?field('movementType','Transaction type',Object.entries(history?.movementTypes||{})):null]),
-      h('div',{className:'inventory-view-tabs'},[h('button',{className:'kita-button',disabled:busy,onClick:this.applyInventoryFilters},busy?'Refreshing...':'Refresh'),btn('Clear filters',()=>{this.setState({inventoryFilters:{},inventoryAppliedFilters:{}});this.loadInventoryHistory({});}),h('button',{className:'kita-button',disabled:blocked,onClick:this.exportInventoryHistory(kind)},'Download CSV'),h('button',{className:'kita-button',disabled:blocked,onClick:this.printInventoryHistory(kind)},'Print')]),
+      h('div',{className:'inventory-view-tabs'},[h('button',{className:'kita-button',disabled:busy,onClick:this.applyInventoryFilters},busy?'Refreshing...':'Refresh'),btn('Clear filters',()=>{this.setState({inventoryFilters:{},inventoryAppliedFilters:{}});this.loadInventoryHistory({});}),h('button',{className:'kita-button',disabled:blocked,onClick:this.exportInventoryHistory(kind)},'Download CSV'),h('button',{className:'kita-button',disabled:blocked,onClick:this.printInventoryHistory(kind)},'Print Inventory Report')]),
       null,
       kind==='movements'&&history?h('p',{className:'inventory-help'},'Showing '+history.movements.length+' of '+history.movementCount+' matching entries'+(history.movementCount>history.movementLimit?'. Limited to the latest '+history.movementLimit+'; narrow the date or item filters.':'.')):null,
       this.state.inventoryHistoryError?h('p',{role:'alert'},'Could not refresh inventory: '+this.state.inventoryHistoryError):null,
@@ -2839,13 +2847,18 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
   buildMgrRegistration(){
     const h=React.createElement,s=this.state,data=s.data;
     const products=s.productsLocal||data.PRODUCTS;
-    const units=[...new Set(["Piece","Pair","Set","Dozen","Pack","Packet","Pouch","Bag","Box","Case","Carton","Sack","Tray","Bottle","Can","Jar","Tub","Cup","Tube","Roll","Sheet","Bundle","Bunch","Bar","Stick","Sachet","Strip","Blister pack","Tablet","Capsule","Vial","Ampoule","Drum","Bucket","Pail","Crate","Pallet","Kg","g","Liter","mL","m",s.regStockUnit].filter(Boolean))];
+    const units=[...new Set(["Piece","Pair","Set","Dozen","Pack","Packet","Pouch","Bag","Box","Case","Carton","Sack","Tray","Bottle","Can","Jar","Tub","Cup","Tube","Roll","Sheet","Bundle","Bunch","Bar","Stick","Sachet","Strip","Blister pack","Tablet","Capsule","Vial","Ampoule","Drum","Bucket","Pail","Crate","Pallet","Kg","g","Liter","mL","m",...products.map(p=>p.stockUnit||p.unit),s.regStockUnit].filter(Boolean))];
+    const standardMeasurements=Object.values(PRODUCT_MEASUREMENT_UNITS).flatMap(group=>Object.keys(group));
+    const customMeasurements=[...new Set([...products.map(p=>p.sizeUnit),s.regSizeUnit].filter(unit=>unit&&!standardMeasurements.includes(unit)))];
     const measurement=h('div',{className:'field-group'},[
       h('label',{htmlFor:'registration-regSizeUnit'},['Measurement Unit',h('span',{className:'required-marker','aria-hidden':true},' *')]),
       h('select',{id:'registration-regSizeUnit',required:true,'aria-required':true,value:s.regSizeUnit||'',onChange:this.setRegField('regSizeUnit')},[
         h('option',{value:''},'Select measurement unit'),
         ...Object.entries(PRODUCT_MEASUREMENT_UNITS).map(([group,values])=>h('optgroup',{key:group,label:group},Object.entries(values).map(([value,label])=>h('option',{key:value,value},label)))),
+        ...customMeasurements.map(value=>h('option',{key:value,value},value)),
       ]),
+      h('label',null,['New measurement unit',h('input',{'aria-label':'New measurement unit',maxLength:20,value:s.regNewMeasurementUnit||'',placeholder:'Enter a measurement unit',onChange:e=>this.setState({regNewMeasurementUnit:e.target.value})})]),
+      btn('Use New Measurement Unit',()=>{const unit=String(this.state.regNewMeasurementUnit||'').trim();if(unit&&unit.length<=20)this.setState({regSizeUnit:unit,regNewMeasurementUnit:'',regSaved:false});else this.toast('Enter a measurement unit up to 20 characters.','error');}),
     ]);
     const field=(key,label,options={})=>{
       options={...options,required:options.required??!options.readOnly};
@@ -2866,7 +2879,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
     return h("div",{className:"registration-page"},[
       s.regEditing?sectionTitle("Edit Product"):moduleTitle("Product Registration"),
       s.registrationFromPurchase?btn('Continue Purchase Order',this.continuePurchaseRegistration):null,
-      h("div",{key:"actions",className:"page-toolbar"},[btn("New Product",()=>this.setState({regEditing:null,regParentId:"",regVariantLabel:"",registrationNotice:null,registrationError:"",regStockId:"",regProductName:"",regDescription:"",regManufacturer:"",regScannedBarcode:"",regSaved:false,regBatch:"",regLot:"",regExpiry:"",regUnitPrice:"",regRetailPrice:"",regCategory:"",regSupplier:"",regReorderLevel:0,regPurchaseUnit:"Piece",regStockUnit:"Piece",regNewStockUnit:"",regConversionFactor:"1",regStatus:"Active",regBrandId:"",regSubcategoryId:"",regSize:"",regSizeUnit:"",regEditReason:""}))]),
+      h("div",{key:"actions",className:"page-toolbar"},[btn("New Product",()=>this.setState({regEditing:null,regParentId:"",regVariantLabel:"",registrationNotice:null,registrationError:"",regStockId:"",regProductName:"",regDescription:"",regManufacturer:"",regScannedBarcode:"",regSaved:false,regBatch:"",regLot:"",regExpiry:"",regUnitPrice:"",regRetailPrice:"",regCategory:"",regSupplier:"",regReorderLevel:0,regPurchaseUnit:"Piece",regStockUnit:"Piece",regNewStockUnit:"",regNewMeasurementUnit:"",regConversionFactor:"1",regStatus:"Active",regBrandId:"",regSubcategoryId:"",regSize:"",regSizeUnit:"",regEditReason:""}))]),
       h('div',{id:'registration-feedback',className:'registration-feedback'},[s.registrationNotice?h('p',{role:s.registrationNotice.tone==='error'?'alert':'status',className:'registration-notice registration-notice--'+s.registrationNotice.tone},s.registrationNotice.message):null,
       s.regSaved?h("div",{key:"print",className:"kita-card registration-receipt"},[
         h("h2",{className:"panel-title"},"Registration complete"),h("p",null,`Item Code: ${s.regSku} | Barcode assigned after receiving | Available stock: ${s.regRegisteredQty}`),
@@ -2883,7 +2896,8 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
         h("label",{className:"field-group"},["Brand *",h("select",{required:true,"aria-required":true,value:s.regBrandId||"",onChange:this.setRegField("regBrandId")},[h("option",{value:""},"Select brand"),...(data.BRANDS||[]).filter(b=>b.status==="Active").map(b=>h("option",{value:b.id,key:b.id},b.name))])]),
         this.buildSubcategorySelect(s.regCategory,s.regSubcategoryId,this.setRegField("regSubcategoryId"),{registration:true}),
         h('div',{className:'registration-size'},[h('div',{className:'registration-size-fields'},[field("regSize","Size",{type:"number",step:"0.001",placeholder:'e.g. 500'}),measurement]),null]),
-        select("regSupplier","Supplier",data.SUPPLIERS.filter(sp=>sp.status==="Active").map(sp=>sp.name)),
+        select("regSupplier","Supplier",this.suppliersForCategory(s.regCategory).map(sp=>sp.name)),
+        s.regCategory&&!this.suppliersForCategory(s.regCategory).length?h('p',{role:'status'},'No suppliers match this category. In Suppliers, assign a Supply Category or link the products they supply.'):null,
       ]),
       group("02","Stock settings","Stock Unit is one inventory unit, such as Bottle, Pack, or Piece. Quantities are whole units; use Size and Measurement Unit for the contents (for example, 500 mL per Bottle). New products start with zero stock.",[
         h('div',{className:'field-group'},[select("regStockUnit","Stock Unit",units,true),field('regNewStockUnit','Add a new unit of measure',{required:false,placeholder:'e.g. Ream'}),btn('Use New Unit',()=>{const unit=String(this.state.regNewStockUnit||'').trim();if(unit&&unit.length<=40)this.setState({regStockUnit:unit,regNewStockUnit:''});else this.toast('Enter a unit of measure up to 40 characters.','error');})]),
@@ -2896,7 +2910,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
       ]):null,
       s.regEditing?field("regEditReason","Reason for changes"):null,
       h("div",{key:"save",className:"form-actions"},[
-        h("span",{className:"form-action-note"},"All editable fields are required. Enter 0 for Minimum Stock if no low-stock threshold is needed."),
+        h("span",{className:"form-action-note"},"Fields marked * are required. New units are saved with the product and can be reused."),
         h("button",{type:"button",className:"primary-button",disabled:!!s.registrationSaving,"aria-busy":!!s.registrationSaving,onClick:this.saveRegistration},s.registrationSaving?"Saving product...":s.regSaved?"Product registered":"Save product registration"),
       ]),
       s.categoryModalOpen?this.buildCategoryModal():null,
@@ -2949,7 +2963,8 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
       React.createElement("div",{style:{width:460,maxWidth:"92vw",background:"#fff",borderRadius:14,padding:20}},[
         React.createElement("div",{key:"t",style:{fontWeight:800,marginBottom:12}},supMgrForm.id==null?"Add Supplier":"Edit Supplier"),
         React.createElement("div",{key:"grid",style:{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:10,marginBottom:12}},[
-          f("Supplier Name","name"),f("Contact Person","contact"),f("Contact Number","phone"),f("Email (optional)","email"),f("Supply Category","category"),
+          f("Supplier Name","name"),f("Contact Person","contact"),f("Contact Number","phone"),f("Email (optional)","email"),
+          React.createElement('label',null,['Supply Category',React.createElement('select',{'aria-label':'Supplier supply category',value:supMgrForm.category||'',onChange:this.setSupMgrFormField('category')},[React.createElement('option',{value:''},'Select supply category'),...[...new Set([...(this.state.data?.CATEGORIES||[]).filter(c=>c.status==='Active').map(c=>c.name),supMgrForm.category].filter(Boolean))].map(name=>React.createElement('option',{key:name,value:name},name))])]),
 
           React.createElement("div",{key:"st"},[React.createElement("label",{style:{fontSize:12,fontWeight:700,color:COLORS.textSoft}},"Status"),
             React.createElement("select",{value:supMgrForm.status,onChange:this.setSupMgrFormField("status"),style:{width:"100%",padding:8,border:"1px solid "+COLORS.border,borderRadius:7,marginTop:4}},["Active","Inactive"].map(o=>React.createElement("option",{key:o},o)))]),
@@ -2997,7 +3012,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
         card([
           React.createElement("div",{key:"h",style:{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}},[
             React.createElement("div",null,[React.createElement("div",{style:{fontWeight:800,fontSize:18}},sp.name),React.createElement("div",{style:{fontSize:12,color:COLORS.textSoft,marginTop:2}},sp.category)]),
-            React.createElement("div",{style:{display:"flex",gap:8}},[badge(sp.status),btn("Edit",this.openSupMgrModal(sp))]),
+            React.createElement("div",{style:{display:"flex",gap:8}},[badge(sp.status),btn("Edit Supplier",this.openSupMgrModal(sp))]),
           ]),
           React.createElement("div",{key:"grid",style:{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:12,fontSize:13}},[
             ["Contact",sp.contact],["Phone",sp.phone],["Email",sp.email||"—"],["Address",sp.address],["Notes",sp.notes||"—"],
@@ -3021,7 +3036,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
       this.recordTable("suppliers",["","Supplier Name","Contact Person","Contact Number","Category","Status","Product Count","Actions"],list.map(sp=>tr([
         td(React.createElement("input",{type:"checkbox",checked:!!supMgrSelected[sp.id],onChange:this.toggleSupMgrSelect(sp.id)})),
         td(sp.name,{fontWeight:600}),td(sp.contact),td(sp.phone),td(sp.category),td(badge(sp.status)),td(sp.products.length),
-        td(React.createElement("div",{className:"row-action-buttons"},[btn("View",this.openSupMgrDetail(sp.id)),btn("Edit",this.openSupMgrModal(sp)),btn("Archive",()=>this.archiveAction("archive","suppliers",[String(sp.id)]),"danger")]))],sp.id))),
+        td(React.createElement("div",{className:"row-action-buttons"},[btn("View Supplier",this.openSupMgrDetail(sp.id)),btn("Edit Supplier",this.openSupMgrModal(sp)),btn("Archive",()=>this.archiveAction("archive","suppliers",[String(sp.id)]),"danger")]))],sp.id))),
       supMgrModalOpen?this.buildMgrSupplierModal():null,
     ]);
   }
@@ -3212,7 +3227,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
       ]);
     }
     return React.createElement("div",null,[moduleTitle("Suppliers"),
-      this.recordTable("supplier-records",["Supplier","Category","Status","Actions"],data.SUPPLIERS.filter(s=>s.status==="Active"&&!s.archivedAt).map(s=>tr([td(s.name,{fontWeight:600}),td(s.category),td(badge(s.status)),td(React.createElement("div",{className:"row-action-buttons"},[btn("View",this.openSupplierDetail(s.id)),btn("Archive",()=>this.archiveAction("archive","suppliers",[String(s.id)]),"danger")]))],s.id)))]);
+      this.recordTable("supplier-records",["Supplier","Category","Status","Actions"],data.SUPPLIERS.filter(s=>s.status==="Active"&&!s.archivedAt).map(s=>tr([td(s.name,{fontWeight:600}),td(s.category),td(badge(s.status)),td(React.createElement("div",{className:"row-action-buttons"},[btn("View Supplier",this.openSupplierDetail(s.id)),btn("Archive",()=>this.archiveAction("archive","suppliers",[String(s.id)]),"danger")]))],s.id)))]);
   }
   scheduleReport=()=>{
     clearTimeout(this.reportFilterTimer);this.reportRequestId=(this.reportRequestId||0)+1;this.reportController?.abort();
@@ -3297,7 +3312,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
       h('div',{className:'report-summary'},Object.entries(section.summary||{}).map(([label,value])=>h('div',{key:label,className:'report-metric'},[h('span',null,label),h('strong',null,value)]))),
       this.recordTable('general-'+section.type,[...Object.keys(section.columns),...(['purchase_orders','supplier_book','payables'].includes(section.type)?['Actions']:[])],section.rows.map((row,i)=>tr([
         ...Object.values(section.columns).map(key=>td(row[key]==null?'-':(section.moneyKeys||[]).includes(key)?Number(row[key]).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}):row[key],(section.numericKeys||[]).includes(key)?{textAlign:'right'}:{})),
-        ...(['purchase_orders','supplier_book','payables'].includes(section.type)?[td(btn('View',()=>this.setState(section.type==='purchase_orders'?{reportReceiptDetail:row}:{supplierRecordDetail:row})))]:[])
+        ...(['purchase_orders','supplier_book','payables'].includes(section.type)?[td(btn('View Record Details',()=>this.setState(section.type==='purchase_orders'?{reportReceiptDetail:row}:{supplierRecordDetail:row})))]:[])
       ],i)),{emptyMessage:'No records for the selected filters.'}),h('p',{className:'report-filter-hint'},section.note)
     ]));
   }
@@ -3406,12 +3421,12 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
       h('p',{role:'status','aria-live':'polite',className:'report-filter-hint'},s.reportLoading?'Updating results below...':s.reportError?'Results could not be updated.':pendingFilters?'Updating filtered results...':loaded?(resultType==='general'?(r.sections||[]).reduce((n,part)=>n+part.rows.length,0):r.rows.length)+(resultType==='expiry'?' tracked batch items':' matching records'):'Click Refresh to load your report.'),
       s.reportError?h('div',{role:'alert'},[s.reportError,btn('Retry',this.generateReport)]):null,
       h('section',{key:'report-results',className:'report-results','aria-label':'Report results','aria-busy':!!s.reportLoading},[
-        h('div',{className:'report-results-header'},[h('h2',null,r.title),loaded?h('div',{className:'action-group'},[h('a',{className:'kita-button',...exportProps('pdf'),download:true},'Download PDF'),h('a',{className:'kita-button',...exportProps('xlsx'),download:true},'Download Excel'),h('a',{className:'kita-button',...exportProps('csv'),download:true},'Download CSV'),h('a',{className:'kita-button',...exportProps('print'),target:'_blank',rel:'noopener'},'Print')]):null]),
+        h('div',{className:'report-results-header'},[h('h2',null,r.title),loaded?h('div',{className:'action-group'},[h('a',{className:'kita-button',...exportProps('pdf'),download:true},'Download PDF'),h('a',{className:'kita-button',...exportProps('xlsx'),download:true},'Download Excel'),h('a',{className:'kita-button',...exportProps('csv'),download:true},'Download CSV'),h('a',{className:'kita-button',...exportProps('print'),target:'_blank',rel:'noopener'},'Print Report')]):null]),
         loaded?h('p',{className:'report-filter-hint'},(s.reportLoading||s.reportError||pendingFilters?'Showing the last successfully loaded results. ':'')+'Generated: '+r.generated):null,
         h('p',{className:'report-filter-hint'},Object.entries(r.labels||{}).map(([key,value])=>key+': '+value).join(' | ')),
         h('div',{className:'report-summary'},Object.entries(r.summary||{}).map(([label,value])=>h('div',{key:label,className:'report-metric'},[h('span',null,label),h('strong',null,value)]))),
         loaded&&(s.reportAppliedFilters?.type||f.type)==='sales'?this.buildReportCharts(r.rows):null,
-        resultType==='general'?this.generalReportSections(r.sections||[]):this.recordTable('generated-report',[...Object.keys(displayColumns),...(['purchase_orders','supplier_book','payables'].includes(resultType)?['Actions']:[])],r.rows.map((row,i)=>tr([...Object.values(displayColumns).map(key=>td(row[key]==null?'-':supplierReport&&key==='remarks'?h('span',{className:'supplier-record-remarks',title:row[key]},row[key]):['reportPo','poId'].includes(key)?(['purchase_orders','supplier_book','payables'].includes(resultType)?row[key]:this.purchaseReportLink(row[key])):key==='status'?(resultType==='expiry'?h('span',{className:'expiry-status expiry-status--'+String(row[key]).toLowerCase()},row[key]):badge(row[key])):(r.moneyKeys||[]).includes(key)?Number(row[key]).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}):row[key],{...((r.numericKeys||[]).includes(key)?{textAlign:'right',fontVariantNumeric:'tabular-nums'}:{}),...(supplierReport&&['reportPo','receiptId','date'].includes(key)?{whiteSpace:'nowrap'}:{})})),...(['purchase_orders','supplier_book','payables'].includes(resultType)?[td(btn('View',()=>this.setState(supplierReport?{supplierRecordDetail:row}:{reportReceiptDetail:row})),{textAlign:'center'})]:[])],i)),{emptyMessage,externalSearch:true}),
+        resultType==='general'?this.generalReportSections(r.sections||[]):this.recordTable('generated-report',[...Object.keys(displayColumns),...(['purchase_orders','supplier_book','payables'].includes(resultType)?['Actions']:[])],r.rows.map((row,i)=>tr([...Object.values(displayColumns).map(key=>td(row[key]==null?'-':supplierReport&&key==='remarks'?h('span',{className:'supplier-record-remarks',title:row[key]},row[key]):['reportPo','poId'].includes(key)?(['purchase_orders','supplier_book','payables'].includes(resultType)?row[key]:this.purchaseReportLink(row[key])):key==='status'?(resultType==='expiry'?h('span',{className:'expiry-status expiry-status--'+String(row[key]).toLowerCase()},row[key]):badge(row[key])):(r.moneyKeys||[]).includes(key)?Number(row[key]).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}):row[key],{...((r.numericKeys||[]).includes(key)?{textAlign:'right',fontVariantNumeric:'tabular-nums'}:{}),...(supplierReport&&['reportPo','receiptId','date'].includes(key)?{whiteSpace:'nowrap'}:{})})),...(['purchase_orders','supplier_book','payables'].includes(resultType)?[td(btn('View Record Details',()=>this.setState(supplierReport?{supplierRecordDetail:row}:{reportReceiptDetail:row})),{textAlign:'center'})]:[])],i)),{emptyMessage,externalSearch:true}),
         !r.rows.length&&activeCount?h('div',{className:'action-group'},[h('span',null,'Try removing a filter to see more records.'),btn('Clear all filters',this.resetReportFilters)]):null,
 
         h('p',{className:'report-filter-hint'},r.note)
@@ -3428,7 +3443,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
         this.state.role!=="manager"?h("label",null,["Role ",h("select",{value:this.state.acctRoleFilter,onChange:e=>{this.setState({acctRoleFilter:e.target.value});this.setTableView("accounts",{page:1});}},[h("option",{value:""},"All roles"),...roles.map(r=>h("option",{value:r,key:r},r))])]):null,
         h("label",null,["Status ",h("select",{value:this.state.acctStatusFilter,onChange:e=>{this.setState({acctStatusFilter:e.target.value});this.setTableView("accounts",{page:1});}},[h("option",{value:""},"All Status"),...['Active','Inactive'].map(v=>h("option",{value:v,key:v},v))])])
       ]),
-      this.recordTable("accounts",["Name",this.state.role==="superadmin"?"Email":"Email / Username","Role","Status","Password Setup","Created","Last OTP login","Actions"],(accountsLocal||[]).filter(a=>(this.state.role==="manager"||!this.state.acctRoleFilter||a.role===this.state.acctRoleFilter)&&(!this.state.acctStatusFilter||a.status===this.state.acctStatusFilter)).map(a=>tr([td(a.name),td([h("div",null,a.email),this.state.role!=="superadmin"?h("small",null,a.username||""):null]),td(a.role),td(h("span",{className:"sa-status "+(a.status==="Active"?"sa-status--healthy":"sa-status--inactive")},a.status.toUpperCase())),td(a.must_change_password?"Password Change Required":"Password Set"),td(a.dateCreated||"Not recorded"),td(a.lastOtpLogin||"Not recorded"),td(h("div",{className:"account-row-actions"},[btn("Edit",this.openAcctModal("edit",a)),a.must_change_password?btn("Resend Setup Credentials",()=>this.authPost(`/api/accounts/${encodeURIComponent(a.role)}/${a.id}/resend-setup`,{}).then(r=>this.toast(r.message)).catch(e=>this.toast(e.message,"error"))):btn("Send Password Reset",()=>this.authPost(`/api/accounts/${encodeURIComponent(a.role)}/${a.id}/send-reset`,{}).then(r=>this.toast(r.message)).catch(e=>this.toast(e.message,"error"))),btn(a.status==="Active"?"Deactivate":"Activate",()=>this.changeAccountStatus(a))]))],a.role+"-"+a.id))),
+      this.recordTable("accounts",["Name",this.state.role==="superadmin"?"Email":"Email / Username","Role","Status","Password Setup","Created","Last OTP login","Actions"],(accountsLocal||[]).filter(a=>(this.state.role==="manager"||!this.state.acctRoleFilter||a.role===this.state.acctRoleFilter)&&(!this.state.acctStatusFilter||a.status===this.state.acctStatusFilter)).map(a=>tr([td(a.name),td([h("div",null,a.email),this.state.role!=="superadmin"?h("small",null,a.username||""):null]),td(a.role),td(h("span",{className:"sa-status "+(a.status==="Active"?"sa-status--healthy":"sa-status--inactive")},a.status.toUpperCase())),td(a.must_change_password?"Password Change Required":"Password Set"),td(a.dateCreated||"Not recorded"),td(a.lastOtpLogin||"Not recorded"),td(h("div",{className:"account-row-actions"},[btn("Edit Account",this.openAcctModal("edit",a)),a.must_change_password?btn("Resend Setup Credentials",()=>this.authPost(`/api/accounts/${encodeURIComponent(a.role)}/${a.id}/resend-setup`,{}).then(r=>this.toast(r.message)).catch(e=>this.toast(e.message,"error"))):btn("Send Password Reset",()=>this.authPost(`/api/accounts/${encodeURIComponent(a.role)}/${a.id}/send-reset`,{}).then(r=>this.toast(r.message)).catch(e=>this.toast(e.message,"error"))),btn(a.status==="Active"?"Deactivate":"Activate",()=>this.changeAccountStatus(a))]))],a.role+"-"+a.id))),
       acctModalOpen?h("div",{key:"modal",style:{position:"fixed",inset:0,background:"rgba(15,31,74,0.38)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:50,padding:16}},
         h("div",{role:"dialog","aria-modal":true,"aria-label":acctModalMode==="create"?"Create Account":"Edit Account",style:{width:400,maxHeight:"85vh",overflowY:"auto",background:"#fff",borderRadius:14,padding:20}},[
           h("h3",{key:"title"},acctModalMode==="create"?"Create Account":"Edit Account"),input("first_name","First Name"),input("last_name","Last Name"),input("email","Email","email"),this.state.role!=='superadmin'?input("username","Employee ID (optional)"):null,
@@ -3436,7 +3451,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
           h("p",null,"Temporary credentials are emailed to new accounts. Password setup is required on first login."),this.state.role!=="superadmin"?input("schedule","Schedule (optional)"):null,
           h("label",{key:"status"},["Status",h("select",{value:f.status,onChange:this.setAcctField("status"),style:{width:"100%",padding:10,marginBottom:10}},(acctModalMode==="create"?["Active"]:["Active","Inactive"]).map(status=>h("option",{key:status},status)))]),
           this.state.acctError?h("p",{key:"error",role:"alert",style:{color:COLORS.red}},this.state.acctError):null,
-          h("div",{key:"buttons",style:{display:"flex",gap:8}},[btn("Cancel",this.closeAcctModal),h("button",{type:"button",className:"kita-button kita-button--primary",disabled:!!this.accountBusy,onClick:this.saveAccount},this.accountBusy?"Saving...":"Save")]),
+          h("div",{key:"buttons",style:{display:"flex",gap:8}},[btn("Cancel",this.closeAcctModal),h("button",{type:"button",className:"kita-button kita-button--primary",disabled:!!this.accountBusy,onClick:this.saveAccount},this.accountBusy?"Saving...":f.id?"Save Changes":"Create Account")]),
         ])):null,
     ]);
   }

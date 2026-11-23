@@ -88,6 +88,8 @@ class ProductFifoTest extends TestCase
         $this->postJson('/api/products/'.$id.'/barcode', ['barcode' => 'PAPER-REAM', 'receiptId' => 'UNKNOWN'])
             ->assertUnprocessable()->assertJsonValidationErrors('receiptId');
         $this->assertDatabaseHas('products', ['id' => $id, 'barcode' => null, 'description' => $input['description']]);
+        $catalog = collect($this->getJson('/api/kita-data')->assertOk()->json('PRODUCTS'))->firstWhere('id', $id);
+        $this->assertSame($input['description'], $catalog['description']);
     }
 
     public function test_subcategories_and_brands_can_be_renamed_without_losing_product_links(): void
@@ -294,7 +296,9 @@ class ProductFifoTest extends TestCase
 
     public function test_category_rename_preserves_product_hierarchy(): void
     {
+        DB::table('suppliers')->where('id', $this->input['supplierId'])->update(['category' => 'Beverages']);
         $this->patchJson('/api/categories/Beverages', ['name' => 'Drinks'])->assertOk();
+        $this->assertDatabaseHas('suppliers', ['id' => $this->input['supplierId'], 'category' => 'Drinks']);
         $this->assertDatabaseHas('products', ['id' => $this->product, 'category' => 'Drinks']);
         $this->assertDatabaseHas('subcategories', ['id' => $this->input['subcategoryId'], 'category' => 'Drinks']);
         $this->postJson('/api/categories', ['name' => 'Supplies', 'classification' => 'Non-Perishable'])->assertCreated();
@@ -341,8 +345,10 @@ class ProductFifoTest extends TestCase
             $id = $this->postJson('/api/products', $input)->assertCreated()->json('product.id');
             $this->assertDatabaseHas('products', ['id'=>$id, 'sizeUnit'=>$unit]);
         }
-        $input = array_merge($this->input, ['barcode'=>'INVALID-UNIT','sizeUnit'=>'invalid-unit']);
-        $this->postJson('/api/products', $input)->assertUnprocessable();
+        $custom = array_merge($this->input, ['name'=>'Custom measurement', 'barcode'=>'CUSTOM-UNIT', 'sizeUnit'=>'  Gross  ', 'stockUnit'=>'Ream']);
+        $this->postJson('/api/products', $custom)->assertCreated()->assertJsonPath('product.sizeUnit', 'Gross')->assertJsonPath('product.stockUnit', 'Ream');
+        $input = array_merge($this->input, ['barcode'=>'INVALID-UNIT','sizeUnit'=>str_repeat('x', 21)]);
+        $this->postJson('/api/products', $input)->assertUnprocessable()->assertJsonValidationErrors('sizeUnit');
     }
 
     public function test_registration_rejects_every_blank_required_field(): void

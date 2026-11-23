@@ -5,7 +5,7 @@ const nodes=n=>!n||typeof n!=='object'?[]:Array.isArray(n)?n.flatMap(nodes):[n,.
 const text=n=>n==null?'':typeof n==='string'?n:Array.isArray(n)?n.map(text).join(' '):text(n.children);
 function setup(){
   const app=new ctx.App();
-  Object.assign(app.state,{screen:'mgrRegistration',data:{PRODUCTS:[],CATEGORIES:[{name:'Drinks',status:'Active'}],SUPPLIERS:[{id:1,name:'Supplier',status:'Active'}],BRANDS:[{id:1,name:'Brand',status:'Active'}],SUBCATEGORIES:[{id:1,name:'Water',category:'Drinks',status:'Active'}]},regProductName:'Water',regCategory:'Drinks',regScannedBarcode:'WATER',regStockUnit:'Bottle',regReorderLevel:5,regManufacturer:'Factory',regBrandId:1,regSubcategoryId:1,regSupplier:'Supplier',regStatus:'Active'});
+  Object.assign(app.state,{screen:'mgrRegistration',data:{PRODUCTS:[],CATEGORIES:[{name:'Drinks',status:'Active'}],SUPPLIERS:[{id:1,name:'Supplier',status:'Active',category:'Drinks'}],BRANDS:[{id:1,name:'Brand',status:'Active'}],SUBCATEGORIES:[{id:1,name:'Water',category:'Drinks',status:'Active'}]},regProductName:'Water',regCategory:'Drinks',regScannedBarcode:'WATER',regStockUnit:'Bottle',regReorderLevel:5,regManufacturer:'Factory',regBrandId:1,regSubcategoryId:1,regSupplier:'Supplier',regStatus:'Active'});
   app.reloadCatalog=async()=>{};
   return app;
 }
