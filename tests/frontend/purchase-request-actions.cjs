@@ -20,4 +20,7 @@ assert.equal(app.state.purchaseReviewMode,'edit');
 app.state.role='manager';
 assert.equal(app.purchaseRequestActions(request).length,1);
 assert(!nodes(app.purchaseRequestDetails()).some(n=>n.type==='button'&&['Edit','Approve','Reject'].includes(text(n))));
+const orders=app.buildPurchaseOrderWorkspace();
+assert(nodes(orders).some(n=>n.type==='button'&&text(n)==='View'));
+for(const label of ['View Purchase Order','Create Purchase Request','Stock Receiving','Supplier Balances'])assert(!nodes(orders).some(n=>n.type==='button'&&text(n)===label));
 console.log('Purchase request rows show View only; permitted review actions appear in details.');
