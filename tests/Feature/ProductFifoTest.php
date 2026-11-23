@@ -40,6 +40,26 @@ class ProductFifoTest extends TestCase
         $this->product = $this->postJson('/api/products', $this->input)->assertCreated()->assertJsonPath('product.stock', 0)->json('product.id');
     }
 
+    public function test_registration_defers_supplier_and_minimum_stock_and_edits_preserve_them(): void
+    {
+        $input = array_diff_key($this->input, array_flip(['supplierId', 'minStock', 'manufacturer', 'barcode']));
+        $input['name'] = 'Simplified product';
+        $id = $this->postJson('/api/products', $input)->assertCreated()
+            ->assertJsonPath('product.supplierId', null)->assertJsonPath('product.minStock', 0)
+            ->assertJsonPath('product.manufacturer', null)->json('product.id');
+        $this->patchJson('/api/products/'.$id.'/inventory-settings', ['minStock' => -1])->assertUnprocessable();
+        $this->patchJson('/api/products/'.$id.'/inventory-settings', ['minStock' => 12])->assertOk();
+        $this->assertDatabaseHas('products', ['id' => $id, 'minStock' => 12, 'stock' => 0]);
+        $edit = array_diff_key($this->input, array_flip(['supplierId', 'minStock']));
+        $edit['reason'] = 'Correct description';
+        $edit['description'] = 'Updated description';
+        $this->patchJson('/api/products/'.$this->product, $edit)->assertOk()
+            ->assertJsonPath('product.supplierId', $this->input['supplierId'])->assertJsonPath('product.minStock', 10);
+        $cashier = User::factory()->create(['role' => 'cashier']);
+        $this->assignMember($cashier);
+        $this->actingAs($cashier)->patchJson('/api/products/'.$id.'/inventory-settings', ['minStock' => 1])->assertForbidden();
+    }
+
     public function test_brand_requires_category_and_accepts_optional_matching_subcategory(): void
     {
         $base = ['name' => 'New brand', 'status' => 'Active'];
@@ -353,7 +373,7 @@ class ProductFifoTest extends TestCase
 
     public function test_registration_rejects_every_blank_required_field(): void
     {
-        foreach (['name','manufacturer','brandId','category','size','sizeUnit','stockUnit','supplierId','minStock'] as $field) {
+        foreach (['name','brandId','category','size','sizeUnit','stockUnit','minStock'] as $field) {
             $input = array_merge($this->input, ['name'=>'New item', 'barcode'=>'NEW-ITEM', $field=>'']);
             $this->postJson('/api/products', $input)->assertUnprocessable()->assertJsonValidationErrors($field);
         }

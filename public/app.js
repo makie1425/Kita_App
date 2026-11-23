@@ -326,7 +326,7 @@ class Component extends DCLogic {
     addDamageOpen:false, addDamageForm:{productId:"",qty:""},
     categoryModalOpen:false, categoryForm:{name:"",status:"Active",classification:""}, categoryError:"",
     archiveTab:"items", archiveChecked:{}, archiveConfirmOpen:false,
-    regProductMode:"select", regProductName:"", regDescription:"", regNewStockUnit:"", regNewMeasurementUnit:"", purchaseSupplyCategory:"", regOtherProductName:"", regCategory:"", regSupplier:"", regScannedBarcode:"", regQuantity:"",
+    regUnitDialog:null,regUnitDraft:"",minimumStockProduct:null,regProductMode:"select", regProductName:"", regDescription:"", regNewStockUnit:"", regNewMeasurementUnit:"", purchaseSupplyCategory:"", regOtherProductName:"", regCategory:"", regSupplier:"", regScannedBarcode:"", regQuantity:"",
     regCostPrice:"", regUnitPrice:"", regRetailPrice:"", regBatch:"", regLot:"", regExpiry:"", regPurchaseUnit:"Piece", regStockUnit:"Piece", regConversionFactor:"1", regStatus:"Active", regVatClass:"VAT-Exempt",
     regSaved:false, regSku:"", regBarcode:"", regRegisteredQty:0, regPrintQty:1,
     promoPickerOpen:false, promoPickerSearch:"", promoPickerChecked:{},
@@ -1208,7 +1208,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
       .catch(error=>this.setState({acctError:error.message})).finally(()=>{this.accountBusy=false;});
   };
   // Registration + Promotions v7
-  setRegProductMode=e=>{ const v=e.target.value; if(v==="__other__") this.setState({regProductMode:"other",regProductName:""}); else this.setState({regProductMode:"select",regProductName:v}); };
+  setRegProductMode=e=>{ const v=e.target.value; if(v==="__other__") this.setState({regProductMode:"other",regProductName:""}); else this.setState({regUnitDialog:null,regUnitDraft:"",minimumStockProduct:null,regProductMode:"select",regProductName:v}); };
   setRegOtherProductName=e=>this.setState({regOtherProductName:e.target.value});
   validAmount=value=>/^\d+(?:\.\d{1,2})?$/.test(String(value).trim()) && Number.isFinite(Number(value));
   registrationCost=(unitPrice,quantity)=>{
@@ -1235,7 +1235,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
   };
   saveRegistration=()=>{
     if(this.registrationBusy)return;
-    const requiredFields={regProductName:'Product name',regManufacturer:'Manufacturer',regCategory:'Category',regBrandId:'Brand',regSize:'Size',regSizeUnit:'Measurement Unit',regSupplier:'Supplier',regStockUnit:'Stock Unit',regReorderLevel:'Minimum Stock',...(this.state.regParentId?{regVariantLabel:'Variant label'}:{}),...(this.state.regEditing?{regUnitPrice:'Purchase cost',regRetailPrice:'Selling price',regEditReason:'Reason for changes'}:{})};
+    const requiredFields={regProductName:'Product name',regCategory:'Category',regBrandId:'Brand',regSize:'Size',regSizeUnit:'Size Unit',regStockUnit:'Stock Unit',...(this.state.regParentId?{regVariantLabel:'Variant label'}:{}),...(this.state.regEditing?{regUnitPrice:'Purchase cost',regRetailPrice:'Selling price',regEditReason:'Reason for changes'}:{})};
     const missing=Object.entries(requiredFields).filter(([key])=>this.state[key]==null||String(this.state[key]).trim()==='').map(([,label])=>label);
     if(missing.length){this.toast('Complete all required fields: '+missing.join(', ')+'.','error');return;}
 
@@ -1265,10 +1265,9 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
     const barcode=this.state.regEditing?(existing?.barcode||null):null;
     const nextId=Math.max(0,...catalog.map(p=>Number(p.id)||0))+1;
     const supplier=(data.SUPPLIERS||[]).find(s=>s.name===regSupplier);
-    if(!supplier||!this.suppliersForCategory(regCategory).some(s=>String(s.id)===String(supplier.id))){this.toast('Choose a supplier that provides products in this category.','error');return;}
     const product={id:nextId,name,category:regCategory,vatClass:"VAT-Exempt",price,cost,stock:qty,minStock:0,unit:regStockUnit||"Piece",status:regStatus||"Active",batch:regBatch||"",lot:regLot||"",expiry:regExpiry||"",barcode,supplierId:supplier?supplier.id:regSupplier,parentId:null,variantLabel:"",purchaseUnit,stockUnit:regStockUnit||"Piece",conversionFactor,barcodeStatus:"Scanned",archivedAt:null,archivedBy:null,unitPrice:Number(unitPrice)};
     this.registrationBusy=true;this.setState({registrationSaving:true,registrationError:"",registrationNotice:null});
-    this.authPost("/api/products"+(this.state.regEditing?"/"+this.state.regEditing:""),{parentId:this.state.regParentId?Number(this.state.regParentId):null,variantLabel:this.state.regVariantLabel||'',reason:this.state.regEditReason||null,manufacturer:this.state.regManufacturer||null,description:this.state.regDescription||null,unitPrice:Number(unitPrice),brandId:this.state.regBrandId||null,subcategoryId:this.state.regSubcategoryId||null,size:this.state.regSize||null,sizeUnit:this.state.regSizeUnit||null,minStock:Number(this.state.regReorderLevel||0),name,category:regCategory,vatClass:"VAT-Exempt",price,cost,stock:qty,supplierId:supplier?supplier.id:null,purchaseUnit,stockUnit:regStockUnit,conversionFactor},this.state.regEditing?"PATCH":"POST").then(response=>{
+    this.authPost("/api/products"+(this.state.regEditing?"/"+this.state.regEditing:""),{parentId:this.state.regParentId?Number(this.state.regParentId):null,variantLabel:this.state.regVariantLabel||'',reason:this.state.regEditReason||null,manufacturer:this.state.regManufacturer||null,description:this.state.regDescription||null,unitPrice:Number(unitPrice),brandId:this.state.regBrandId||null,subcategoryId:this.state.regSubcategoryId||null,size:this.state.regSize||null,sizeUnit:this.state.regSizeUnit||null,name,category:regCategory,vatClass:"VAT-Exempt",price,cost,stock:qty,purchaseUnit,stockUnit:regStockUnit,conversionFactor},this.state.regEditing?"PATCH":"POST").then(response=>{
       const savedProduct={...product,...response.product};
       this.setState({productsLocal:[...catalog.filter(p=>p.id!==savedProduct.id),savedProduct],regSaved:true,regSku:String(response.product.id),regBarcode:barcode,regRegisteredQty:qty});
       this.reloadCatalog().then(()=>this.toast(`"${name}" registered and saved to the product catalog.`)).catch(()=>this.toast(`"${name}" saved, but the catalog could not refresh. Reload the page.` ,"warn"));
@@ -2548,7 +2547,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
       null,
       this.recordTable('inventory-balance',headers,list.map(p=>tr([
         td(h('input',{type:'checkbox','aria-label':'Select '+p.name,checked:!!s.invSelected?.[p.id],onChange:this.toggleInvSelect(p.id)})),td(p.id),td(h('button',{className:'inventory-item-link',onClick:()=>this.openInventoryView('movements',p.id)},this.productLabel(p))),td([p.size,p.sizeUnit].filter(Boolean).join(' ')||'—'),td(p.stockUnit||p.unit||'Not set'),td(p.stockOnHand??p.stock),td(p.reservedStock||0),td(this.sellableStock(p)),td(p.minStock||0),td(React.createElement('span',{className:this.inventoryCondition(p).toLowerCase()==='out of stock'?'stock-condition-out':''},badge(this.inventoryCondition(p)))),td(peso(p.inventoryValue||0)),td(p.category),td((d.BRANDS||[]).find(b=>String(b.id)===String(p.brandId))?.name||'—'),td(p.barcode||'—'),td(this.purchaseSupplier(p.supplierId)),td(p.expiredStock||0),td(p.recalledStock||0),td(p.unavailableStock||0),td((p.exclusionReasons||[]).join('; ')||'Available for sale'),td(peso(p.unitPrice)),td(peso(p.price)),
-        td(h('div',{className:'inventory-row-actions'},[btn('Batches',()=>this.openInventoryView('batches',p.id)),btn('Edit Product',()=>this.editProductMaster(p)),btn('Archive',()=>this.archiveAction('archive','products',[String(p.id)]),'danger'),p.needsReorder?btn('Request Stock',()=>this.draftInventoryRequest(p)):null]))
+        td(h('div',{className:'inventory-row-actions'},[btn('Batches',()=>this.openInventoryView('batches',p.id)),btn('Edit Product',()=>this.editProductMaster(p)),btn('Set Minimum Stock',()=>this.setState({minimumStockProduct:p,minimumStockValue:String(p.minStock||0),minimumStockError:''})),btn('Archive',()=>this.archiveAction('archive','products',[String(p.id)]),'danger'),p.needsReorder?btn('Request Stock',()=>this.draftInventoryRequest(p)):null]))
       ],p.id)),{columnPicker:true,defaultHidden:['Category','Brand','Barcode','Supplier','Expired Qty','Recalled Qty','Unavailable Qty','Availability Remarks','Purchase Cost','Selling Price']}),
       h('p',{className:'inventory-help'},s.stockCheckedAt?'Balances checked '+new Date(s.stockCheckedAt).toLocaleString()+'. Click Refresh balances to update.':'Click Refresh balances to load current stock.')
     ]);
@@ -2602,9 +2601,19 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
       ]),
       React.createElement("div",{style:{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap"}},tabs.map(([k,l])=>React.createElement("button",{key:k,onClick:this.setInvTab(k),style:{padding:"8px 14px",borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer",background:invTab===k?COLORS.brand:"#fff",color:invTab===k?"#fff":COLORS.text,border:"1px solid "+(invTab===k?COLORS.brand:COLORS.border)}},l))),
       body, React.createElement("div",{style:{marginTop:14,fontSize:12,color:COLORS.red,fontWeight:600}},"⛔ Negative-inventory guard: any action dropping stock below 0 is hard-blocked."),
-      this.state.priceEditOpen?this.buildPriceEditModal():null,
+      this.buildMinimumStockDialog(),this.state.priceEditOpen?this.buildPriceEditModal():null,
       this.state.addDamageOpen?this.buildAddDamageModal():null,
       this.state.categoryModalOpen?this.buildCategoryModal():null,
+    ]);
+  }
+  buildMinimumStockDialog(){
+    const h=React.createElement,s=this.state,p=s.minimumStockProduct;if(!p)return null;
+    const close=()=>{if(!this.minimumStockBusy)this.setState({minimumStockProduct:null,minimumStockError:''});};
+    const save=async()=>{if(this.minimumStockBusy)return;const value=String(this.state.minimumStockValue??'');if(!/^\d+$/.test(value)||Number(value)>2147483647){this.setState({minimumStockError:'Enter a whole number of zero or more.'});return;}this.minimumStockBusy=true;this.setState({minimumStockSaving:true});try{await this.authPost('/api/products/'+p.id+'/inventory-settings',{minStock:Number(value)},'PATCH');this.setState({minimumStockProduct:null});await this.reloadCatalog();this.toast('Minimum stock saved.');}catch(e){this.setState({minimumStockError:e.message});}finally{this.minimumStockBusy=false;this.setState({minimumStockSaving:false});}};
+    return h('dialog',{className:'purchase-details-dialog','aria-label':'Minimum Stock',ref:n=>{if(n&&!n.open)n.showModal();},onCancel:e=>{e.preventDefault();close();}},[
+      h('h2',null,'Minimum Stock — '+p.name),h('label',null,['Minimum Stock ('+(p.stockUnit||p.unit||'units')+')',h('input',{autoFocus:true,type:'number',min:0,step:1,value:s.minimumStockValue,onChange:e=>this.setState({minimumStockValue:e.target.value})})]),
+      h('p',null,'Set 0 if no minimum-stock threshold is needed.'),s.minimumStockError?h('p',{role:'alert'},s.minimumStockError):null,
+      h('div',{className:'dialog-actions'},[h('button',{type:'button',disabled:!!s.minimumStockSaving,onClick:close},'Cancel'),h('button',{type:'button',className:'primary-button',disabled:!!s.minimumStockSaving,onClick:save},s.minimumStockSaving?'Saving...':'Save Changes')])
     ]);
   }
   buildPriceEditModal(){
@@ -2844,6 +2853,18 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
   }
   productLabel=p=>[p.name,p.variantLabel,(this.state.data?.BRANDS||[]).find(b=>String(b.id)===String(p.brandId))?.name,p.size?Number(p.size):null,p.sizeUnit].filter(Boolean).join(' ');
   editProductMaster=p=>this.setState({screen:'mgrRegistration',regEditing:p.id,registrationNotice:null,registrationError:"",regParentId:p.parentId||'',regVariantLabel:p.variantLabel||'',regStockId:String(p.id),regProductName:p.name,regDescription:p.description||'',regManufacturer:p.manufacturer||'',regCategory:p.category,regBrandId:p.brandId||'',regSubcategoryId:p.subcategoryId||'',regSize:p.size||'',regSizeUnit:p.sizeUnit||'',regReorderLevel:p.minStock||0,regScannedBarcode:p.barcode||'',regSupplier:(this.state.data.SUPPLIERS.find(s=>s.id===p.supplierId)||{}).name||'',regStockUnit:p.stockUnit||p.unit,regPurchaseUnit:p.purchaseUnit||p.unit,regConversionFactor:p.conversionFactor||1,regUnitPrice:String(p.unitPrice??0),regRetailPrice:String(p.price??0),regStatus:p.status,regSaved:false,regBatch:'',regLot:'',regExpiry:'',regEditReason:''});
+  buildRegistrationUnitDialog(){
+    const h=React.createElement,s=this.state;if(!s.regUnitDialog)return null;
+    const size=s.regUnitDialog==='size',label=size?'Size Unit':'Stock Unit',limit=size?20:40;
+    const close=()=>this.setState({regUnitDialog:null,regUnitDraft:'',regUnitError:''});
+    const save=()=>{const unit=String(s.regUnitDraft||'').trim();if(!unit||unit.length>limit||/[\x00-\x1F\x7F]/.test(unit)){this.setState({regUnitError:'Enter a unit name up to '+limit+' characters.'});return;}this.setState({[size?'regSizeUnit':'regStockUnit']:unit,regSaved:false});close();};
+    return h('dialog',{className:'purchase-details-dialog','aria-labelledby':'registration-unit-title',ref:n=>{if(n&&!n.open)n.showModal();},onCancel:e=>{e.preventDefault();close();}},[
+      h('header',{className:'dialog-actions'},[h('h2',{id:'registration-unit-title'},'Add '+label),h('button',{type:'button','aria-label':'Close add unit',onClick:close},'\u00d7')]),
+      h('label',null,[label,h('input',{autoFocus:true,maxLength:limit,value:s.regUnitDraft||'',onChange:e=>this.setState({regUnitDraft:e.target.value,regUnitError:''}),onKeyDown:e=>{if(e.key==='Enter'){e.preventDefault();save();}}})]),
+      s.regUnitError?h('p',{role:'alert'},s.regUnitError):null,
+      h('div',{className:'dialog-actions'},[btn('Cancel',close),btn('Use '+label,save,'primary')])
+    ]);
+  }
   buildMgrRegistration(){
     const h=React.createElement,s=this.state,data=s.data;
     const products=s.productsLocal||data.PRODUCTS;
@@ -2851,14 +2872,12 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
     const standardMeasurements=Object.values(PRODUCT_MEASUREMENT_UNITS).flatMap(group=>Object.keys(group));
     const customMeasurements=[...new Set([...products.map(p=>p.sizeUnit),s.regSizeUnit].filter(unit=>unit&&!standardMeasurements.includes(unit)))];
     const measurement=h('div',{className:'field-group'},[
-      h('label',{htmlFor:'registration-regSizeUnit'},['Measurement Unit',h('span',{className:'required-marker','aria-hidden':true},' *')]),
-      h('select',{id:'registration-regSizeUnit',required:true,'aria-required':true,value:s.regSizeUnit||'',onChange:this.setRegField('regSizeUnit')},[
-        h('option',{value:''},'Select measurement unit'),
+      h('label',{htmlFor:'registration-regSizeUnit'},['Size Unit',h('span',{className:'required-marker','aria-hidden':true},' *')]),
+      h('select',{id:'registration-regSizeUnit',required:true,'aria-required':true,value:s.regSizeUnit||'',onChange:e=>e.target.value==='__add__'?this.setState({regUnitDialog:'size',regUnitDraft:'',regUnitError:''}):this.setRegField('regSizeUnit')(e)},[
+        h('option',{value:''},'Select size unit'),
         ...Object.entries(PRODUCT_MEASUREMENT_UNITS).map(([group,values])=>h('optgroup',{key:group,label:group},Object.entries(values).map(([value,label])=>h('option',{key:value,value},label)))),
-        ...customMeasurements.map(value=>h('option',{key:value,value},value)),
+        ...customMeasurements.map(value=>h('option',{key:value,value},value)),h('option',{value:'__add__'},'+ Add size unit'),
       ]),
-      h('label',null,['New measurement unit',h('input',{'aria-label':'New measurement unit',maxLength:20,value:s.regNewMeasurementUnit||'',placeholder:'Enter a measurement unit',onChange:e=>this.setState({regNewMeasurementUnit:e.target.value})})]),
-      btn('Use New Measurement Unit',()=>{const unit=String(this.state.regNewMeasurementUnit||'').trim();if(unit&&unit.length<=20)this.setState({regSizeUnit:unit,regNewMeasurementUnit:'',regSaved:false});else this.toast('Enter a measurement unit up to 20 characters.','error');}),
     ]);
     const field=(key,label,options={})=>{
       options={...options,required:options.required??!options.readOnly};
@@ -2871,7 +2890,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
     };
     const select=(key,label,values,required=true)=>h("div",{key,className:"field-group"},[
       h("label",{key:"label",htmlFor:"registration-"+key},[label,required?h("span",{className:"required-marker","aria-hidden":true}," *"):null]),
-      h("select",{key:"input",id:"registration-"+key,value:s[key],onChange:this.setRegField(key),required,"aria-required":required},[h("option",{key:"empty",value:""},"Select "+label.toLowerCase()),...values.map(value=>h("option",{key:value,value},["regSizeUnit","regStockUnit"].includes(key)?({mL:"mL (Milliliter)",Liter:"L (Liter)",g:"g (Gram)",kg:"kg (Kilogram)",Kg:"kg (Kilogram)",cm:"cm (Centimeter)",m:"m (Meter)"}[value]||value):value))]),
+      h("select",{key:"input",id:"registration-"+key,value:s[key],onChange:e=>key==="regStockUnit"&&e.target.value==="__add__"?this.setState({regUnitDialog:"stock",regUnitDraft:"",regUnitError:""}):this.setRegField(key)(e),required,"aria-required":required},[h("option",{key:"empty",value:""},"Select "+label.toLowerCase()),...values.map(value=>h("option",{key:value,value},value==="__add__"?"+ Add stock unit":["regSizeUnit","regStockUnit"].includes(key)?({mL:"mL (Milliliter)",Liter:"L (Liter)",g:"g (Gram)",kg:"kg (Kilogram)",Kg:"kg (Kilogram)",cm:"cm (Centimeter)",m:"m (Meter)"}[value]||value):value))]),
     ]);
     const group=(number,title,description,fields)=>h("fieldset",{className:"form-section",key:title},[
       h("legend",null,[h("span",{className:"section-number"},number),title]),null,h("div",{className:"form-grid"},fields),
@@ -2879,7 +2898,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
     return h("div",{className:"registration-page"},[
       s.regEditing?sectionTitle("Edit Product"):moduleTitle("Product Registration"),
       s.registrationFromPurchase?btn('Continue Purchase Order',this.continuePurchaseRegistration):null,
-      h("div",{key:"actions",className:"page-toolbar"},[btn("New Product",()=>this.setState({regEditing:null,regParentId:"",regVariantLabel:"",registrationNotice:null,registrationError:"",regStockId:"",regProductName:"",regDescription:"",regManufacturer:"",regScannedBarcode:"",regSaved:false,regBatch:"",regLot:"",regExpiry:"",regUnitPrice:"",regRetailPrice:"",regCategory:"",regSupplier:"",regReorderLevel:0,regPurchaseUnit:"Piece",regStockUnit:"Piece",regNewStockUnit:"",regNewMeasurementUnit:"",regConversionFactor:"1",regStatus:"Active",regBrandId:"",regSubcategoryId:"",regSize:"",regSizeUnit:"",regEditReason:""}))]),
+      (s.regEditing||s.regSaved||s.regStockUnit!=="Piece"||[s.regProductName,s.regDescription,s.regManufacturer,s.regCategory,s.regBrandId,s.regSubcategoryId,s.regSize,s.regSizeUnit].some(Boolean))?h("div",{key:"actions",className:"page-toolbar"},[btn(s.regEditing?"New Product":"Clear Form",()=>this.setState({regEditing:null,regParentId:"",regVariantLabel:"",registrationNotice:null,registrationError:"",regStockId:"",regProductName:"",regDescription:"",regManufacturer:"",regScannedBarcode:"",regSaved:false,regBatch:"",regLot:"",regExpiry:"",regUnitPrice:"",regRetailPrice:"",regCategory:"",regSupplier:"",regReorderLevel:0,regPurchaseUnit:"Piece",regStockUnit:"Piece",regNewStockUnit:"",regNewMeasurementUnit:"",regConversionFactor:"1",regStatus:"Active",regBrandId:"",regSubcategoryId:"",regSize:"",regSizeUnit:"",regEditReason:"",regUnitDialog:null}))]):null,
       h('div',{id:'registration-feedback',className:'registration-feedback'},[s.registrationNotice?h('p',{role:s.registrationNotice.tone==='error'?'alert':'status',className:'registration-notice registration-notice--'+s.registrationNotice.tone},s.registrationNotice.message):null,
       s.regSaved?h("div",{key:"print",className:"kita-card registration-receipt"},[
         h("h2",{className:"panel-title"},"Registration complete"),h("p",null,`Item Code: ${s.regSku} | Barcode assigned after receiving | Available stock: ${s.regRegisteredQty}`),
@@ -2888,20 +2907,18 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
       h("datalist",{key:"names",id:"reg-product-options"},[...new Set(products.map(p=>p.name))].filter(name=>searchMatches(name,s.regProductName)).map(name=>h("option",{key:name,value:name}))),
       (s.registrationError||(!s.regSaved&&this.registrationDuplicate()))?h('p',{role:'alert',className:'alert'},s.registrationError||'This product already exists in inventory (Item Code '+this.registrationDuplicate().id+'). Use the existing product or choose a different brand or size.'):null,
       group("01","Product details","Identify the item and choose its category and supplier.",[
-        field("regProductName","Product name",{required:true,placeholder:"e.g. Organic Almond Milk 1L"}),field("regManufacturer","Manufacturer",{placeholder:"e.g. Pure Harvest Ltd.",help:"Company that makes the product; separate from brand and supplier."}),s.regEditing?field("regStockId","Item Code",{type:"number",step:1,readOnly:true}):null,
+        field("regProductName","Product name",{required:true,placeholder:"e.g. Organic Almond Milk 1L"}),field("regManufacturer","Manufacturer (optional)",{required:false,placeholder:"e.g. Pure Harvest Ltd.",help:"Company that makes the product; separate from brand and supplier."}),s.regEditing?field("regStockId","Item Code",{type:"number",step:1,readOnly:true}):null,
 
         s.regParentId?field('regVariantLabel','Variant label',{required:true,help:'For example: Red, Vanilla or Family pack. Each variant has its own barcode and stock.'}):null,
         field("regDescription","Description",{required:false,placeholder:"Describe the product"}),
-        h('div',{className:'registration-category'},[select("regCategory","Category",data.CATEGORIES.filter(c=>c.status==="Active").map(c=>c.name),true),btn('+ Add Category',this.openCategoryModal)]),
+        select("regCategory","Category",data.CATEGORIES.filter(c=>c.status==="Active").map(c=>c.name),true),
         h("label",{className:"field-group"},["Brand *",h("select",{required:true,"aria-required":true,value:s.regBrandId||"",onChange:this.setRegField("regBrandId")},[h("option",{value:""},"Select brand"),...(data.BRANDS||[]).filter(b=>b.status==="Active").map(b=>h("option",{value:b.id,key:b.id},b.name))])]),
         this.buildSubcategorySelect(s.regCategory,s.regSubcategoryId,this.setRegField("regSubcategoryId"),{registration:true}),
         h('div',{className:'registration-size'},[h('div',{className:'registration-size-fields'},[field("regSize","Size",{type:"number",step:"0.001",placeholder:'e.g. 500'}),measurement]),null]),
-        select("regSupplier","Supplier",this.suppliersForCategory(s.regCategory).map(sp=>sp.name)),
-        s.regCategory&&!this.suppliersForCategory(s.regCategory).length?h('p',{role:'status'},'No suppliers match this category. In Suppliers, assign a Supply Category or link the products they supply.'):null,
       ]),
       group("02","Stock settings","Stock Unit is one inventory unit, such as Bottle, Pack, or Piece. Quantities are whole units; use Size and Measurement Unit for the contents (for example, 500 mL per Bottle). New products start with zero stock.",[
-        h('div',{className:'field-group'},[select("regStockUnit","Stock Unit",units,true),field('regNewStockUnit','Add a new unit of measure',{required:false,placeholder:'e.g. Ream'}),btn('Use New Unit',()=>{const unit=String(this.state.regNewStockUnit||'').trim();if(unit&&unit.length<=40)this.setState({regStockUnit:unit,regNewStockUnit:''});else this.toast('Enter a unit of measure up to 40 characters.','error');})]),
-        field("regReorderLevel","Minimum Stock",{type:"number",step:1,help:'Low-stock threshold, counted in the selected Stock Unit.'}),
+        select("regStockUnit","Stock Unit",[...units,"__add__"],true),
+        h("small",null,"The unit counted or sold, such as Bottle, Piece, or Ream."),
       ]),
       s.regEditing?group("03","Pricing","Purchase cost and selling price are recorded separately.",[
         field("regUnitPrice","Purchase cost per stock unit (\u20B1)",{type:"number",required:true}),
@@ -2910,10 +2927,10 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
       ]):null,
       s.regEditing?field("regEditReason","Reason for changes"):null,
       h("div",{key:"save",className:"form-actions"},[
-        h("span",{className:"form-action-note"},"Fields marked * are required. New units are saved with the product and can be reused."),
+        h("span",{className:"form-action-note"},"Fields marked * are required. Assign suppliers in Suppliers and set minimum stock in Inventory. New units are saved with the product."),
         h("button",{type:"button",className:"primary-button",disabled:!!s.registrationSaving,"aria-busy":!!s.registrationSaving,onClick:this.saveRegistration},s.registrationSaving?"Saving product...":s.regSaved?"Product registered":"Save product registration"),
       ]),
-      s.categoryModalOpen?this.buildCategoryModal():null,
+      this.buildRegistrationUnitDialog(),
     ]);
   }
   buildMgrCashiers(){ return this.buildAdmManagers(); }

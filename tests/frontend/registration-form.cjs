@@ -15,13 +15,9 @@ function setup(){
   const controls=nodes(tree).filter(n=>['input','select'].includes(n.type));
   assert(controls.some(n=>n.props.id==='registration-regStockUnit'));
   assert(!controls.some(n=>['registration-regPurchaseUnit','registration-regConversionFactor'].includes(n.props.id)));
-  assert(text(tree).includes('Minimum Stock'));
+  assert(!controls.some(n=>n.props.id==='registration-regReorderLevel'));
   assert(text(tree).includes('mL (Milliliter)'));
-  const category=nodes(tree).find(n=>n.props?.className==='registration-category');
-  nodes(category).find(n=>n.type==='button').props.onClick();
-  assert(app.state.categoryModalOpen);
-  assert(nodes(app.buildMgrRegistration()).some(n=>n.props?.role==='dialog'));
-  app.closeCategoryModal();
+  assert(!nodes(tree).some(n=>n.type==='button'&&text(n)==='+ Add Category'));
   const calls=[];
   app.authPost=async(url,payload)=>{calls.push(payload);return {product:{...payload,id:1}};};
   app.state.regSize='500';app.saveRegistration();
@@ -30,7 +26,7 @@ function setup(){
   app.state.regSizeUnit='mL';app.state.regConversionFactor='invalid';app.state.regPurchaseUnit='Box';
   app.saveRegistration();await new Promise(resolve=>setImmediate(resolve));
   assert.equal(calls.length,1);assert.equal(calls[0].purchaseUnit,'Bottle');assert.equal(calls[0].conversionFactor,1);
-  assert.equal(calls[0].minStock,5);assert.equal(calls[0].size,'500');assert.equal(calls[0].sizeUnit,'mL');
+  assert(!Object.hasOwn(calls[0],'minStock'));assert.equal(calls[0].size,'500');assert.equal(calls[0].sizeUnit,'mL');
   tree=app.buildMgrRegistration();
   assert(text(nodes(tree).find(n=>n.props?.id==='registration-feedback')).includes('Registration complete'));
   assert(nodes(tree).findIndex(n=>n.props?.id==='registration-feedback')<nodes(tree).findIndex(n=>n.type==='fieldset'));

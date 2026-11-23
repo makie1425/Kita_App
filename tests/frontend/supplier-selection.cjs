@@ -24,12 +24,8 @@ assert.equal(app.state.purchaseItemDraft.productId,undefined,'Changing category 
 picker=app.buildItemPickerModal();assert(text(supplierSelect(picker)).includes('Drink seller'));assert(!text(supplierSelect(picker)).includes('Paper seller'));
 app.state.regCategory='Supplies';
 let registration=app.buildMgrRegistration();
-let supplier=nodes(registration).find(n=>n.props?.id==='registration-regSupplier');
-assert(text(supplier).includes('Pen seller'));assert(!text(supplier).includes('Drink seller'));
 for(const [id,unit] of [['registration-regStockUnit','Ream'],['registration-regSizeUnit','Gross']])assert(nodes(registration).some(n=>n.props?.id===id&&nodes(n).some(option=>option.type==='option'&&option.props.value===unit)),'Saved custom units are reusable');
 app.state.regSupplier='Paper seller';app.setRegField('regCategory')({target:{value:'Drinks'}});assert.equal(app.state.regSupplier,'');
-app.state.regNewMeasurementUnit='Yard roll';
-nodes(registration).find(n=>n.type==='button'&&text(n)==='Use New Measurement Unit').props.onClick();assert.equal(app.state.regSizeUnit,'Yard roll');
 app.state.authenticatedUser={name:'Manager <One>'};app.state.inventoryHistory={products:[],checkedAt:'2026-11-23'};
 app.printInventoryHistory('products')();assert(printed.includes('Prepared by: Manager &lt;One&gt;'));assert(!printed.includes('Manager <One>'));
 console.log('Supplier product/category filtering, stale selection clearing, reusable units and escaped manager print name passed.');

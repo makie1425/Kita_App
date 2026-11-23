@@ -7,7 +7,7 @@ app.state.data={PRODUCTS:[product],CATEGORIES:[{name:'Beverages',status:'Active'
 Object.assign(app.state,{suppliersLocal:[],productsLocal:[product],categoriesLocal:app.state.data.CATEGORIES,adjustmentsLocal:[],purchaseData:{requests:[],orders:[]},inventoryHistory:{products:[product],batches:[],movements:[]},screen:'mgrRequest'});
 const text=node=>node==null?'':typeof node==='string'?node:Array.isArray(node)?node.map(text).join(' '):text(node.children);
 const inputs=node=>node==null||typeof node!=='object'?[]:Array.isArray(node)?node.flatMap(inputs):[...(node.type==='input'?[node.props.id]:[]),...inputs(node.children)];
-const reg=app.buildMgrRegistration();assert(!inputs(reg).includes('registration-regQuantity'));assert(inputs(reg).includes('registration-regSize'));assert(inputs(reg).includes('registration-regReorderLevel'));
+const reg=app.buildMgrRegistration();assert(!inputs(reg).includes('registration-regQuantity'));assert(inputs(reg).includes('registration-regSize'));assert(!inputs(reg).includes('registration-regReorderLevel'));
 assert(!inputs(reg).includes('registration-regStockId'),'Stock ID is generated automatically when adding');
 assert(!inputs(reg).includes('registration-regUnitPrice'),'Purchase cost is not shown in new registration');
 assert(!inputs(reg).includes('registration-regRetailPrice'),'Retail price is not shown in new registration');

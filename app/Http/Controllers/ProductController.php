@@ -55,7 +55,7 @@ class ProductController extends Controller
         abort_unless(ctype_digit($id), 404, 'Product not found.');
         $current = \App\Services\WorkspaceRead::table('products')->where('id', $id)->first();
         abort_unless($current, 404, 'Product not found.');
-        foreach (['manufacturer', 'brandId', 'subcategoryId', 'size', 'sizeUnit', 'minStock', 'description', 'barcode', 'status'] as $field) {
+        foreach (['manufacturer', 'brandId', 'subcategoryId', 'size', 'sizeUnit', 'minStock', 'description', 'barcode', 'status', 'supplierId'] as $field) {
             if (! $request->exists($field)) $request->merge([$field => $current->{$field}]);
         }
         $validated = $this->validateProduct($request, (int) $id);
@@ -108,6 +108,20 @@ class ProductController extends Controller
         }
 
         return response()->json(['message' => 'Product updated.', 'product' => $product]);
+    }
+
+    public function inventorySettings(Request $request, string $id): JsonResponse
+    {
+        InventoryRules::authorize($request);
+        $data = $request->validate(['minStock' => ['required', 'integer', 'min:0', 'max:2147483647']]);
+        return DB::transaction(function () use ($request, $id, $data) {
+            InventoryRules::lockActor($request);
+            $product = \App\Services\WorkspaceRead::table('products')->where('id', $id)->lockForUpdate()->first();
+            abort_unless($product, 404);
+            \App\Services\WorkspaceRead::table('products')->where('id', $id)->update($data);
+            InventoryRules::audit($request->user()->name, 'Updated minimum stock', $id, json_encode(['minStock' => $product->minStock]), json_encode($data));
+            return response()->json(['message' => 'Minimum stock saved.']);
+        }, 3);
     }
 
     public function assignBarcode(Request $request, string $id): JsonResponse
@@ -166,7 +180,7 @@ class ProductController extends Controller
         $validated = $request->validate([
             'id' => ['nullable', 'integer', 'min:1', 'max:2147483647', Rule::unique('products', 'id')->ignore($id)],
             'name' => ['required', 'string', 'max:160'],
-            'manufacturer'=>['required','string','max:160'],
+            'manufacturer'=>['nullable','string','max:160'],
             'parentId' => ['nullable', 'integer', Rule::exists('products', 'id')->where(fn ($query) => \App\Services\WorkspaceWrite::scopeValidation($query))],
             'variantLabel' => ['required_with:parentId', 'nullable', 'string', 'max:80'],
             'category' => ['required', 'string', Rule::exists('categories', 'name')->where('status', 'Active')->whereNull('archivedAt')->where(fn ($query) => \App\Services\WorkspaceWrite::scopeValidation($query))],
@@ -178,10 +192,10 @@ class ProductController extends Controller
             'subcategoryId' => ['nullable', 'integer', Rule::exists('subcategories', 'id')->where('category', $request->input('category'))->where('status', 'Active')->where(fn ($query) => \App\Services\WorkspaceWrite::scopeValidation($query))],
             'size' => ['required', 'numeric', 'gt:0', 'max:999999999', 'decimal:0,3'],
             'sizeUnit' => ['required', 'string', 'max:20', 'regex:/^[^\x00-\x1F\x7F]+$/u'],
-            'minStock' => ['required', 'integer', 'min:0', 'max:2147483647'],
+            'minStock' => ['sometimes', 'integer', 'min:0', 'max:2147483647'],
             'barcode' => ['nullable', 'string', 'max:80', Rule::unique('products', 'barcode')->ignore($id)->where(fn ($query) => \App\Services\WorkspaceWrite::scopeValidation($query))],
             'description' => ['nullable', 'string', 'max:2000'],
-            'supplierId' => ['required', 'integer', Rule::exists('suppliers', 'id')->where('status', 'Active')->whereNull('archivedAt')->where(fn ($query) => \App\Services\WorkspaceWrite::scopeValidation($query))],
+            'supplierId' => ['nullable', 'integer', Rule::exists('suppliers', 'id')->where('status', 'Active')->whereNull('archivedAt')->where(fn ($query) => \App\Services\WorkspaceWrite::scopeValidation($query))],
             'batch' => ['nullable', 'string', 'max:40'],
             'lot' => ['nullable', 'string', 'max:40'],
             'expiry' => ['nullable', 'date_format:Y-m-d'],
