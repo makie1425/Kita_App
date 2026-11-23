@@ -9,7 +9,7 @@ for(const id of ['regSupplier','regReorderLevel','regNewStockUnit','regScannedBa
 assert(!nodes(tree).some(n=>n.type==='button'&&['New Product','Clear Form','+ Add Category'].includes(text(n))));
 assert.equal(nodes(tree).find(n=>n.props?.id==='registration-regManufacturer').props.required,false);
 for(const [id,kind,unit] of [['regSizeUnit','size','Gross'],['regStockUnit','stock','Ream']]){
- nodes(app.buildMgrRegistration()).find(n=>n.props?.id==='registration-'+id).props.onChange({target:{value:'__add__'}});
+ nodes(app.buildMgrRegistration()).find(n=>n.props?.['aria-label']===(kind==='size'?'Add new size unit':'Add new stock unit')).props.onClick();
  assert.equal(app.state.regUnitDialog,kind);
  let dialog=app.buildRegistrationUnitDialog();
  nodes(dialog).find(n=>n.type==='input').props.onChange({target:{value:unit}});

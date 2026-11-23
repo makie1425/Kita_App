@@ -2871,13 +2871,14 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
     const units=[...new Set(["Piece","Pair","Set","Dozen","Pack","Packet","Pouch","Bag","Box","Case","Carton","Sack","Tray","Bottle","Can","Jar","Tub","Cup","Tube","Roll","Sheet","Bundle","Bunch","Bar","Stick","Sachet","Strip","Blister pack","Tablet","Capsule","Vial","Ampoule","Drum","Bucket","Pail","Crate","Pallet","Kg","g","Liter","mL","m",...products.map(p=>p.stockUnit||p.unit),s.regStockUnit].filter(Boolean))];
     const standardMeasurements=Object.values(PRODUCT_MEASUREMENT_UNITS).flatMap(group=>Object.keys(group));
     const customMeasurements=[...new Set([...products.map(p=>p.sizeUnit),s.regSizeUnit].filter(unit=>unit&&!standardMeasurements.includes(unit)))];
+    const unitControl=(control,kind)=>h('div',{style:{display:'flex',alignItems:'center',gap:8}},[h('div',{style:{flex:1,minWidth:0}},control),h('button',{type:'button',className:'kita-button kita-button--primary','aria-label':kind==='size'?'Add new size unit':'Add new stock unit',style:{flexShrink:0,whiteSpace:'nowrap'},onClick:()=>this.setState({regUnitDialog:kind,regUnitDraft:'',regUnitError:''})},'+ Add Unit')]);
     const measurement=h('div',{className:'field-group'},[
       h('label',{htmlFor:'registration-regSizeUnit'},['Size Unit',h('span',{className:'required-marker','aria-hidden':true},' *')]),
-      h('select',{id:'registration-regSizeUnit',required:true,'aria-required':true,value:s.regSizeUnit||'',onChange:e=>e.target.value==='__add__'?this.setState({regUnitDialog:'size',regUnitDraft:'',regUnitError:''}):this.setRegField('regSizeUnit')(e)},[
+      unitControl(h('select',{id:'registration-regSizeUnit',required:true,'aria-required':true,value:s.regSizeUnit||'',onChange:this.setRegField('regSizeUnit')},[
         h('option',{value:''},'Select size unit'),
         ...Object.entries(PRODUCT_MEASUREMENT_UNITS).map(([group,values])=>h('optgroup',{key:group,label:group},Object.entries(values).map(([value,label])=>h('option',{key:value,value},label)))),
-        ...customMeasurements.map(value=>h('option',{key:value,value},value)),h('option',{value:'__add__'},'+ Add size unit'),
-      ]),
+        ...customMeasurements.map(value=>h('option',{key:value,value},value)),
+      ]),'size'),
     ]);
     const field=(key,label,options={})=>{
       options={...options,required:options.required??!options.readOnly};
@@ -2890,7 +2891,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
     };
     const select=(key,label,values,required=true)=>h("div",{key,className:"field-group"},[
       h("label",{key:"label",htmlFor:"registration-"+key},[label,required?h("span",{className:"required-marker","aria-hidden":true}," *"):null]),
-      h("select",{key:"input",id:"registration-"+key,value:s[key],onChange:e=>key==="regStockUnit"&&e.target.value==="__add__"?this.setState({regUnitDialog:"stock",regUnitDraft:"",regUnitError:""}):this.setRegField(key)(e),required,"aria-required":required},[h("option",{key:"empty",value:""},"Select "+label.toLowerCase()),...values.map(value=>h("option",{key:value,value},value==="__add__"?"+ Add stock unit":["regSizeUnit","regStockUnit"].includes(key)?({mL:"mL (Milliliter)",Liter:"L (Liter)",g:"g (Gram)",kg:"kg (Kilogram)",Kg:"kg (Kilogram)",cm:"cm (Centimeter)",m:"m (Meter)"}[value]||value):value))]),
+      ((control)=>key==="regStockUnit"?unitControl(control,"stock"):control)(h("select",{key:"input",id:"registration-"+key,value:s[key],onChange:this.setRegField(key),required,"aria-required":required},[h("option",{key:"empty",value:""},"Select "+label.toLowerCase()),...values.map(value=>h("option",{key:value,value},["regSizeUnit","regStockUnit"].includes(key)?({mL:"mL (Milliliter)",Liter:"L (Liter)",g:"g (Gram)",kg:"kg (Kilogram)",Kg:"kg (Kilogram)",cm:"cm (Centimeter)",m:"m (Meter)"}[value]||value):value))])),
     ]);
     const group=(number,title,description,fields)=>h("fieldset",{className:"form-section",key:title},[
       h("legend",null,[h("span",{className:"section-number"},number),title]),null,h("div",{className:"form-grid"},fields),
@@ -2917,7 +2918,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
         h('div',{className:'registration-size'},[h('div',{className:'registration-size-fields'},[field("regSize","Size",{type:"number",step:"0.001",placeholder:'e.g. 500'}),measurement]),null]),
       ]),
       group("02","Stock settings","Stock Unit is one inventory unit, such as Bottle, Pack, or Piece. Quantities are whole units; use Size and Measurement Unit for the contents (for example, 500 mL per Bottle). New products start with zero stock.",[
-        select("regStockUnit","Stock Unit",[...units,"__add__"],true),
+        select("regStockUnit","Stock Unit",units,true),
         h("small",null,"The unit counted or sold, such as Bottle, Piece, or Ream."),
       ]),
       s.regEditing?group("03","Pricing","Purchase cost and selling price are recorded separately.",[
