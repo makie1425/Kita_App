@@ -1857,7 +1857,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
       onClick:e=>{if(e.target===e.currentTarget){const rect=e.currentTarget.getBoundingClientRect();if(e.clientX<rect.left||e.clientX>rect.right||e.clientY<rect.top||e.clientY>rect.bottom)close();}}
     },[h('h2',{id:'purchase-details-title'},r.id),h('p',null,`${r.supplierName||this.purchaseSupplier(r.lines[0]?.supplierId)} | ${r.status} | PO Date: ${r.requested_at||r.dateRequested} | Requested by ${r.requestedBy}`),
       this.buildPurchaseTracking(r),
-      h('div',{className:'purchase-details-table'},table(['Item','Category','Reviewed quantity',unitHeading],r.lines.map(l=>tr([td(l.name),td(l.category),td(l.confirmedQty??l.qty),td(this.requestUnitSummary(l,mixed))],l.id)))),h('p',null,r.notes||''),h('p',null,r.disapprovalReason||r.adminNote||''),h('div',{className:'dialog-actions'},[h('button',{type:'button',className:'kita-button kita-button--primary',autoFocus:true,onClick:close},'Close details'),r.poId?this.purchaseReportLink(r.poId):null])]);
+      h('div',{className:'purchase-details-table'},table(['Item','Category','Reviewed quantity',unitHeading],r.lines.map(l=>tr([td(l.name),td(l.category),td(l.confirmedQty??l.qty),td(this.requestUnitSummary(l,mixed))],l.id)))),h('p',null,r.notes||''),h('p',null,r.disapprovalReason||r.adminNote||''),h('div',{className:'dialog-actions'},[...this.purchaseReviewActions(r),r.poId?this.purchaseReportLink(r.poId):null,h('button',{type:'button',className:'kita-button',autoFocus:true,onClick:close},'Close')])]);
   }
   requestUnitLabel=line=>{const unit=line.orderUnit||this.purchaseUnit(line);return ['piece','pieces'].includes(unit.toLowerCase())?'Pieces':unit;};
   requestUnitSummary=(line,mixed=false)=>{
@@ -1905,10 +1905,13 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
   requestUsesPackage=line=>{const stock=this.purchaseUnit(line),unit=line.orderUnit||stock;return unit!==stock&&!(['piece','pieces'].includes(stock.toLowerCase())&&unit==='Piece');};
   canReviewPurchase=r=>['admin','superadmin','super_admin'].includes(this.state.role)&&!r.poId&&['Pending','Pending Approval','Proceed to Purchase'].includes(r.status);
   openPurchaseReview=(r,mode)=>this.setState({purchaseReviewError:'',purchaseRequestDetail:null,purchaseReviewRecord:r.id,purchaseReviewMode:mode,purchaseReviewId:mode==='edit'?r.id:null,purchaseReviewLines:mode==='edit'?r.lines.map(l=>({...l})):[]});
-  purchaseRequestActions(r){
-    const h=React.createElement;
-    return [btn('View Purchase Request',()=>this.setState({purchaseRequestDetail:r.id})),...(this.canReviewPurchase(r)?[['edit','Edit Purchase Request'],['approved','Approve Purchase Request'],['disapproved','Reject Purchase Request']].map(([mode,label])=>h('button',{type:'button',className:'kita-button',disabled:!!this.state.purchaseReviewSaving,onClick:()=>this.openPurchaseReview(r,mode)},label)):[])];
+  purchaseReviewActions(r){
+    return this.canReviewPurchase(r)?[['edit','Edit','primary'],['approved','Approve','green'],['disapproved','Reject','danger']].map(([mode,label,variant])=>{
+      const action=btn(label,()=>this.openPurchaseReview(r,mode),variant);
+      return React.createElement(action.type,{...action.props,disabled:!!this.state.purchaseReviewSaving},label);
+    }):[];
   }
+  purchaseRequestActions(r){return [btn('View',()=>this.setState({purchaseRequestDetail:r.id}),'primary')];}
   purchaseReviewDetails(){
     const h=React.createElement,r=this.state.purchaseData?.requests.find(r=>r.id===this.state.purchaseReviewRecord);
     if(!r||!this.canReviewPurchase(r))return null;
@@ -2338,7 +2341,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
         this.buildPurchaseTracking(o,request),
         table(['Item','Category','Order Qty','Received Qty','Unit','Unit Cost','Subtotal'],o.lines.map(l=>tr([td(l.name),td(l.category||'-'),td(l.orderedQty??l.confirmedQty??l.qty),td(l.deliveredQty||0),td(l.unit||this.purchaseUnit(l)),td(peso(l.unitCost||0)),td(peso(Number(l.orderedQty??l.confirmedQty??l.qty)*Number(l.unitCost||0)))],l.id))),
         request?.notes?h('p',null,request.notes):null,request?.disapprovalReason||request?.adminNote?h('p',null,request.disapprovalReason||request.adminNote):null]),
-      h('footer',{className:'dialog-actions'},[...(request?this.purchaseRequestActions(request).slice(1).map(action=>h(action.type,{...action.props,onClick:()=>{close();action.props.onClick();}})):[]),order?this.purchaseReportLink(order.id):null,order?h('a',{className:'kita-button',href:'/purchase-orders/'+encodeURIComponent(order.id)+'/order',target:'_blank',rel:'noopener'},'Print Supplier PO'):null,order&&this.state.role==='admin'&&!['Cancelled','Closed'].includes(order.status)&&!(order.receipts||[]).length&&!(this.state.purchaseData?.receipts||[]).some(r=>r.poId===order.id)&&order.lines.some(l=>this.receivingOutstanding(l)>0)?btn('Cancel Remaining',()=>{close();this.cancelPurchaseRemainder(order.id);}):null])]);
+      h('footer',{className:'dialog-actions'},[...(request?this.purchaseReviewActions(request).map(action=>h(action.type,{...action.props,onClick:()=>{close();action.props.onClick();}},...action.children)):[]),order?this.purchaseReportLink(order.id):null,order?h('a',{className:'kita-button',href:'/purchase-orders/'+encodeURIComponent(order.id)+'/order',target:'_blank',rel:'noopener'},'Print Supplier PO'):null,order&&this.state.role==='admin'&&!['Cancelled','Closed'].includes(order.status)&&!(order.receipts||[]).length&&!(this.state.purchaseData?.receipts||[]).some(r=>r.poId===order.id)&&order.lines.some(l=>this.receivingOutstanding(l)>0)?btn('Cancel Remaining',()=>{close();this.cancelPurchaseRemainder(order.id);}):null])]);
   }
   buildPurchaseOrderWorkspace(){
     const h=React.createElement,state=this.purchasingState();if(state)return state;
@@ -2377,7 +2380,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
   buildPurchaseStatusList(declined=false){
     const h=React.createElement,state=this.purchasingState();if(state)return state;
     const records=this.filterPurchases(this.state.purchaseData.requests).filter(r=>declined?['Declined','Disapproved'].includes(r.status):!!r.poId);
-    return h('div',null,[moduleTitle(declined?'Rejected Purchase Requests':'Approved Purchase Requests'),this.purchaseFilters(),this.recordTable('purchase-status',['PO Number','Supplier','Received batches','Status','Reviewed By / Remarks','Actions'],records.map(r=>tr([td(r.poId||r.id),td(r.supplierName||this.purchaseSupplier(r.lines[0]?.supplierId)),td(this.purchaseBatchSummary(r.poId||r.id)),td(badge(r.status)),td(r.disapprovalReason||r.adminNote||r.approvedBy),td([btn('View Purchase Request',()=>this.setState({purchaseRequestDetail:r.id})),r.poId?this.purchaseReportLink(r.poId):null])],r.id))),this.purchaseRequestDetails()]);
+    return h('div',null,[moduleTitle(declined?'Rejected Purchase Requests':'Approved Purchase Requests'),this.purchaseFilters(),this.recordTable('purchase-status',['PO Number','Supplier','Received batches','Status','Reviewed By / Remarks','Actions'],records.map(r=>tr([td(r.poId||r.id),td(r.supplierName||this.purchaseSupplier(r.lines[0]?.supplierId)),td(this.purchaseBatchSummary(r.poId||r.id)),td(badge(r.status)),td(r.disapprovalReason||r.adminNote||r.approvedBy),td([btn('View',()=>this.setState({purchaseRequestDetail:r.id}),'primary'),r.poId?this.purchaseReportLink(r.poId):null])],r.id))),this.purchaseRequestDetails()]);
   }
 
   buildMgrRequest(){ return this.buildPurchaseRequests(); }
