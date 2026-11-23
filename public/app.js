@@ -1033,7 +1033,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
 
   // ---- Manager/Admin generic ----
   setInvTab=tab=>()=>{this.setState({invTab:tab});if(['writeoffs','recall','reconciliation','expiry'].includes(tab))this.loadInventoryWorkflows();};
-  openSupplierDetail=id=>()=>this.setState({supplierDetailId:id});
+  openSupplierDetail=id=>()=>this.setState({supplierDetailId:id,supplierDetailTab:'performance',supplierBalanceDetail:null});
   closeSupplierDetail=()=>this.setState({supplierDetailId:null});
   approveAdjustment=id=>()=>{ this.authPost(`/api/inventory/adjustments/${encodeURIComponent(id)}`,{status:"Approved"},"PATCH").then(()=>{ this.setState(s=>({adjustmentsLocal:s.adjustmentsLocal.map(a=>a.id===id?{...a,status:"Approved"}:a)})); this.reloadCatalog().catch(()=>{}); this.pushMgrNotification("Adjustment Approved",`Inventory Adjustment ${id} was Approved by Admin`,"Standard",null); }).catch(error=>this.toast("Adjustment approval could not be saved: "+error.message,"error")); };
   rejectAdjustment=id=>()=>{ this.authPost(`/api/inventory/adjustments/${encodeURIComponent(id)}`,{status:"Rejected"},"PATCH").then(()=>{ this.setState(s=>({adjustmentsLocal:s.adjustmentsLocal.map(a=>a.id===id?{...a,status:"Rejected"}:a)})); this.pushMgrNotification("Adjustment Rejected",`Inventory Adjustment ${id} was Rejected by Admin`,"Critical",null); }).catch(error=>this.toast("Adjustment rejection could not be saved: "+error.message,"error")); };
@@ -1165,8 +1165,8 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
       this.toast(result.message);
     }catch(e){this.toast(e.message,'error');}finally{this.supplierSaving=false;}
   };
-  openSupMgrDetail=id=>()=>this.setState({supMgrScreen:"detail",supMgrDetailId:id,supMgrDetailTab:"products"});
-  setSupMgrDetailTab=tab=>()=>this.setState({supMgrDetailTab:tab});
+  openSupMgrDetail=id=>()=>this.setState({supMgrScreen:"detail",supMgrDetailId:id,supMgrDetailTab:"products",supplierBalanceDetail:null});
+  setSupMgrDetailTab=tab=>()=>{this.setState({supMgrDetailTab:tab,supplierBalanceDetail:null});if(tab==='balance')this.loadSupplierAccounts();};
   openSupMgrProductPicker=()=>this.setState({supMgrProductPickerOpen:true,supMgrProductSearch:"",supMgrProductChecked:{}});
   closeSupMgrProductPicker=()=>this.setState({supMgrProductPickerOpen:false});
   setSupMgrProductSearch=e=>this.setState({supMgrProductSearch:e.target.value});
@@ -2363,14 +2363,16 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
     this.setState({supplierAccountsLoading:true,supplierAccountsError:''});
     try{const r=await this.sessionFetch('/api/supplier-accounts',{headers:{Accept:'application/json'},cache:'no-store'});const body=await r.json();if(!r.ok)throw Error(body.message||'Unable to load supplier accounts.');this.setState({supplierAccountsData:body});}catch(e){this.setState({supplierAccountsError:e.message});}finally{this.setState({supplierAccountsLoading:false});}
   };
-  buildSupplierAccounts(){
+  buildSupplierAccounts(supplierId=null){
     const h=React.createElement,s=this.state,d=s.supplierAccountsData;
-    const rows=(d?.balances||[]).filter(r=>!s.accountSupplier||String(r.supplierId)===String(s.accountSupplier));
+    const embedded=supplierId!==null,selectedSupplier=embedded?String(supplierId):s.accountSupplier||'';
+    const rows=(d?.balances||[]).filter(r=>!selectedSupplier||String(r.supplierId)===selectedSupplier);
     const detail=rows.find(r=>String(r.id)===String(s.supplierBalanceDetail));
     const amount=r=>r.balance==null?'Needs Review':peso(r.balance);
-    return h('div',{className:'inventory-workspace'},[moduleTitle('Supplier Balance'),
+    return h('div',{className:embedded?'supplier-balance-panel':'inventory-workspace'},[embedded?h('h3',null,'Supplier Balance'):moduleTitle('Supplier Balance'),
       h('p',null,'Value of missing or damaged goods owed by suppliers. Accepted stock is treated as paid on receipt.'),
-      h('div',{className:'purchase-filters'},[h('label',null,['Supplier',h('select',{value:s.accountSupplier||'',onChange:e=>this.setState({accountSupplier:e.target.value,supplierBalanceDetail:null})},[h('option',{value:''},'All suppliers'),...(s.data?.SUPPLIERS||[]).map(v=>h('option',{value:v.id},v.name))])]),btn('Refresh',this.loadSupplierAccounts),btn('Reports / Export',()=>this.setState({screen:'admReports',reportFilters:{type:'payables',supplierId:s.accountSupplier||''}}))]),
+      h('div',{className:'purchase-filters'},[embedded?null:h('label',null,['Supplier',h('select',{value:s.accountSupplier||'',onChange:e=>this.setState({accountSupplier:e.target.value,supplierBalanceDetail:null})},[h('option',{value:''},'All suppliers'),...(s.data?.SUPPLIERS||[]).map(v=>h('option',{value:v.id},v.name))])]),btn('Refresh',this.loadSupplierAccounts),btn('Reports / Export',()=>this.setState({screen:'admReports',reportFilters:{type:'payables',supplierId:selectedSupplier}}))]),
+      s.supplierAccountsLoading&&!d?h('p',{role:'status'},'Loading supplier balances...'):null,
       s.supplierAccountsError?h('p',{role:'alert'},s.supplierAccountsError):null,
       h('div',{className:'inventory-summary'},[kpi('Supplier Balance',peso(rows.reduce((n,r)=>n+Number(r.balance||0),0))),kpi('Missing Item Value',peso(rows.reduce((n,r)=>n+(r.balance==null?0:Number(r.missingQty)*Number(r.unitCost)),0))),kpi('Damaged Item Value',peso(rows.reduce((n,r)=>n+(r.balance==null?0:Number(r.damagedQty)*Number(r.unitCost)),0))),kpi('Items Needing Review',rows.filter(r=>r.status==='Needs Review').length)]),
       this.recordTable('supplier-balances',['Supplier','PO Number','Item','Missing Qty','Damaged Qty','Supplier Balance','Status','Actions'],rows.map(r=>tr([td(r.supplier),td(r.reportPo),td(r.name),td(r.missingQty??'Needs Review'),td(r.damagedQty??'Needs Review'),td(amount(r)),td(badge(r.status)),td(btn('View Supplier Balance',()=>this.setState({supplierBalanceDetail:r.id})))],r.id))),
@@ -2378,7 +2380,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
         h('header',{className:'po-dialog-header'},[h('h2',{id:'supplier-balance-title'},detail.supplier+' / '+detail.reportPo),btn('Close',()=>this.setState({supplierBalanceDetail:null}))]),
         h('div',{className:'po-dialog-body'},[h('p',null,detail.name+' / '+amount(detail)),h('p',null,detail.remarks),this.recordTable('supplier-obligation-history',['Date and Time','Type','Accepted Qty','Damaged Qty','Remarks'],(detail.history||[]).map(e=>tr([td(e.created_at),td(e.type),td(e.accepted),td(e.damaged),td(e.reason||'')],e.id)))]),
         h('footer',{className:'dialog-actions'},[btn('Close',()=>this.setState({supplierBalanceDetail:null}))])]):null,
-      h('details',null,[h('summary',null,'Historical payment and credit entries'),this.recordTable('supplier-payment-history',['Date','Receipt ID','Type','Amount','Reference','Remarks'],(d?.settlements||[]).filter(e=>!s.accountSupplier||(d?.receipts||[]).some(r=>r.id===e.receiptId&&String(r.supplierId)===String(s.accountSupplier))).map(e=>tr([td(e.date),td(e.receiptId),td(e.kind),td(peso(e.amount)),td(e.reference),td(e.voidedAt?'Voided: '+e.voidReason:e.notes)],e.id)))])]);
+      h('details',null,[h('summary',null,'Historical payment and credit entries'),this.recordTable('supplier-payment-history',['Date','Receipt ID','Type','Amount','Reference','Remarks'],(d?.settlements||[]).filter(e=>!selectedSupplier||(d?.receipts||[]).some(r=>r.id===e.receiptId&&String(r.supplierId)===selectedSupplier)).map(e=>tr([td(e.date),td(e.receiptId),td(e.kind),td(peso(e.amount)),td(e.reference),td(e.voidedAt?'Voided: '+e.voidReason:e.notes)],e.id)))])]);
   }
   buildPurchaseStatusList(declined=false){
     const h=React.createElement,state=this.purchasingState();if(state)return state;
@@ -3016,7 +3018,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
     if(!suppliersLocal) return null;
     if(supMgrScreen==="detail"){
       const sp=suppliersLocal.find(s=>s.id===supMgrDetailId); if(!sp) return null;
-      const tabs=[["products","Products"],["performance","Supplier Performance"],["history","Order History"],["callback","Callback Log"]];
+      const tabs=[["products","Products"],["performance","Supplier Performance"],["balance","Supplier Balance"],["history","Order History"],["callback","Callback Log"]];
       let body;
       if(supMgrDetailTab==="products"){
         body=React.createElement("div",null,[
@@ -3031,6 +3033,8 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
         ]);
       } else if(supMgrDetailTab==="performance"){
         body=this.buildSupplierPerformance(sp.id);
+      } else if(supMgrDetailTab==="balance"){
+        body=this.buildSupplierAccounts(sp.id);
       } else if(supMgrDetailTab==="history"){
         const pos=(purchaseOrdersLocal||[]).filter(po=>po.supplierId===sp.id);
         body = pos.length===0 ? card(React.createElement("div",{style:{padding:16,textAlign:"center",color:COLORS.textMuted,fontSize:13}},"No purchase orders yet.")) :
@@ -3256,11 +3260,12 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
       infoRows.push(React.createElement("div",{key:"status",style:{display:"flex",justifyContent:"space-between",padding:"6px 0"}},[React.createElement("span",{key:"l",style:{color:COLORS.textSoft}},"Status"),badge(s.status)]));
       const callbackRows = s.callbackLog.length===0 ? [React.createElement("div",{key:"e",style:{fontSize:13,color:COLORS.textMuted}},"No callbacks logged.")]
         : s.callbackLog.map((c,i)=>React.createElement("div",{key:i,style:{fontSize:13,padding:"6px 0",borderBottom:"1px solid #eef1f6"}},c.date+" — "+c.note));
+      const tab=this.state.supplierDetailTab||'performance';
       return React.createElement("div",null,[
-
-        sectionTitle(s.name,s.category),this.buildSupplierPerformance(s.id),
+        sectionTitle(s.name,s.category),
         card(infoRows,{marginBottom:14}),
-        card([React.createElement("div",{key:"t",style:{fontWeight:800,marginBottom:8}},"Supplier Callback Log")].concat(callbackRows)),
+        React.createElement('div',{className:'archive-tabs'},[['performance','Supplier Performance'],['balance','Supplier Balance'],['callback','Callback Log']].map(([key,label])=>btn(label,()=>{this.setState({supplierDetailTab:key,supplierBalanceDetail:null});if(key==='balance')this.loadSupplierAccounts();},tab===key?'primary':'ghost'))),
+        tab==='balance'?this.buildSupplierAccounts(s.id):tab==='callback'?card([React.createElement("div",{key:"t",style:{fontWeight:800,marginBottom:8}},"Supplier Callback Log")].concat(callbackRows)):this.buildSupplierPerformance(s.id),
       ]);
     }
     return React.createElement("div",null,[moduleTitle("Suppliers"),
@@ -3658,13 +3663,13 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
     const navMap={
       cashier:[{label:null,items:[{key:"pos",label:"Checkout"},{key:"refunds",label:"Refunds / Exchanges / Voids"},{key:"shift",label:"My Shift Transactions"}]}],
       manager:[{label:"OPERATIONS",items:[{key:"mgrDashboard",label:"Dashboard"},{key:"pos",label:"Checkout"},{key:"cashDrawers",label:"Cash Drawer Shifts"}]},
-        {label:"PURCHASE ORDERS",items:[{key:"mgrRequest",label:"Create Purchase Request"},{key:"mgrRequestView",label:"Purchase Requests"},{key:"purchaseOrders",label:"Purchase Orders"},{key:"supplierAccounts",label:"Supplier Balances"},{key:"mgrPurchaseHistory",label:"Transaction History"},{key:"mgrPO",label:"Stock Receiving"}]},
+        {label:"PURCHASE ORDERS",items:[{key:"mgrRequest",label:"Create Purchase Request"},{key:"mgrRequestView",label:"Purchase Requests"},{key:"purchaseOrders",label:"Purchase Orders"},{key:"mgrPurchaseHistory",label:"Transaction History"},{key:"mgrPO",label:"Stock Receiving"}]},
         {label:"INVENTORY",items:[{key:"mgrInventory",label:"Inventory"},{key:"mgrCategories",label:"Categories / Brands"},{key:"mgrRegistration",label:"Barcode/Item Registration"},{key:"archive",label:"Archive"}]},
         {label:"REPORTS",items:[{key:"admReports",label:"Reports"}]},
         {label:"TEAM & MERCH",items:[{key:"mgrCashiers",label:"Cashier Accounts"},{key:"mgrPromotions",label:"Promotions"},{key:"mgrSupplier",label:"Suppliers"}]}],
       admin:[{label:null,items:[{key:"admDashboard",label:"Dashboard/Analytics"}]},
         {label:"PURCHASING",items:[{key:"admPurchasedOrders",label:"Purchase Requests"},{key:"admForwarded",label:"Approved Purchase Requests"},{key:"admDisapproved",label:"Rejected Purchase Requests"},{key:"admReceivingApprovals",label:"Receiving History"}]},
-        {label:"CONTROLS",items:[{key:"mgrCategories",label:"Categories / Brands"},{key:"mgrRegistration",label:"Product Registration"},{key:"mgrInventory",label:"Inventory"},{key:"admInventoryApprovals",label:"Inventory Adjustment Approvals"},{key:"admSuppliers",label:"Suppliers"},{key:"purchaseOrders",label:"Purchase Orders"},{key:"supplierAccounts",label:"Supplier Balances"},{key:"admReports",label:"Reports"},{key:"archive",label:"Archive"}]},
+        {label:"CONTROLS",items:[{key:"mgrCategories",label:"Categories / Brands"},{key:"mgrRegistration",label:"Product Registration"},{key:"mgrInventory",label:"Inventory"},{key:"admInventoryApprovals",label:"Inventory Adjustment Approvals"},{key:"admSuppliers",label:"Suppliers"},{key:"purchaseOrders",label:"Purchase Orders"},{key:"admReports",label:"Reports"},{key:"archive",label:"Archive"}]},
         {label:"ADMIN",items:[{key:"admManagers",label:"Manage Accounts"},{key:"admNotifications",label:"Notifications"}]}],
       superadmin:[{label:null,items:[{key:"saDashboard",label:"Dashboard"},{key:"saAdmins",label:"Account Management"},{key:"saRoles",label:"Role and Permission Management"},{key:"saBackup",label:"Database Backup"},{key:"saAudit",label:"Audit Logs"}]}],
     };
