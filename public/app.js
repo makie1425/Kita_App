@@ -2871,7 +2871,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
     const units=[...new Set(["Piece","Pair","Set","Dozen","Pack","Packet","Pouch","Bag","Box","Case","Carton","Sack","Tray","Bottle","Can","Jar","Tub","Cup","Tube","Roll","Sheet","Bundle","Bunch","Bar","Stick","Sachet","Strip","Blister pack","Tablet","Capsule","Vial","Ampoule","Drum","Bucket","Pail","Crate","Pallet","Kg","g","Liter","mL","m",...products.map(p=>p.stockUnit||p.unit),s.regStockUnit].filter(Boolean))];
     const standardMeasurements=Object.values(PRODUCT_MEASUREMENT_UNITS).flatMap(group=>Object.keys(group));
     const customMeasurements=[...new Set([...products.map(p=>p.sizeUnit),s.regSizeUnit].filter(unit=>unit&&!standardMeasurements.includes(unit)))];
-    const unitControl=(control,kind)=>h('div',{style:{display:'flex',alignItems:'center',gap:8}},[h('div',{style:{flex:1,minWidth:0}},control),h('button',{type:'button',className:'kita-button kita-button--primary','aria-label':kind==='size'?'Add new size unit':'Add new stock unit',style:{flexShrink:0,whiteSpace:'nowrap'},onClick:()=>this.setState({regUnitDialog:kind,regUnitDraft:'',regUnitError:''})},'+ Add Unit')]);
+    const unitControl=(control,kind)=>h('div',{className:'registration-unit-control'},[control,h('button',{type:'button',className:'kita-button kita-button--primary registration-add-unit','aria-label':kind==='size'?'Add new size unit':'Add new stock unit',onClick:()=>this.setState({regUnitDialog:kind,regUnitDraft:'',regUnitError:''})},'+ Add Unit')]);
     const measurement=h('div',{className:'field-group'},[
       h('label',{htmlFor:'registration-regSizeUnit'},['Size Unit',h('span',{className:'required-marker','aria-hidden':true},' *')]),
       unitControl(h('select',{id:'registration-regSizeUnit',required:true,'aria-required':true,value:s.regSizeUnit||'',onChange:this.setRegField('regSizeUnit')},[
@@ -2915,11 +2915,10 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
         select("regCategory","Category",data.CATEGORIES.filter(c=>c.status==="Active").map(c=>c.name),true),
         h("label",{className:"field-group"},["Brand *",h("select",{required:true,"aria-required":true,value:s.regBrandId||"",onChange:this.setRegField("regBrandId")},[h("option",{value:""},"Select brand"),...(data.BRANDS||[]).filter(b=>b.status==="Active").map(b=>h("option",{value:b.id,key:b.id},b.name))])]),
         this.buildSubcategorySelect(s.regCategory,s.regSubcategoryId,this.setRegField("regSubcategoryId"),{registration:true}),
-        h('div',{className:'registration-size'},[h('div',{className:'registration-size-fields'},[field("regSize","Size",{type:"number",step:"0.001",placeholder:'e.g. 500'}),measurement]),null]),
+        h('div',{className:'registration-size'},h('div',{className:'registration-size-fields'},[field("regSize","Size",{type:"number",step:"0.001",placeholder:'e.g. 500'}),measurement])),
       ]),
       group("02","Stock settings","Stock Unit is one inventory unit, such as Bottle, Pack, or Piece. Quantities are whole units; use Size and Measurement Unit for the contents (for example, 500 mL per Bottle). New products start with zero stock.",[
-        select("regStockUnit","Stock Unit",units,true),
-        h("small",null,"The unit counted or sold, such as Bottle, Piece, or Ream."),
+        h('div',{className:'registration-stock-unit'},[select("regStockUnit","Stock Unit",units,true),h("small",null,"The unit counted or sold, such as Bottle, Piece, or Ream.")]),
       ]),
       s.regEditing?group("03","Pricing","Purchase cost and selling price are recorded separately.",[
         field("regUnitPrice","Purchase cost per stock unit (\u20B1)",{type:"number",required:true}),
