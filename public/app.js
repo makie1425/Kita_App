@@ -3045,7 +3045,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
           card(sp.callbackLog.map((c,i)=>React.createElement("div",{key:i,style:{fontSize:13,padding:"6px 0",borderBottom:"1px solid #eef1f6"}},c.date+" — "+c.note)));
       }
       return React.createElement("div",null,[
-
+        React.createElement("div",{className:"page-toolbar"},[btn("← Back to Suppliers",this.goSupMgrList)]),
         card([
           React.createElement("div",{key:"h",style:{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}},[
             React.createElement("div",{style:{fontWeight:800,fontSize:18}},sp.name),
