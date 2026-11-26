@@ -2220,7 +2220,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
   };
   buildPurchaseReceiving(){
     const h=React.createElement,state=this.purchasingState();if(state)return state;
-    const orders=this.state.purchaseData.orders,tab=this.state.receivingTab||'active';
+    const orders=this.state.purchaseData.orders,tab=['active','history','missing'].includes(this.state.receivingTab)?this.state.receivingTab:'active';
     const canReceive=o=>o.lines.some(l=>this.carryoverAvailable(l)>0)&&(['Approved / Waiting for Delivery','Partially Received','Approved','Ordered','Completed','Received with Discrepancy'].includes(o.status)||(o.status==='Draft'&&o.request?.status==='Approved'));
     const pending=orders.filter(canReceive),receipts=orders.flatMap(o=>o.receipts||[]);
     const query=this.state.receivingCardSearch||'';
@@ -2234,10 +2234,9 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
       h('div',{className:'receiving-card-metrics'},[kpi('Purchase Orders Awaiting Receipt',pending.length+' POs'),kpi('Stock Receipts Today',receiptIds.size),kpi('Outstanding Items',pending.reduce((n,o)=>n+o.lines.filter(l=>this.carryoverAvailable(l)>0).length,0)+' lines'),kpi('Fully Received Purchase Orders',orders.filter(o=>o.fulfillmentStatus==='Fully Received'||o.status==='Fully Received').length+' POs')]),
       h('section',{className:'receiving-card-panel'},[
         h('div',{className:'receiving-card-tabs','aria-label':'Receiving views'},[
-          ...[['active','To Receive'],['history','Stock Receipt History'],['missing','Outstanding Items']].map(([value,label])=>h('button',{type:'button',key:value,'aria-pressed':tab===value,onClick:()=>this.setState({receivingTab:value})},label)),
-          h('button',{type:'button','aria-pressed':tab==='batches',onClick:()=>this.openInventoryView('batches')},'Batch Records')
+          ...[['active','To Receive'],['history','Stock Receipt History'],['missing','Outstanding Items']].map(([value,label])=>h('button',{type:'button',key:value,'aria-pressed':tab===value,onClick:()=>this.setState({receivingTab:value})},label))
         ]),
-        tab==='batches'?this.buildInventoryHistory(true):tab==='history'?h(React.Fragment,null,[this.buildStockReceiptHistory(),this.buildDeliveryHistory(orders),!receipts.length?h('p',{className:'record-empty'},'No stock receipts have been recorded.'):null]):h(React.Fragment,null,[
+        tab==='history'?h(React.Fragment,null,[this.buildStockReceiptHistory(),this.buildDeliveryHistory(orders),!receipts.length?h('p',{className:'record-empty'},'No stock receipts have been recorded.'):null]):h(React.Fragment,null,[
           h('h3',null,tab==='missing'?'Outstanding Items':'Purchase Orders Awaiting Receipt'),
           null,
           h('input',{className:'receiving-card-search',type:'search','aria-label':'Search purchase orders',placeholder:'Search purchase order, supplier, or product...',value:query,onChange:e=>this.setState({receivingCardSearch:e.target.value})}),
@@ -2518,7 +2517,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
   inventoryCondition=p=>p.stockCondition||(p.status!=='Active'?'Inactive':Number(p.stockOnHand??p.stock)===0?'Out of stock':this.sellableStock(p)===0?'Unavailable':this.sellableStock(p)<=Number(p.minStock||0)?'Reorder level reached':'In stock');
   openInventoryView=(view='products',productId)=>{
     const filters=productId?{productId:String(productId)}:view==='products'?{category:this.state.inventoryCategory||'',subcategoryId:this.state.inventorySubcategoryId||'',supplierId:this.state.inventorySupplierId||'',stockCondition:this.state.inventoryStockFilter||'',activeOnly:'1'}:{};
-    this.setState({...(view==='batches'?{receivingTab:'batches',viewingBatch:null}:{}),inventoryHistoryOpen:true,inventoryView:view,inventoryFilters:filters,inventoryAppliedFilters:filters,inventoryHistory:null});
+    this.setState({...(view==='batches'?{viewingBatch:null}:{}),inventoryHistoryOpen:true,inventoryView:view,inventoryFilters:filters,inventoryAppliedFilters:filters,inventoryHistory:null});
     if(view==='products')this.setTableView('inventory-products',{query:this.state.tableViews?.['inventory-balance']?.query||'',page:1});
     this.loadInventoryHistory(filters);
   };
