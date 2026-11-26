@@ -1334,7 +1334,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
     const packaged=this.requestUsesPackage(line),factor=line.stockUnitsPerOrder??line.piecesPerBox??'';
     return h('div',{className:'request-unit-control'},[
       h('select',{'aria-label':'Purchase Unit for '+line.name,value:unit,onChange:e=>this.setRequestUnitField(index,'orderUnit',e.target.value)},options.map(value=>h('option',{key:value,value},value))),
-      packaged?h('label',null,[stockUnit+' per '+unit,h('input',{'aria-label':stockUnit+' per '+unit+' for '+line.name,type:'number',min:1,max:1000000,step:1,required:true,value:factor,onChange:e=>this.setRequestUnitField(index,'stockUnitsPerOrder',e.target.value)})]):null,
+      packaged?h('label',null,['Pieces inside each '+unit,h('input',{'aria-label':'Pieces inside each '+unit+' for '+line.name,type:'number',min:1,max:1000000,step:1,required:true,value:factor,onChange:e=>this.setRequestUnitField(index,'stockUnitsPerOrder',e.target.value)})]):null,
       packaged&&Number(factor)>0?h('small',null,Number(line.qty)*Number(factor)+' '+stockUnit+' total'):null
     ]);
   }
@@ -2438,11 +2438,10 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
         product&&s.newReqCart.length&&!eligible(product).some(v=>String(v.id)===supplier)?h('p',{role:'status'},'This item is not linked to the current PO supplier. Create a separate PO.'):null,
         product?h('small',null,'Cost uses the supplier price when recorded; otherwise the product cost.'):null,
         h('div',{className:'po-field-triple'},[
-          field('Purchase Unit',h('select',{value:unit,disabled:!product,onChange:e=>this.setState({purchaseItemDraft:{...d,orderUnit:e.target.value,stockUnitsPerOrder:''}})},[...new Set([stock,product?.purchaseUnit,'Box','Case','Pack'].filter(Boolean))].map(v=>h('option',{value:v,key:v},v)))),
+          field('Purchase Unit',h('div',null,[h('select',{value:unit,disabled:!product,onChange:e=>this.setState({purchaseItemDraft:{...d,orderUnit:e.target.value,stockUnitsPerOrder:'',piecesPerBox:''},purchaseItemError:''})},[...new Set([stock,product?.purchaseUnit,'Box','Case','Pack'].filter(Boolean))].map(v=>h('option',{value:v,key:v},v))),line&&this.requestUsesPackage({...line,orderUnit:unit})?h('div',null,[h('span',null,'Pieces inside each '+unit),h('input',{'aria-label':'Pieces inside each '+unit,type:'number',min:1,max:1000000,step:1,required:true,value:d.stockUnitsPerOrder??'',onChange:e=>set('stockUnitsPerOrder',e.target.value)})]):null])),
           field('Quantity',h('div',{className:'po-quantity'},[h('button',{type:'button','aria-label':'Decrease quantity',onClick:()=>set('qty',Math.max(1,Number(d.qty||1)-1))},'-'),h('input',{type:'number',min:1,step:1,value:d.qty??1,onChange:e=>set('qty',e.target.value)}),h('button',{type:'button','aria-label':'Increase quantity',onClick:()=>set('qty',Math.min(1000000,Number(d.qty||1)+1))},'+')])),
           field('Cost per Stock Unit (PHP)',h('input',{type:'number',min:0,step:'0.01',value:d.unitCost??product?.unitPrice??0,onChange:e=>set('unitCost',e.target.value)}))
         ]),
-        line&&this.requestUsesPackage({...line,orderUnit:unit})?field(stock+' per '+unit,h('input',{type:'number',min:1,step:1,value:d.stockUnitsPerOrder||'',onChange:e=>set('stockUnitsPerOrder',e.target.value)})):null,
         h('div',{className:'po-registration-row'},[h('span',null,'Product not registered?'),h('a',{className:'po-registration-link',href:'#product-registration',onClick:this.registerProductFromPurchase},'Register Product First')]),
         h('output',{className:'po-estimate','aria-live':'polite'},'Est. Subtotal: PHP '+(line&&(!this.requestUsesPackage({...line,orderUnit:unit})||Number(d.stockUnitsPerOrder)>0)?(Number(d.qty||1)*Number(d.unitCost??product.unitPrice??0)*(this.requestUsesPackage({...line,orderUnit:unit})?Number(d.stockUnitsPerOrder):1)).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}):'0.00')),
         s.purchaseItemError?h('p',{role:'alert',className:'po-item-error'},s.purchaseItemError):null
