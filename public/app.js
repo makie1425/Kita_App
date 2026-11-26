@@ -2599,10 +2599,10 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
         })),
       ]);
     } else if(invTab==="categories"){
-      const list=(this.state.productsLocal||data.PRODUCTS).filter(p=>p.status!=="Inactive"&&!p.archivedAt);
-      body=this.recordTable("inventory-products-list",["Item Code","Product Item","Category","Stock Unit","Qty on Hand","Available Qty","Stock Condition"],list.map(p=>tr([
+      const list=(this.state.productsLocal||data.PRODUCTS).filter(p=>p.status!=="Inactive"&&!p.archivedAt&&this.sellableStock(p)>0);
+      body=this.recordTable("inventory-products-list",["Item Code","Product Item","Category","Stock Unit","Stock Qty"],list.map(p=>tr([
         td(p.id),td(this.productLabel(p)),td(p.category||"—"),td(p.stockUnit||p.unit||"Not set"),
-        td(p.stockOnHand??p.stock??0),td(this.sellableStock(p)),td(badge(this.inventoryCondition(p)))
+        td(this.sellableStock(p))
       ],p.id)));
     } else {
       body=this.buildStockBalance();
