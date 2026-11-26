@@ -912,28 +912,14 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
     const h=React.createElement;
     return h('div',{className:'purchase-filters'},[h('label',null,['Notification window (days)',h('input',{type:'number',min:0,max:365,value:this.state.expiryAlertDays??this.state.data?.EXPIRY_ALERT_DAYS??30,onChange:e=>this.setState({expiryAlertDays:e.target.value})})]),btn('Save alert window',this.saveExpiryWindow)]);
   }
-  loadRecallTrace=async(batchId)=>{
-    this.setState({recallTraceError:'',recallTrace:null});
-    try{
-      const query=batchId?'batchId='+batchId:'search='+encodeURIComponent(this.state.recallSearch||'');
-      const r=await this.sessionFetch('/api/inventory/recall-trace?'+query,{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}});
-      const data=await r.json();this.handleSessionResponse(r,data);if(!r.ok)throw new Error(data.message||'Trace could not be loaded.');this.setState({recallTrace:data});
-    }catch(e){this.setState({recallTraceError:e.message});}
-  };
   buildRecallTrace(){
-    const h=React.createElement,t=this.state.recallTrace;
+    const h=React.createElement;
     const batches=this.state.inventoryWorkflows?.batches||[];
     const search=(this.state.recallSearch||'').trim().toLowerCase();
     const suggestions=search?[...new Set(batches.flatMap(b=>[b.batchNumber,b.lotNumber].filter(Boolean)))].filter(number=>number.toLowerCase().includes(search)).slice(0,12):[];
-    return h('div',{className:'sa-panel'},[h('h3',null,'Trace affected inventory and sales'),
+    return h('div',{className:'sa-panel'},[h('h3',null,'Find a batch'),
       h('input',{'aria-label':'Batch or lot number',list:'recall-batch-suggestions',placeholder:'Search batch or lot number',style:{width:'100%',maxWidth:600},value:this.state.recallSearch||'',onChange:e=>this.setState({recallSearch:e.target.value})}),
-      h('datalist',{id:'recall-batch-suggestions'},suggestions.map(number=>h('option',{key:number,value:number}))),btn('Find batch',()=>this.loadRecallTrace()),
-      this.state.workflowForm?.batchId?btn('Trace selected batch',()=>this.loadRecallTrace(this.state.workflowForm.batchId)):null,
-      this.state.recallTraceError?h('p',{role:'alert'},this.state.recallTraceError):null,
-      t?this.recordTable('recall-trace-batches',['Product','Batch','Lot','On hand','Sellable','Status','Action'],t.batches.map(b=>tr([td(b.name),td(b.batchNumber||b.id),td(b.lotNumber||'-'),td(b.stockOnHand),td(b.sellableQuantity),td(b.eligibility),td(btn(b.recalled?'Release recall':'Recall batch',async()=>{if(!await this.requestConfirmation((b.recalled?'Release recall for ':'Recall ')+(b.batchNumber||b.id)+'? Physical stock is unchanged.'))return;this.saveInventoryWorkflow('events',{requestKey:crypto.randomUUID(),type:b.recalled?'Release recall':'Recall',batchId:Number(b.id),quantity:Number(b.quantityRemaining||0),reason:'Recall review',destination:null});},b.recalled?'primary':'danger'))],b.id))):null,
-      t?this.recordTable('recall-trace-sales',['Transaction','Date','Batch','Allocated','Returned','Outstanding','Status'],t.sales.map((s,i)=>tr([td(s.uuid),td(s.date),td(s.batchId),td(s.quantity),td(s.returnedQuantity),td(Math.max(0,s.quantity-s.returnedQuantity)),td(s.status)],i))):null,
-      t&&!t.sales.length?h('p',null,'No recorded sales or payment reservations for these batches.'):null,
-      null]);
+      h('datalist',{id:'recall-batch-suggestions'},suggestions.map(number=>h('option',{key:number,value:number})))]);
   }
 
   saveSupplierContact=async()=>{
@@ -2530,7 +2516,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
         td(b.name),td(b.lotNumber||'Not recorded'),td(b.stockOnHand??b.quantityRemaining),td(b.stockUnit),td(b.expiryDate||'No expiration'),td(b.recalled?'Recalled':b.eligibility||'Available'),
         td(btn(b.recalled?'Release recall':'Recall batch',async()=>{if(!await this.requestConfirmation((b.recalled?'Release recall for ':'Recall ')+(b.batchNumber||b.id)+'? Physical stock is unchanged.'))return;await this.saveInventoryWorkflow('events',{requestKey:crypto.randomUUID(),type:b.recalled?'Release recall':'Recall',batchId:Number(b.id),quantity:Number(b.quantityRemaining||0),reason:'Recall review',destination:null});},b.recalled?'primary':'danger'))
       ],b.id)):null,
-      this.recordTable('inventory-events-'+tab,['Reference','Date','Product','Batch','Type','Quantity affected','Destination','Reason','Recorded by'],d.events.filter(e=>recall?['Recall','Release recall'].includes(e.type):!['Recall','Release recall'].includes(e.type)).map(e=>tr([td('INV-'+e.id),td(e.created_at),td(e.name),td(e.batchNumber||'Batch #'+e.batchId),td(e.type),td(e.quantity),td(e.destination||'-'),td(e.reason),td(e.actor)],e.id)))]);
+      recall?null:this.recordTable('inventory-events-'+tab,['Reference','Date','Product','Batch','Type','Quantity affected','Destination','Reason','Recorded by'],d.events.filter(e=>!['Recall','Release recall'].includes(e.type)).map(e=>tr([td('INV-'+e.id),td(e.created_at),td(e.name),td(e.batchNumber||'Batch #'+e.batchId),td(e.type),td(e.quantity),td(e.destination||'-'),td(e.reason),td(e.actor)],e.id)))]);
   }
   inventoryCondition=p=>p.stockCondition||(p.status!=='Active'?'Inactive':Number(p.stockOnHand??p.stock)===0?'Out of stock':this.sellableStock(p)===0?'Unavailable':this.sellableStock(p)<=Number(p.minStock||0)?'Reorder level reached':'In stock');
   openInventoryView=(view='products',productId)=>{
