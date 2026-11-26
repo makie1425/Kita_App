@@ -1148,7 +1148,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
     if(!f.name.trim()){this.toast('Supplier name is required.','error');return;}
     this.supplierSaving=true;
     try{
-      const payload=Object.fromEntries(['name','contact','phone','email','address','category','notes'].map(key=>[key,f[key]||'']));
+      const payload=Object.fromEntries(['name','contact','phone','email','address','notes'].map(key=>[key,f[key]||'']));
       const result=await this.authPost('/api/suppliers'+(f.id?'/'+f.id:''),payload,f.id?'PATCH':'POST');
       await this.reloadCatalog();
       this.setState({supMgrModalOpen:false,supMgrScreen:'detail',supMgrDetailId:Number(result.supplier.id)});
@@ -1220,9 +1220,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
   };
   suppliersForProduct=product=>(this.state.data?.SUPPLIERS||[]).filter(s=>s.status==='Active'&&!s.archivedAt&&(String(product?.supplierId)===String(s.id)||(s.products||[]).some(link=>String(link.productId)===String(product?.id))));
   suppliersForCategory=category=>{
-    const normalize=value=>String(value||'').trim().toLocaleLowerCase(),products=this.state.productsLocal||this.state.data?.PRODUCTS||[];
-    if(!normalize(category))return [];
-    return (this.state.data?.SUPPLIERS||[]).filter(s=>s.status==='Active'&&!s.archivedAt&&(normalize(s.category)===normalize(category)||products.some(p=>normalize(p.category)===normalize(category)&&(String(p.supplierId)===String(s.id)||(s.products||[]).some(link=>String(link.productId)===String(p.id))))));
+    return (this.state.data?.SUPPLIERS||[]).filter(s=>s.status==='Active'&&!s.archivedAt);
   };
   saveRegistration=()=>{
     if(this.registrationBusy)return;
@@ -3002,7 +3000,6 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
         React.createElement("div",{key:"t",style:{fontWeight:800,marginBottom:12}},supMgrForm.id==null?"Add Supplier":"Edit Supplier"),
         React.createElement("div",{key:"grid",style:{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:10,marginBottom:12}},[
           f("Supplier Name","name"),f("Contact Person","contact"),f("Contact Number","phone"),f("Email (optional)","email"),
-          React.createElement('label',null,['Supply Category',React.createElement('select',{'aria-label':'Supplier supply category',value:supMgrForm.category||'',onChange:this.setSupMgrFormField('category')},[React.createElement('option',{value:''},'Select supply category'),...[...new Set([...(this.state.data?.CATEGORIES||[]).filter(c=>c.status==='Active').map(c=>c.name),supMgrForm.category].filter(Boolean))].map(name=>React.createElement('option',{key:name,value:name},name))])]),
 
           React.createElement("div",{key:"st"},[React.createElement("label",{style:{fontSize:12,fontWeight:700,color:COLORS.textSoft}},"Status"),
             React.createElement("select",{value:supMgrForm.status,onChange:this.setSupMgrFormField("status"),style:{width:"100%",padding:8,border:"1px solid "+COLORS.border,borderRadius:7,marginTop:4}},["Active","Inactive"].map(o=>React.createElement("option",{key:o},o)))]),
@@ -3051,7 +3048,7 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
 
         card([
           React.createElement("div",{key:"h",style:{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}},[
-            React.createElement("div",null,[React.createElement("div",{style:{fontWeight:800,fontSize:18}},sp.name),React.createElement("div",{style:{fontSize:12,color:COLORS.textSoft,marginTop:2}},sp.category)]),
+            React.createElement("div",{style:{fontWeight:800,fontSize:18}},sp.name),
             React.createElement("div",{style:{display:"flex",gap:8}},[badge(sp.status),btn("Edit Supplier",this.openSupMgrModal(sp))]),
           ]),
           React.createElement("div",{key:"grid",style:{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:12,fontSize:13}},[
@@ -3073,9 +3070,9 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
         React.createElement("input",{value:supMgrSearch,onChange:this.setSupMgrSearch,placeholder:"Search suppliers…",style:{padding:8,border:"1px solid "+COLORS.border,borderRadius:7,width:260}}),
         selCount>0?btn(`Move to Archive (${selCount})`,this.moveSupMgrSelectedToArchive,"danger"):null,
       ]),
-      this.recordTable("suppliers",["","Supplier Name","Contact Person","Contact Number","Category","Status","Product Count","Actions"],list.map(sp=>tr([
+      this.recordTable("suppliers",["","Supplier Name","Contact Person","Contact Number","Status","Product Count","Actions"],list.map(sp=>tr([
         td(React.createElement("input",{type:"checkbox",checked:!!supMgrSelected[sp.id],onChange:this.toggleSupMgrSelect(sp.id)})),
-        td(sp.name,{fontWeight:600}),td(sp.contact),td(sp.phone),td(sp.category),td(badge(sp.status)),td(sp.products.length),
+        td(sp.name,{fontWeight:600}),td(sp.contact),td(sp.phone),td(badge(sp.status)),td(sp.products.length),
         td(React.createElement("div",{className:"row-action-buttons"},[btn("View Supplier",this.openSupMgrDetail(sp.id)),btn("Edit Supplier",this.openSupMgrModal(sp)),btn("Archive",()=>this.archiveAction("archive","suppliers",[String(sp.id)]),"danger")]))],sp.id))),
       supMgrModalOpen?this.buildMgrSupplierModal():null,
     ]);
@@ -3228,8 +3225,8 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
       rows=list.map(p=>tr([td(React.createElement("input",{type:"checkbox",checked:!!archiveChecked[keyOf(p)],onChange:this.toggleArchiveCheck(keyOf(p))})),td(p.name),td(p.category),td(p.archivedAt||"—"),td(p.archivedBy||"—")],p.id)); }
     else if(archiveTab==="categories"){ const list=categoriesLocal.filter(c=>c.status==="Inactive"); headers=["","Category","Archived On","Archived By"]; keyOf=c=>c.name;
       rows=list.map(c=>tr([td(React.createElement("input",{type:"checkbox",checked:!!archiveChecked[keyOf(c)],onChange:this.toggleArchiveCheck(keyOf(c))})),td(c.name),td(c.archivedAt||"—"),td(c.archivedBy||"—")],c.name)); }
-    else { const list=suppliersLocal.filter(s=>s.status==="Inactive"); headers=["","Supplier","Category","Archived On","Archived By"]; keyOf=s=>String(s.id);
-      rows=list.map(s=>tr([td(React.createElement("input",{type:"checkbox",checked:!!archiveChecked[keyOf(s)],onChange:this.toggleArchiveCheck(keyOf(s))})),td(s.name),td(s.category),td(s.archivedAt||"—"),td(s.archivedBy||"—")],s.id)); }
+    else { const list=suppliersLocal.filter(s=>s.status==="Inactive"); headers=["","Supplier","Archived On","Archived By"]; keyOf=s=>String(s.id);
+      rows=list.map(s=>tr([td(React.createElement("input",{type:"checkbox",checked:!!archiveChecked[keyOf(s)],onChange:this.toggleArchiveCheck(keyOf(s))})),td(s.name),td(s.archivedAt||"—"),td(s.archivedBy||"—")],s.id)); }
     return React.createElement("div",null,[
       React.createElement("div",{className:"archive-toolbar"},[moduleTitle("Archive"),btn("Refresh",()=>this.reloadCatalog().catch(e=>this.toast(e.message,"error")))]),
       React.createElement("div",{className:"archive-tabs"},tabs.map(([k,l])=>React.createElement("button",{key:k,onClick:this.setArchiveTab(k),style:{padding:"8px 14px",borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer",background:archiveTab===k?COLORS.brand:"#fff",color:archiveTab===k?"#fff":COLORS.text,border:"1px solid "+(archiveTab===k?COLORS.brand:COLORS.border)}},l))),
@@ -3261,14 +3258,14 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
         : s.callbackLog.map((c,i)=>React.createElement("div",{key:i,style:{fontSize:13,padding:"6px 0",borderBottom:"1px solid #eef1f6"}},c.date+" — "+c.note));
       const tab=this.state.supplierDetailTab||'performance';
       return React.createElement("div",null,[
-        sectionTitle(s.name,s.category),
+        sectionTitle(s.name),
         card(infoRows,{marginBottom:14}),
         React.createElement('div',{className:'archive-tabs'},[['performance','Supplier Performance'],['balance','Supplier Balance'],['callback','Callback Log']].map(([key,label])=>btn(label,()=>{this.setState({supplierDetailTab:key,supplierBalanceDetail:null});if(key==='balance')this.loadSupplierAccounts();},tab===key?'primary':'ghost'))),
         tab==='balance'?this.buildSupplierAccounts(s.id):tab==='callback'?card([React.createElement("div",{key:"t",style:{fontWeight:800,marginBottom:8}},"Supplier Callback Log")].concat(callbackRows)):this.buildSupplierPerformance(s.id),
       ]);
     }
     return React.createElement("div",null,[moduleTitle("Suppliers"),
-      this.recordTable("supplier-records",["Supplier","Category","Status","Actions"],data.SUPPLIERS.filter(s=>s.status==="Active"&&!s.archivedAt).map(s=>tr([td(s.name,{fontWeight:600}),td(s.category),td(badge(s.status)),td(React.createElement("div",{className:"row-action-buttons"},[btn("View Supplier",this.openSupplierDetail(s.id)),btn("Archive",()=>this.archiveAction("archive","suppliers",[String(s.id)]),"danger")]))],s.id)))]);
+      this.recordTable("supplier-records",["Supplier","Status","Actions"],data.SUPPLIERS.filter(s=>s.status==="Active"&&!s.archivedAt).map(s=>tr([td(s.name,{fontWeight:600}),td(badge(s.status)),td(React.createElement("div",{className:"row-action-buttons"},[btn("View Supplier",this.openSupplierDetail(s.id)),btn("Archive",()=>this.archiveAction("archive","suppliers",[String(s.id)]),"danger")]))],s.id)))]);
   }
   scheduleReport=()=>{
     clearTimeout(this.reportFilterTimer);this.reportRequestId=(this.reportRequestId||0)+1;this.reportController?.abort();
