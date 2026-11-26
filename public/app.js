@@ -2599,15 +2599,11 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
         })),
       ]);
     } else if(invTab==="categories"){
-      const {catSelected,categoriesLocal}=this.state; const catCount=Object.values(catSelected).filter(Boolean).length;
-      const list = categoriesLocal.filter(c=>c.status==="Active");
-      body=React.createElement("div",null,[
-        catCount>0?React.createElement("div",{key:"bar",style:{marginBottom:10}},btn(`Move to Archive (${catCount})`,this.moveCatSelectedToArchive,"danger")):null,
-        this.recordTable("inventory-categories",["","Category","Classification","Item Count","Action"],list.map((c,i)=>tr([
-          td(React.createElement("input",{type:"checkbox",checked:!!catSelected[c.name],onChange:this.toggleCatSelect(c.name)})),
-          td(c.name,{fontWeight:600}),td(c.classification||"Not classified"),td(data.PRODUCTS.filter(p=>p.category===c.name).length),
-          td(React.createElement("button",{onClick:this.editCategory(c),style:{color:COLORS.brand,background:"none",border:"none",fontWeight:700,cursor:"pointer"}},"Edit Category"))],i))),
-      ]);
+      const list=(this.state.productsLocal||data.PRODUCTS).filter(p=>p.status!=="Inactive"&&!p.archivedAt);
+      body=this.recordTable("inventory-products-list",["Item Code","Product Item","Category","Stock Unit","Qty on Hand","Available Qty","Stock Condition"],list.map(p=>tr([
+        td(p.id),td(this.productLabel(p)),td(p.category||"—"),td(p.stockUnit||p.unit||"Not set"),
+        td(p.stockOnHand??p.stock??0),td(this.sellableStock(p)),td(badge(this.inventoryCondition(p)))
+      ],p.id)));
     } else {
       body=this.buildStockBalance();
     }
