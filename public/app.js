@@ -3100,12 +3100,12 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
       React.createElement("div",{key:"l",style:{fontSize:18,fontWeight:800}},label),
     ]);
     return React.createElement("div",null,[
-      React.createElement("div",{style:{display:"grid",gap:16,marginBottom:20}},[
+      React.createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"flex-end",flexWrap:"wrap",gap:16,marginBottom:20}},[
         React.createElement("div",{key:"t"},[
           React.createElement("div",{key:"h",style:{fontSize:28,fontWeight:800}},"Promotions"),
           React.createElement("div",{key:"s",style:{fontSize:15,color:COLORS.textSoft,marginTop:4}},"Manager-configured, time-bound product discounts — applied automatically at checkout when active"),
         ]),
-        React.createElement("div",{key:"kpis",className:"inventory-summary",style:{marginBottom:0}},[
+        React.createElement("div",{key:"kpis",style:{display:"flex",gap:12,flexWrap:"wrap"}},[
           kpi("Active Promotions",activeCount,null,COLORS.green),
           kpi("Items Currently on Promo",itemsOnPromo,null,COLORS.brand),
           kpi("Avg. Discount",avgDiscount+"%"),
@@ -3182,6 +3182,29 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
           ],{padding:18}),
         ]),
       ]),
+      React.createElement("div",{style:{height:20}}),
+      card([React.createElement("div",{key:"t",style:{fontSize:18,fontWeight:800,marginBottom:14}},"All Promotions"),
+        this.recordTable("promotions",["Item(s)","Type","Discount %","Promo Price","Date Range","Countdown","Status","Performance","Actions"],promotionsLocal.map((p,i)=>{
+          const prods=p.productIds.map(id=>data.PRODUCTS.find(pp=>pp.id===id)).filter(Boolean);
+          const status=this.promoStatus(p); const daysLeft=Math.round((new Date(p.endDate)-new Date(today))/86400000);
+          const prod=prods[0];
+          let perf="—";
+          if(prod){ const inWindow=data.SALES_LOG.filter(t=>t.productId===prod.id && t.date>=p.startDate && t.date<=p.endDate).reduce((s,t)=>s+t.qty,0);
+            const outsideLogs=data.SALES_LOG.filter(t=>t.productId===prod.id && !(t.date>=p.startDate && t.date<=p.endDate));
+            const outsideDays=new Set(outsideLogs.map(t=>t.date)).size||1;
+            const avgOutside=Math.round((outsideLogs.reduce((s,t)=>s+t.qty,0)/outsideDays)*10)/10;
+            perf=`${inWindow} in-promo vs ${avgOutside}/day avg`;
+          }
+          return tr([td(prods.map(pp=>pp.name).join(", ")||p.category),td(p.type),td(p.discountPct+"%"),
+            td(prods.length?prods.map(pp=>peso(pp.price*(1-p.discountPct/100))).join(", "):"—"),
+            td(p.startDate+" → "+p.endDate),
+            td(status==="Active"?React.createElement("span",{style:{fontSize:11,fontWeight:700,color:COLORS.purple,background:COLORS.purpleBg,padding:"3px 8px",borderRadius:6}},daysLeft+"d left"):"—"),
+            td(badge(status)),
+            td(perf,{fontSize:12,color:COLORS.textSoft}),
+            td(status==="Expired"?React.createElement("button",{onClick:this.copyPromotion(p),style:{color:COLORS.brand,background:"none",border:"none",fontWeight:700,cursor:"pointer"}},"Copy"):"—")
+          ],p.id);
+        })),
+      ],{padding:22}),
       promoPickerOpen?this.buildPromoPickerModal():null,
     ]);
   }
