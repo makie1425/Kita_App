@@ -2220,24 +2220,24 @@ this.setState({role,authStep:"in",screen:d,authenticatedUser:user,cashShift:null
   };
   buildPurchaseReceiving(){
     const h=React.createElement,state=this.purchasingState();if(state)return state;
-    const orders=this.state.purchaseData.orders,tab=['active','history','missing'].includes(this.state.receivingTab)?this.state.receivingTab:'active';
+    const orders=this.state.purchaseData.orders,tab=['active','history'].includes(this.state.receivingTab)?this.state.receivingTab:'active';
     const canReceive=o=>o.lines.some(l=>this.carryoverAvailable(l)>0)&&(['Approved / Waiting for Delivery','Partially Received','Approved','Ordered','Completed','Received with Discrepancy'].includes(o.status)||(o.status==='Draft'&&o.request?.status==='Approved'));
     const pending=orders.filter(canReceive),receipts=orders.flatMap(o=>o.receipts||[]);
     const query=this.state.receivingCardSearch||'';
-    const selected=this.filterPurchases(pending,true).filter(o=>this.matchesReceivingAudit(o,this.state.receivingAudit||'')).filter(o=>tab!=='missing'||o.receipts?.length).filter(o=>searchMatches([o.id,o.supplierName,this.purchaseSupplier(o.supplierId),...o.lines.map(l=>l.name)].join(' '),query)).sort((a,b)=>this.receivingActivity(b).localeCompare(this.receivingActivity(a))||String(b.id).localeCompare(String(a.id)));
+    const selected=this.filterPurchases(pending,true).filter(o=>this.matchesReceivingAudit(o,this.state.receivingAudit||'')).filter(o=>searchMatches([o.id,o.supplierName,this.purchaseSupplier(o.supplierId),...o.lines.map(l=>l.name)].join(' '),query)).sort((a,b)=>this.receivingActivity(b).localeCompare(this.receivingActivity(a))||String(b.id).localeCompare(String(a.id)));
     const order=orders.find(o=>o.id===this.state.purchaseReceivingId);
     const close=()=>{if(!this.receivingBusy)this.setState({purchaseReceivingId:null});};
     const receiptIds=new Set(receipts.filter(r=>r.date===this.state.data?.BUSINESS_DATE).map(r=>r.deliveryBatch||r.id));
     return h('div',{className:'receiving-workspace'},[
       moduleTitle('Stock Receiving'),
       this.state.receivingSuccess?h('div',{className:'receiving-success',role:'status'},[h('strong',null,this.state.receivingSuccess.status==='Posted'?'Stock receipt saved':'Stock receipt saved for approval'),h('p',null,this.state.receivingSuccess.message+' Reference: '+this.state.receivingSuccess.id),this.state.receivingRefreshError?h('p',{role:'alert'},this.state.receivingRefreshError):null,h('button',{type:'button',className:'kita-button',onClick:()=>this.setState({receivingSuccess:null,receivingRefreshError:''})},'Dismiss')]):null,
-      h('div',{className:'receiving-card-metrics'},[kpi('Purchase Orders Awaiting Receipt',pending.length+' POs'),kpi('Stock Receipts Today',receiptIds.size),kpi('Outstanding Items',pending.reduce((n,o)=>n+o.lines.filter(l=>this.carryoverAvailable(l)>0).length,0)+' lines'),kpi('Fully Received Purchase Orders',orders.filter(o=>o.fulfillmentStatus==='Fully Received'||o.status==='Fully Received').length+' POs')]),
+      h('div',{className:'receiving-card-metrics'},[kpi('Purchase Orders Awaiting Receipt',pending.length+' POs'),kpi('Stock Receipts Today',receiptIds.size),kpi('Fully Received Purchase Orders',orders.filter(o=>o.fulfillmentStatus==='Fully Received'||o.status==='Fully Received').length+' POs')]),
       h('section',{className:'receiving-card-panel'},[
         h('div',{className:'receiving-card-tabs','aria-label':'Receiving views'},[
-          ...[['active','To Receive'],['history','Stock Receipt History'],['missing','Outstanding Items']].map(([value,label])=>h('button',{type:'button',key:value,'aria-pressed':tab===value,onClick:()=>this.setState({receivingTab:value})},label))
+          ...[['active','To Receive'],['history','Stock Receipt History']].map(([value,label])=>h('button',{type:'button',key:value,'aria-pressed':tab===value,onClick:()=>this.setState({receivingTab:value})},label))
         ]),
         tab==='history'?h(React.Fragment,null,[this.buildStockReceiptHistory(),this.buildDeliveryHistory(orders),!receipts.length?h('p',{className:'record-empty'},'No stock receipts have been recorded.'):null]):h(React.Fragment,null,[
-          h('h3',null,tab==='missing'?'Outstanding Items':'Purchase Orders Awaiting Receipt'),
+          h('h3',null,'Purchase Orders Awaiting Receipt'),
           null,
           h('input',{className:'receiving-card-search',type:'search','aria-label':'Search purchase orders',placeholder:'Search purchase order, supplier, or product...',value:query,onChange:e=>this.setState({receivingCardSearch:e.target.value})}),
           h('details',{className:'receiving-card-filters'},[h('summary',null,'Filter purchase orders'),this.purchaseFilters(true)]),
